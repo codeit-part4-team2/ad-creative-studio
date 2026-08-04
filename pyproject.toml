@@ -1,0 +1,23 @@
+[project]
+name = "small-appliance-ad-service"
+version = "0.1.0"
+description = "쇼핑몰 입점 소형가전 소상공인을 위한 AI 광고 콘텐츠 생성 서비스"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "python-multipart",
+    "pydantic",
+    "httpx",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "nbstripout"]
+frontend = ["streamlit", "requests", "pillow"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]

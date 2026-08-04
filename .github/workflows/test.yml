@@ -1,0 +1,26 @@
+name: tests
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: pytest -q
+      - name: Notebook Sanity Check
+        run: |
+          pip install nbstripout
+          if find . -name "*.ipynb" -not -path "./.git/*" | grep -q .; then
+            nbstripout --verify $(find . -name "*.ipynb" -not -path "./.git/*")
+          else
+            echo "노트북 파일 없음 - 스킵"
+          fi

@@ -1,0 +1,145 @@
+# API Contract
+
+R2/R3(model_server)와 R4+R5(app/backend) 사이의 계약입니다. 이 문서만 맞으면
+서로 상대방의 구현을 기다리지 않고 병렬로 개발할 수 있습니다.
+
+> **업데이트**: 시간대는 1차 회의록의 3종(아침/점심/저녁)에서, PM 승인으로
+> 러시아워를 반영한 **6종 + 체크박스 다중 선택**으로 변경되었습니다
+> (소형가전은 출퇴근 시간대와 퇴근 후의 구매 심리가 다르다는 근거).
+> 한 번에 최대 3개까지만 선택 가능합니다 (`MAX_TIME_SLOTS_PER_REQUEST`, GPU 대기열 보호).
+
+---
+
+## 1. Public API (app/frontend ↔ app/backend)
+
+### POST /api/v1/products
+상품 등록 (multipart/form-data, 이미지 포함)
+
+```json
+{
+  "product_name": "스팀 에어프라이어 5L",
+  "price": 89000,
+  "selling_points": "기름 없이 조리,1인 가구 추천"
+}
+```
+응답
+```json
+{ "product_id": "prd_001", "image_url": "/files/products/prd_001.png" }
+```
+
+### POST /api/v1/generations
+광고 생성 요청
+
+```json
+{
+  "product_id": "prd_001",
+  "tones": ["emotional", "modern", "practical", "premium"],
+  "time_slots": ["commute_am", "evening"],
+  "output_formats": ["thumbnail", "detail_banner", "sns_card"]
+}
+```
+- `tones`는 생략하면 4종 전체가 기본값 (M2 — 항상 4종 동시 생성)
+- `time_slots`는 1개 이상, 최대 3개: `morning | commute_am | afternoon | commute_pm | evening | late_night`
+
+응답 — `202`
+```json
+{ "job_id": "job_001", "status": "queued", "estimated_seconds": 120 }
+```
+
+### GET /api/v1/jobs/{job_id}
+생성 진행 상태 (폴링)
+```json
+{
+  "job_id": "job_001",
+  "status": "processing",
+  "progress": 60,
+  "current_step": "background_generation",
+  "completed_count": 2,
+  "total_count": 8,
+  "estimated_seconds": 120
+}
+```
+`total_count` = 톤 수 × 선택 시간대 수 (예: 4톤 × 2시간대 = 8)
+
+### GET /api/v1/generations/{job_id}
+완료된 결과 조회
+```json
+{
+  "job_id": "job_001",
+  "status": "completed",
+  "results": [
+    {
+      "tone": "emotional",
+      "time_slot": "commute_am",
+      "headline": "아침의 여유",
+      "subcopy": "10분이면 완성되는 아침",
+      "images": {
+        "thumbnail": "/files/result_01_1x1.png",
+        "detail_banner": "/files/result_01_banner.png",
+        "sns_card": "/files/result_01_4x5.png"
+      }
+    }
+    // ... 선택한 톤 x 시간대 조합 수만큼 반복
+  ]
+}
+```
+
+### PATCH /api/v1/generations/{generation_id}/copy
+이미지는 재생성하지 않고 문구만 수정 (PIL 오버레이 전략의 핵심 이점, 결정 7)
+```json
+{ "headline": "새로운 아침의 시작", "subcopy": "간편하게 즐기는 스팀 요리" }
+```
+
+### GET /api/v1/history
+생성 이력 조회
+
+### GET /api/v1/usage
+OpenAI 텍스트 사용 비용 현황 ($20 경고 / $25 로컬 전환)
+
+---
+
+## 2. Model Server 계약 (app/backend ↔ model_server, R2·R3 소유)
+
+### POST {MODEL_SERVER_URL}/infer
+
+요청
+```json
+{
+  "product_id": "prd_001",
+  "product_image_url": "/files/products/prd_001.png",
+  "tone": "emotional",
+  "image_prompt": "Create a product advertisement background for ... (영어)",
+  "negative_prompt": "blurry, distorted product, extra logo, watermark",
+  "time_slot": "commute_am"
+}
+```
+
+응답
+```json
+{
+  "status": "done",
+  "generated_image_url": "https://.../bg.png",
+  "product_preserved": true,
+  "gen_time_sec": 8.4
+}
+```
+
+`image_prompt`/`negative_prompt`는 `app/prompt/builder.py`가 만들어서 전달합니다.
+`product_preserved`는 R2/R3가 자체 검증 후 반환 — 평가 1순위 지표(제품 보존율)와 연동됩니다.
+
+### R3에게 전달할 핵심 경계 (요약)
+- **모델 입력**: 제품 이미지는 URL(정적 파일 경로, `app/backend`가 `/files/uploads/...`로 서빙)로 전달. 바이너리 직접 전송은 안 함
+- **시간대/톤 enum**: `app/prompt/schemas.py`의 `TimeSlotLiteral`(6종) / `ToneLiteral`(4종) 그대로 사용
+- **생성 단위**: `시간대 × 톤`만 (출력 규격 3종은 `app/backend`가 후처리로 파생 — model_server가 신경 쓸 필요 없음)
+- **성공 응답**: 위 스키마 그대로 (`status: "done"`)
+- **실패 응답**: `status: "failed"`, `error_message: string` 포함해서 반환 (아래 참고)
+```json
+{ "status": "failed", "error_message": "CUDA OOM", "generated_image_url": null }
+```
+- **타임아웃**: `app/backend`는 `httpx.AsyncClient(timeout=120)`으로 호출 (120초). 그 이상 걸리면 클라이언트에서 타임아웃 예외 발생 → job이 `failed`로 처리됨. R3 쪽에서도 이 시간 내 응답하거나, 더 걸릴 경우 큐/폴링 방식으로 별도 협의 필요
+- **오류 코드**: HTTP 5xx는 모델 서버 내부 오류로 간주해 재시도 없이 즉시 `failed` 처리. 429는 대기열 초과로 간주해 재시도 로직을 붙일 수 있음(아직 미구현)
+
+## 개발 순서 제안
+1. R2/R3: `model_server/README.md`의 Mock 서버부터 (오늘 중 공유 요청)
+2. R4+R5: `/api/v1/products`, `/api/v1/generations`, `/api/v1/jobs/{id}` 뼈대 먼저 → Mock 서버 붙여서 더미 E2E 관통 (Gate 0 조건)
+3. 시간대 필드는 Sprint 0부터 스키마에 포함 완료 (`app/prompt/schemas.py`)
