@@ -1,0 +1,10 @@
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ckpt binary
+*.safetensors binary
+
+# 노트북 출력/실행횟수 제거 필터 (R2 실험 노트북 diff/머지 충돌 방지)
+# 최초 1회 `nbstripout --install` 실행 필요 (README 참고)
+*.ipynb filter=nbstripout diff=ipynb
