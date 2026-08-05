@@ -12,7 +12,10 @@
 import json
 from pathlib import Path
 
-STORE_PATH = Path("data/store.json")
+STORE_PATH = Path("var/store.json")
+# ⚠️ 중요: "data/" 하위에 두면 안 된다 - main.py가 app.mount("/files", StaticFiles(directory="data"))로
+# data/ 전체를 정적 서빙하기 때문에, data/store.json으로 두면 GET /files/store.json 한 번으로
+# 상품명·가격·전체 History가 인증 없이 그대로 공개된다. var/는 정적 마운트 대상이 아니라 안전하다.
 
 PRODUCTS: dict[str, dict] = {}
 JOBS: dict[str, dict] = {}

@@ -1,4 +1,22 @@
+import pytest
+
 from app.backend.services import store
+
+
+@pytest.fixture(autouse=True)
+def _isolate_and_clear():
+    """
+    이 파일의 테스트들이 모듈 전역 PRODUCTS/JOBS/HISTORY를 직접 건드리는데,
+    정리 fixture가 없으면 실행 순서에 의존하게 된다 (알파벳순으로 마지막이라 지금은
+    우연히 통과하지만, 다른 테스트 파일이 추가되면 언제든 깨질 수 있음).
+    """
+    store.PRODUCTS.clear()
+    store.JOBS.clear()
+    store.HISTORY.clear()
+    yield
+    store.PRODUCTS.clear()
+    store.JOBS.clear()
+    store.HISTORY.clear()
 
 
 def test_save_then_load_restores_state(tmp_path, monkeypatch):

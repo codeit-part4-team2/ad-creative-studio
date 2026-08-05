@@ -128,13 +128,16 @@ async def get_generation_result(job_id: str):
 @router.patch("/{job_id}/copy")
 async def update_copy(job_id: str, body: CopyUpdateRequest):
     """
-    이미지는 재생성하지 않고 문구만 수정 (PIL 오버레이 전략의 핵심 이점, 결정 7).
-    MVP 방식: job_id 단위로 통일 (기존 generation_id/job_id 혼용 수정).
-    TODO: 결과가 여러 개(톤x시간대)이므로, 추후 결과별 result_id를 부여해
-    PATCH /api/v1/results/{result_id}/copy 로 세분화하는 게 더 정확함.
+    이미지는 재생성하지 않고 문구만 수정하는 게 원래 설계 의도였다 (결정 7).
+    하지만 M3/S2/S3 구현으로 문구가 이제 PNG에 실제로 구워지면서 이 전제가 무효화됐다 -
+    지금은 받은 문구를 그대로 되돌려줄 뿐 이미지도, job["result"]/History도 갱신하지 않는다.
+    이 상태로 200을 주면 프론트가 "성공"으로 오인하고 붙일 수 있으므로, 실제 구현 전까지는
+    솔직하게 501을 반환한다.
+    TODO: overlay.overlay_copy() 재실행 + job["result"] 갱신까지 구현되면 501을 없앨 것.
+    결과가 여러 개(톤x시간대)이므로, PATCH /api/v1/results/{result_id}/copy 로
+    세분화하는 게 더 정확할 수 있음 (job_id 단위로는 어느 톤/시간대인지 특정 불가).
     """
     job = JOBS.get(job_id)
     if not job:
         raise HTTPException(404, "generation not found")
-    # TODO: overlay.overlay_copy(...) 재실행해서 이미지에 새 문구만 다시 얹기
-    return {"headline": body.headline, "subcopy": body.subcopy}
+    raise HTTPException(501, "문구 수정 후 이미지 재생성/History 갱신은 아직 구현되지 않았습니다")

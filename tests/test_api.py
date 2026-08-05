@@ -118,13 +118,18 @@ def test_full_flow_populates_history():
 
 
 def test_copy_patch_uses_job_id_consistently():
+    """
+    PATCH /copy는 아직 실제로 구현되지 않았음을 솔직하게 501로 알린다
+    (문구가 이미 PNG에 구워져 있어서, 지금 200을 주면 프론트가 잘못 믿고 붙을 수 있음).
+    job_id 자체는 일관되게 처리되는지(존재하는 job은 501, 없는 job은 404)만 확인한다.
+    """
     pid = _upload_product()
     r = client.post("/api/v1/generations", json={"product_id": pid, "time_slots": ["morning"]})
     job_id = r.json()["job_id"]
 
     patch = client.patch(f"/api/v1/generations/{job_id}/copy",
                           json={"headline": "새 헤드라인", "subcopy": "새 서브카피"})
-    assert patch.status_code == 200
+    assert patch.status_code == 501
 
     patch_missing = client.patch("/api/v1/generations/job_doesnotexist/copy",
                                   json={"headline": "x", "subcopy": "y"})
@@ -319,3 +324,37 @@ def test_download_all_returns_404_when_no_files_exist_on_disk():
 
     resp = client.get(f"/api/v1/download/{job_id}/all")
     assert resp.status_code == 404
+
+
+def test_download_all_zip_does_not_collide_across_multiple_time_slots():
+    """시간대 2개 이상인 job에서 ZIP arcname이 tone_format만 쓰면 서로 다른 시간대
+    파일이 같은 이름으로 겹쳐써져서 절반이 유실된다 - time_slot을 arcname에 포함해야 한다."""
+    pid = _upload_product()
+    r = client.post("/api/v1/generations", json={"product_id": pid, "time_slots": ["morning", "evening"]})
+    job_id = r.json()["job_id"]
+    time.sleep(0.5)
+
+    resp = client.get(f"/api/v1/download/{job_id}/all")
+    assert resp.status_code == 200
+    zf = zipfile.ZipFile(io.BytesIO(resp.content))
+    names = zf.namelist()
+    # 시간대 2 x 톤 4 x 규격 3 = 24개 파일이 전부 유니크한 이름으로 있어야 함
+    assert len(names) == 24
+    assert len(set(names)) == 24  # 중복 없음
+
+
+def test_download_one_with_time_slot_returns_correct_slot():
+    """time_slot을 지정하면 그 시간대의 이미지를 정확히 받아야 한다 (여러 시간대가 섞인 job)."""
+    pid = _upload_product()
+    r = client.post("/api/v1/generations", json={"product_id": pid, "time_slots": ["morning", "evening"]})
+    job_id = r.json()["job_id"]
+    time.sleep(0.5)
+
+    result = client.get(f"/api/v1/generations/{job_id}").json()
+    tone = result["results"][0]["tone"]
+
+    resp = client.get(f"/api/v1/download/{job_id}", params={
+        "tone": tone, "output_format": "thumbnail", "time_slot": "evening",
+    })
+    assert resp.status_code == 200
+    assert "evening" in resp.headers["content-disposition"]
