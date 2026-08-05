@@ -31,6 +31,15 @@ def build_ad_copy(req: PromptRequest) -> tuple[str, str]:
     if not USE_LLM_COPY:
         return prompt_builder.build_ad_copy(req)
 
+    # 허위 정보 가드레일(결정: 재판매 제품 광고 - 허위 할인/이벤트 정보 생성 금지) -
+    # requires_promotion_data인 시간대(예: 심야)인데 실제 프로모션 정보가 없으면,
+    # LLM한테 "지어내지 마세요"라고 프롬프트로만 부탁하는 건 검증 가능한 제약이 아니다.
+    # 이 경우엔 아예 LLM을 호출하지 않고 규칙 기반(builder)의 결정적 게이팅 로직을 그대로 쓴다.
+    if req.time_slot:
+        slot_info = TIME_SLOT_TEMPLATES[req.time_slot]
+        if slot_info["requires_promotion_data"] and not req.promotion:
+            return prompt_builder.build_ad_copy(req)
+
     try:
         tone_label = TONE_TEMPLATES[req.tone]["label"]
         slot_label = TIME_SLOT_TEMPLATES[req.time_slot]["label"] if req.time_slot else "기본"
@@ -42,8 +51,8 @@ def build_ad_copy(req: PromptRequest) -> tuple[str, str]:
         )
         raw = openai_client.call_text_model(user_prompt, system=SYSTEM_PROMPT)
         data = json.loads(raw)
-        headline = str(data["headline"]).strip()[: COPY_RULES["headline_max_len"]]
-        subcopy = str(data["subcopy"]).strip()[: COPY_RULES["subcopy_max_len"]]
+        headline = prompt_builder._truncate(str(data["headline"]).strip(), COPY_RULES["headline_max_len"])
+        subcopy = prompt_builder._truncate(str(data["subcopy"]).strip(), COPY_RULES["subcopy_max_len"])
         if not headline or not subcopy:
             raise ValueError("빈 응답")
         return headline, subcopy

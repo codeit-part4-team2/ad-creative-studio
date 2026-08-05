@@ -1,4 +1,5 @@
 import shutil
+import uuid
 from pathlib import Path
 
 import pytest
@@ -7,10 +8,16 @@ from app.backend.services import overlay
 
 
 @pytest.fixture(autouse=True)
-def _clean_outputs():
+def _isolate_output_dir(monkeypatch):
+    """
+    실제 data/outputs/ 최상위(데모 파일이 있을 수 있는 곳)는 안 건드리고,
+    그 하위의 테스트 전용 서브폴더만 만들고 지운다.
+    """
+    test_output_dir = overlay.OUTPUT_DIR / f"_pytest_{uuid.uuid4().hex[:8]}"
+    monkeypatch.setattr(overlay, "OUTPUT_DIR", test_output_dir)
     yield
-    if overlay.OUTPUT_DIR.exists():
-        shutil.rmtree(overlay.OUTPUT_DIR)
+    if test_output_dir.exists():
+        shutil.rmtree(test_output_dir)
 
 
 def test_create_placeholder_background_matches_requested_size():

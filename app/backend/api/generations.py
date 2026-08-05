@@ -47,12 +47,18 @@ async def create_generation(req: GenerationRequest, background_tasks: Background
             f"한 번에 최대 {MAX_TIME_SLOTS_PER_REQUEST}개 시간대까지만 선택 가능 (GPU 대기열 보호)",
         )
 
-    # 중복 생성 요청 방지 - 같은 상품에 대해 이미 진행 중인 job이 있으면 새로 안 만들고 그걸 반환
+    # 중복 생성 요청 방지 - 같은 상품에 대해 이미 진행 중인 job이 있으면 409로 거부한다.
+    # (새로 안 만들고 기존 job을 그대로 재사용하는 방식이 아니라 명시적으로 막는 방식이다 -
+    #  아래 detail에 기존 job_id를 구조화된 필드로 내려줘서, 프론트가 원하면 그 job_id로
+    #  GET /jobs/{id}를 폴링해 진행 상황을 이어서 볼 수 있게 한다.)
     for existing_id, existing_job in JOBS.items():
         if existing_job["product_id"] == req.product_id and existing_job["status"] in ("queued", "processing"):
             raise HTTPException(
                 409,
-                f"이미 생성 진행 중인 요청이 있습니다 (job_id={existing_id}). 완료 후 다시 시도해주세요.",
+                detail={
+                    "message": "이미 생성 진행 중인 요청이 있습니다. 완료 후 다시 시도해주세요.",
+                    "existing_job_id": existing_id,
+                },
             )
 
     job_id = f"job_{uuid.uuid4().hex[:6]}"

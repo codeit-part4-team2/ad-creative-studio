@@ -1,6 +1,13 @@
 """
 결정 7: 모델이 이미지 안에 한글을 그리지 않는다 - 배경 이미지 위에 PIL로 문구를 오버레이한다.
-문구만 수정할 때 이미지를 재생성하지 않아도 된다 (PATCH /generations/{id}/copy 참고).
+
+⚠️ 문서 정정: 원래 "문구만 수정할 때 이미지를 재생성하지 않아도 된다"는 전제였는데,
+이제 문구가 PNG에 실제로 구워지므로(generate_and_save가 저장한 파일이 최종 결과물)
+이 전제가 무효화됐다. PATCH /generations/{id}/copy(update_copy)는 지금 받은 문구를
+그대로 되돌려줄 뿐 실제로 이미지를 다시 굽지도, job["result"]를 갱신하지도 않는다 -
+History에는 여전히 옛 문구가 남는 상태다. 이 엔드포인트를 실제로 쓰려면
+overlay.overlay_copy()를 재호출해서 이미지를 다시 저장하고 job["result"]도
+갱신하도록 완성해야 한다 (기존 TODO 범위, 이 PR로 전제가 바뀌었다는 점만 남겨둔다).
 
 M1(제품 보존형 배경 생성)은 R2/R3의 model_server가 아직 완성되지 않았으므로,
 그때까지는 톤별 색상 placeholder 배경 위에 실제 오버레이를 적용해서
@@ -14,7 +21,9 @@ from PIL import Image, ImageDraw, ImageFont
 
 from app.prompt.templates import OUTPUT_FORMATS
 
-FONT_PATH = "assets/fonts/NanumGothic-Regular.ttf"  # 한글 지원 폰트, 없으면 시스템 기본으로 자동 폴백
+FONT_PATH = str(Path(__file__).resolve().parents[3] / "assets" / "fonts" / "NanumGothic-Regular.ttf")
+# CWD 상대경로가 아니라 이 파일 위치 기준 절대경로로 고정 - uvicorn을 레포 루트가 아닌 곳에서
+# 띄워도(예: 배포 스크립트가 다른 작업 디렉토리에서 실행) 폰트를 못 찾는 일이 없게 한다.
 OUTPUT_DIR = Path("data/outputs")
 
 # 톤별 placeholder 배경색 (실제 모델 연동 전까지 임시) - 톤 느낌을 최소한으로 구분
@@ -72,6 +81,8 @@ def overlay_copy(background_image: Image.Image, headline: str, subcopy: str,
         headline_font = ImageFont.truetype(FONT_PATH, max(28, w // 22))
         subcopy_font = ImageFont.truetype(FONT_PATH, max(20, w // 32))
     except OSError:
+        print(f"[WARNING] 한글 폰트 로드 실패: {FONT_PATH} - 시스템 기본 폰트로 폴백 "
+              f"(이 폰트는 한글 글리프가 없어 화면에 □□□로 나올 수 있습니다)")
         headline_font = ImageFont.load_default()
         subcopy_font = ImageFont.load_default()
 
@@ -103,8 +114,12 @@ def overlay_copy(background_image: Image.Image, headline: str, subcopy: str,
 def generate_and_save(job_id: str, tone: str, time_slot: str, headline: str, subcopy: str,
                        output_formats: list[str]) -> dict[str, str]:
     """
-    톤별 placeholder 배경 위에 규격별로 실제 오버레이 이미지를 만들어 data/outputs/에 저장하고,
-    /files/outputs/... 정적 서빙 URL을 규격별로 반환한다 (M3+S2 실제 동작).
+    톤별 placeholder 배경 위에 규격별로 실제 오버레이 이미지를 만들어 OUTPUT_DIR에 저장하고,
+    /files/... 정적 서빙 URL을 규격별로 반환한다 (M3+S2 실제 동작).
+
+    URL은 OUTPUT_DIR의 실제 위치를 기준으로 동적으로 만든다(하드코딩 안 함) -
+    테스트에서 OUTPUT_DIR을 data/outputs/ 하위의 별도 서브폴더로 monkeypatch해서
+    실제 데모 파일(data/outputs/ 최상위)을 안 건드리고 격리할 수 있게 하기 위함.
     """
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     urls: dict[str, str] = {}
@@ -117,6 +132,7 @@ def generate_and_save(job_id: str, tone: str, time_slot: str, headline: str, sub
         file_path = OUTPUT_DIR / filename
         final_image.save(file_path)
 
-        urls[fmt] = f"/files/outputs/{filename}"
+        rel_path = file_path.resolve().relative_to(Path("data").resolve())
+        urls[fmt] = f"/files/{rel_path.as_posix()}"
     return urls
 

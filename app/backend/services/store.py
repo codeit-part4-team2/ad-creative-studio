@@ -45,6 +45,16 @@ def load() -> None:
     HISTORY.clear()
     HISTORY.extend(data.get("history", []))
 
+    # 좀비 job 정리: 서버가 죽기 전 queued/processing 상태였던 job은, 그걸 돌리던
+    # BackgroundTask가 재시작으로 같이 사라졌으므로 다시는 완료되지 않는다.
+    # 이 상태를 그대로 두면 (중복 생성 방지 로직과 맞물려) 해당 상품이 영구적으로
+    # "이미 진행 중" 409를 받게 되어 사용자가 빠져나올 방법이 없어진다 - failed로 정리한다.
+    for job in JOBS.values():
+        if job.get("status") in ("queued", "processing"):
+            job["status"] = "failed"
+            job["error_message"] = "서버 재시작으로 생성이 중단되었습니다. 다시 시도해주세요."
+            job["current_step"] = None
+
 
 def reset_for_tests() -> None:
     """테스트 전용 - 메모리와 디스크 파일 둘 다 초기화."""

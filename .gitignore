@@ -181,7 +181,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 # ============================================
-# 프로젝트 전용 (팀 공용 템플릿에 없는 것들 — 삭제 금지)
+# 프로젝트 전용 (팀장님 템플릿에 없는 것들 — 삭제 금지)
 # ============================================
 
 # 업로드/생성 결과물 - 실제 파일은 레포에 안 올림
@@ -191,6 +191,9 @@ data/outputs/*
 !data/outputs/.gitkeep
 data/samples/*
 !data/samples/.gitkeep
+
+# 서비스 상태 파일 영속화 - 로컬 개발용 데이터, 레포에 안 올림
+data/store.json
 
 # 모델 체크포인트 - R2 LoRA 학습 시작하면 용량 커짐, 절대 커밋 금지
 models/
@@ -206,4 +209,3 @@ logs/
 # 골든 데이터셋 원본 (라이선스 확인 전까지는 레포에 안 올림, .gitkeep만 유지)
 eval/golden_dataset/*
 !eval/golden_dataset/.gitkeep
-data/store.json

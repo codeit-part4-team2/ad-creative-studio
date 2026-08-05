@@ -60,3 +60,25 @@ def test_reset_for_tests_clears_memory_and_file(tmp_path, monkeypatch):
     store.reset_for_tests()
     assert store.PRODUCTS == {}
     assert not store.STORE_PATH.exists()
+
+
+def test_load_marks_zombie_jobs_as_failed(tmp_path, monkeypatch):
+    """재시작 전 queued/processing이던 job은 그걸 돌리던 BackgroundTask가 같이 사라졌으므로
+    load() 시점에 failed로 정리돼야 한다 (안 그러면 중복방지 로직과 맞물려 영구 409)."""
+    monkeypatch.setattr(store, "STORE_PATH", tmp_path / "store.json")
+    store.PRODUCTS.clear()
+    store.JOBS.clear()
+    store.HISTORY.clear()
+
+    store.JOBS["job_zombie_queued"] = {"status": "queued", "product_id": "prd_1"}
+    store.JOBS["job_zombie_processing"] = {"status": "processing", "product_id": "prd_2"}
+    store.JOBS["job_done"] = {"status": "completed", "product_id": "prd_3"}
+    store.save()
+
+    store.JOBS.clear()
+    store.load()
+
+    assert store.JOBS["job_zombie_queued"]["status"] == "failed"
+    assert "error_message" in store.JOBS["job_zombie_queued"]
+    assert store.JOBS["job_zombie_processing"]["status"] == "failed"
+    assert store.JOBS["job_done"]["status"] == "completed"  # 이미 끝난 job은 안 건드림
