@@ -15,6 +15,9 @@ from app.prompt.templates import COPY_RULES, TONE_TEMPLATES, TIME_SLOT_TEMPLATES
 from app.backend.services import openai_client
 
 USE_LLM_COPY = os.getenv("USE_LLM_COPY", "false").lower() == "true"
+# 주의: 이 값은 모듈 import 시 1회만 읽힌다 - 서버 실행 중 .env를 바꿔도
+# 재시작 전까지는 반영 안 됨 (일반적인 설정 로딩 방식이라 문제는 아니지만,
+# UI에서 실시간 토글이 필요해지면 함수 호출 시점에 os.getenv를 다시 읽도록 분리할 것)
 
 SYSTEM_PROMPT = (
     "당신은 소형가전 광고 카피라이터입니다. 반드시 JSON으로만 답하세요: "

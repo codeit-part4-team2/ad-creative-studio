@@ -14,10 +14,19 @@ from app.backend.services.store import JOBS
 
 router = APIRouter(prefix="/api/v1/download", tags=["download"])
 
+OUTPUT_ROOT = Path("data/outputs").resolve()
+
 
 def _url_to_path(url: str) -> Path:
-    """'/files/outputs/xxx.png' -> data/outputs/xxx.png 실제 경로로 변환."""
-    return Path("data") / url.removeprefix("/files/")
+    """
+    '/files/outputs/xxx.png' -> data/outputs/xxx.png 실제 경로로 변환.
+    URL은 지금은 우리 서비스 내부 생성 결과에서만 나오지만, 방어적으로
+    data/outputs/ 하위를 벗어나는 경로(예: '../../' 조작)는 거부한다.
+    """
+    candidate = (Path("data") / url.removeprefix("/files/")).resolve()
+    if OUTPUT_ROOT not in candidate.parents and candidate != OUTPUT_ROOT:
+        raise HTTPException(400, "invalid output path")
+    return candidate
 
 
 def _get_completed_job(job_id: str) -> dict:

@@ -15,6 +15,9 @@ from typing import Optional
 
 WARNING_USD = float(os.getenv("OPENAI_WARNING_THRESHOLD_USD", 20))
 HARD_LIMIT_USD = float(os.getenv("OPENAI_BUDGET_LIMIT_USD", 25))
+# 참고: 이건 엄격한 결제 차단이 아니라 soft application limit이다.
+# 호출 "전"에 누적액을 검사하고 호출 "후"에 실제 사용량을 기록하므로, 동시 요청 여러 개가
+# 상한 직전에 동시에 통과하면 총액이 상한을 살짝 넘을 수 있다. 소규모 데모 수준에서는 무방.
 # 소스 디렉토리가 아니라 logs/ 에 저장 - .gitignore가 logs/ 를 이미 제외하므로 실수 커밋 방지
 USAGE_LOG_PATH = Path("logs/openai_usage.json")
 USAGE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
