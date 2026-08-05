@@ -209,3 +209,8 @@ logs/
 # 골든 데이터셋 원본 (라이선스 확인 전까지는 레포에 안 올림, .gitkeep만 유지)
 eval/golden_dataset/*
 !eval/golden_dataset/.gitkeep
+<<<<<<< HEAD
+=======
+model_server/experiments/product_sample.jpeg
+data/store.json
+>>>>>>> origin/main
