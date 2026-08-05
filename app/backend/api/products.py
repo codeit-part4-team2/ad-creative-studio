@@ -4,6 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 
 from app.backend.schemas.generation import ProductCreateResponse
+from app.backend.services import store
 from app.backend.services.store import PRODUCTS
 
 router = APIRouter(prefix="/api/v1/products", tags=["products"])
@@ -43,4 +44,5 @@ async def create_product(
         "image_url": image_url,
         "image_path": str(file_path),
     }
+    store.save()
     return ProductCreateResponse(product_id=product_id, image_url=image_url)

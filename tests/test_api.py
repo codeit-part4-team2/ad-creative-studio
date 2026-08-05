@@ -1,4 +1,5 @@
 import io
+import shutil
 import time
 
 import pytest
@@ -6,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.backend.main import app
 from app.backend.services.store import PRODUCTS, JOBS, HISTORY
+from app.backend.services.overlay import OUTPUT_DIR
 from app.backend.schemas.generation import GenerationRequest
 from app.backend.api.generations import build_generation_plan
 
@@ -18,6 +20,8 @@ def _clear_store():
     JOBS.clear()
     HISTORY.clear()
     yield
+    if OUTPUT_DIR.exists():
+        shutil.rmtree(OUTPUT_DIR)
 
 
 def _upload_product(name="스팀 에어프라이어 5L"):
@@ -107,3 +111,50 @@ def test_copy_patch_uses_job_id_consistently():
     patch_missing = client.patch("/api/v1/generations/job_doesnotexist/copy",
                                   json={"headline": "x", "subcopy": "y"})
     assert patch_missing.status_code == 404
+
+
+def test_favorite_toggle_flow():
+    """S3 — 생성 이력 즐겨찾기 토글."""
+    pid = _upload_product()
+    r = client.post("/api/v1/generations", json={"product_id": pid, "time_slots": ["morning"]})
+    job_id = r.json()["job_id"]
+    time.sleep(0.5)
+
+    history = client.get("/api/v1/history").json()
+    entry = next(h for h in history if h["job_id"] == job_id)
+    assert entry["favorite"] is False  # 기본값
+
+    toggled = client.patch(f"/api/v1/history/{job_id}/favorite")
+    assert toggled.status_code == 200
+    assert toggled.json()["favorite"] is True
+
+    favorites_only = client.get("/api/v1/history", params={"favorite_only": True}).json()
+    assert any(h["job_id"] == job_id for h in favorites_only)
+
+    # 다시 토글하면 꺼짐
+    toggled_again = client.patch(f"/api/v1/history/{job_id}/favorite")
+    assert toggled_again.json()["favorite"] is False
+
+    favorites_only_after = client.get("/api/v1/history", params={"favorite_only": True}).json()
+    assert not any(h["job_id"] == job_id for h in favorites_only_after)
+
+
+def test_favorite_toggle_404_for_unknown_job():
+    resp = client.patch("/api/v1/history/job_doesnotexist/favorite")
+    assert resp.status_code == 404
+
+
+def test_generation_result_images_are_real_files_not_mock_url():
+    """M3+S2 — 규격별로 실제 오버레이 이미지가 생성되는지 (더 이상 placehold.co mock 아님)."""
+    pid = _upload_product()
+    r = client.post("/api/v1/generations", json={"product_id": pid, "time_slots": ["evening"]})
+    job_id = r.json()["job_id"]
+    time.sleep(0.5)
+
+    result = client.get(f"/api/v1/generations/{job_id}").json()
+    first_tone = result["results"][0]
+    assert "placehold.co" not in str(first_tone["images"])
+    for fmt, url in first_tone["images"].items():
+        assert url.startswith("/files/outputs/")
+        served = client.get(url)
+        assert served.status_code == 200  # 정적 서빙으로 실제 열림

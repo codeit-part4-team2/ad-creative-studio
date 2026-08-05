@@ -89,6 +89,7 @@ async def run_generation(job_id: str) -> None:
             "product_id": job["product_id"],
             "created_at": time.time(),
             "results": job["result"],
+            "favorite": False,  # S3 — 즐겨찾기 (기본값 false, 토글은 PATCH /api/v1/history/{job_id}/favorite)
         })
     except Exception as exc:
         job["status"] = "failed"

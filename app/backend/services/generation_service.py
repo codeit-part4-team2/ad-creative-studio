@@ -6,7 +6,7 @@ import time
 from abc import ABC, abstractmethod
 
 from app.backend.schemas.generation import GenerationRequest, ToneResult
-from app.prompt import builder as prompt_builder
+from app.backend.services import copy_generator, overlay
 from app.backend.services.store import JOBS
 
 
@@ -19,7 +19,13 @@ class GenerationService(ABC):
 
 
 class MockGenerationService(GenerationService):
-    """R3 모델 서버 없이 더미로 완료 처리 (Gate 0용)."""
+    """
+    R3 모델 서버 없이 완료 처리 (Gate 0용).
+    문구(M3)는 copy_generator로 생성(USE_LLM_COPY 켜면 실제 LLM, 기본은 규칙 기반).
+    배경 이미지는 model_server가 없으므로 톤별 placeholder이지만, 오버레이(M3)와
+    규격별 실제 이미지 생성(S2)은 여기서 진짜로 동작한다 - model_server 연동 후에는
+    배경 생성 부분만 실제 모델 호출로 교체하면 되고 오버레이 로직은 그대로 재사용된다.
+    """
 
     async def generate(self, job_id: str, req: GenerationRequest, product: dict) -> list[ToneResult]:
         from app.backend.api.generations import build_generation_plan  # 순환 import 방지용 지연 import
@@ -30,16 +36,22 @@ class MockGenerationService(GenerationService):
 
         for i, item in enumerate(plan):
             job["current_step"] = f"{item.time_slot}/{item.tone} 생성 중"
-            prompt_result = prompt_builder.build(item)
 
-            generated_image_url = "https://placehold.co/1000x1000"
-            images = {fmt: generated_image_url for fmt in req.output_formats}
+            headline, subcopy = copy_generator.build_ad_copy(item)
+            images = overlay.generate_and_save(
+                job_id=job_id,
+                tone=item.tone,
+                time_slot=item.time_slot or "default",
+                headline=headline,
+                subcopy=subcopy,
+                output_formats=req.output_formats,
+            )
 
             results.append(ToneResult(
                 tone=item.tone,
                 time_slot=item.time_slot,
-                headline=prompt_result.headline,
-                subcopy=prompt_result.subcopy,
+                headline=headline,
+                subcopy=subcopy,
                 images=images,
             ))
             job["completed_count"] = i + 1
