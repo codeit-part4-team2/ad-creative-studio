@@ -45,6 +45,7 @@ TIME_SLOT_TEMPLATES = {
         "copy_angle": "여유, 준비 — 출근 전 루틴",
         "conversion_goal": "장바구니",
         "requires_promotion_data": False,
+        "hour_range": (6, 8),  # 06:00 ~ 07:59
     },
     "commute_am": {
         "label": "출근 러시아워",
@@ -52,6 +53,7 @@ TIME_SLOT_TEMPLATES = {
         "copy_angle": "즉시결정, 짧은 관여",
         "conversion_goal": "즉시구매",
         "requires_promotion_data": False,
+        "hour_range": (8, 9.5),  # 08:00 ~ 09:29
     },
     "afternoon": {
         "label": "오후",
@@ -59,6 +61,7 @@ TIME_SLOT_TEMPLATES = {
         "copy_angle": "비교, 정보탐색 — 스펙/가격 강조",
         "conversion_goal": "장바구니",
         "requires_promotion_data": False,
+        "hour_range": (9.5, 18),  # 09:30 ~ 17:59
     },
     "commute_pm": {
         "label": "퇴근 러시아워",
@@ -66,6 +69,7 @@ TIME_SLOT_TEMPLATES = {
         "copy_angle": "즉시결정, 보상심리",
         "conversion_goal": "즉시구매",
         "requires_promotion_data": False,
+        "hour_range": (18, 19.5),  # 18:00 ~ 19:29
     },
     "evening": {
         "label": "저녁",
@@ -73,6 +77,7 @@ TIME_SLOT_TEMPLATES = {
         "copy_angle": "여유, 관계형 — 라이프스타일 연출",
         "conversion_goal": "장바구니",
         "requires_promotion_data": False,
+        "hour_range": (19.5, 22),  # 19:30 ~ 21:59
     },
     "late_night": {
         "label": "심야",
@@ -80,6 +85,7 @@ TIME_SLOT_TEMPLATES = {
         "copy_angle": "긴급성 또는 한정성 강조",
         "conversion_goal": "즉시구매",
         "requires_promotion_data": True,  # 프로모션 정보 없으면 "타임딜" 등 구체적 문구 금지
+        "hour_range": (22, 6),  # 22:00 ~ 05:59 (자정 넘어감)
     },
 }
 

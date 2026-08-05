@@ -2,7 +2,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from app.backend.api import products, generations, jobs, history, usage
+from app.backend.api import products, generations, jobs, history, usage, exposure
 
 app = FastAPI(title="소형가전 광고 생성 서비스")
 
@@ -11,6 +11,7 @@ app.include_router(generations.router)
 app.include_router(jobs.router)
 app.include_router(history.router)
 app.include_router(usage.router)
+app.include_router(exposure.router)
 
 Path("data/uploads").mkdir(parents=True, exist_ok=True)
 Path("data/outputs").mkdir(parents=True, exist_ok=True)

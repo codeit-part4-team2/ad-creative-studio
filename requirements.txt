@@ -5,7 +5,7 @@ pydantic
 httpx
 openai
 requests
-streamlit
+streamlit>=1.27  # st.switch_page 사용 (이 버전부터 지원)
 pillow
 python-dotenv
 pytest

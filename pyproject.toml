@@ -14,7 +14,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest", "nbstripout"]
-frontend = ["streamlit", "requests", "pillow"]
+frontend = ["streamlit>=1.27", "requests", "pillow"]  # streamlit>=1.27: st.switch_page 사용
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
@@ -22,3 +22,11 @@ testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+# 실제 버그가 될 수 있는 것만: 문법 오류(E9), 논리 오류(F, pyflakes - 미사용/미정의 변수 등)
+# import 정렬(I001) 같은 순수 스타일 규칙은 팀 전체 PR에 불필요한 노이즈를 만들어서 제외
+select = ["E9", "F"]
