@@ -20,6 +20,10 @@ def get_current_time_slot(now: Optional[datetime] = None) -> str:
     현재 시각(now 생략 시 실제 현재 시각)이 어느 시간대 슬롯에 해당하는지 반환.
     KST(Asia/Seoul) 기준으로 판정한다 - 서버가 어느 리전/타임존에서 돌든(UTC 등)
     사용자(한국)의 아침/출근/퇴근/심야가 어긋나지 않도록 명시적으로 변환한다.
+
+    주의: TIME_SLOT_TEMPLATES의 dict 선언 순서대로 순회하며 첫 매치를 반환한다.
+    지금은 구간이 서로 겹치지 않아 순서가 결과에 영향을 안 주지만(test_covers_all_24_hours로
+    보장), 나중에 슬롯을 추가/재배열해서 구간이 겹치게 되면 "선언 순서 = 판정 우선순위"가 된다.
     """
     if now is None:
         now = datetime.now(KST)

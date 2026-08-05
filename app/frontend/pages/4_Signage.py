@@ -28,6 +28,10 @@ except requests.exceptions.ConnectionError:
 except requests.exceptions.HTTPError as e:
     st.error(f"조회 실패: {e.response.text}")
     st.stop()
+except requests.exceptions.RequestException as e:
+    # 타임아웃 등 그 외 요청 예외 - Streamlit 기본 에러 화면 대신 안내 메시지로 처리
+    st.error(f"요청 중 오류가 발생했습니다: {e}")
+    st.stop()
 
 st.subheader(f"⏰ 현재 시간대: {exposure['time_slot_label']}")
 
@@ -45,7 +49,8 @@ else:
             st.markdown(f"**{tone_label_map.get(tone_result['tone'], tone_result['tone'])}**")
             first_image = next(iter(tone_result["images"].values()), None)
             if first_image:
-                st.image(first_image, width=200)  # TODO: 실제 생성 이미지로 교체 (지금은 mock URL)
+                image_url = f"{API_BASE}{first_image}" if first_image.startswith("/") else first_image
+                st.image(image_url, width=200)  # M1(실제 모델) 연동 전까지는 톤별 placeholder+오버레이
             st.info(f"{tone_result['headline']}\n\n{tone_result['subcopy']}")
 
 st.divider()
