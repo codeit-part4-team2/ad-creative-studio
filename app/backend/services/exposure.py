@@ -8,13 +8,27 @@
 """
 from datetime import datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from app.prompt.templates import TIME_SLOT_TEMPLATES
 
+KST = ZoneInfo("Asia/Seoul")
+
 
 def get_current_time_slot(now: Optional[datetime] = None) -> str:
-    """현재 시각(now 생략 시 실제 현재 시각)이 어느 시간대 슬롯에 해당하는지 반환."""
-    now = now or datetime.now()
+    """
+    현재 시각(now 생략 시 실제 현재 시각)이 어느 시간대 슬롯에 해당하는지 반환.
+    KST(Asia/Seoul) 기준으로 판정한다 - 서버가 어느 리전/타임존에서 돌든(UTC 등)
+    사용자(한국)의 아침/출근/퇴근/심야가 어긋나지 않도록 명시적으로 변환한다.
+    """
+    if now is None:
+        now = datetime.now(KST)
+    elif now.tzinfo is None:
+        # naive datetime은 이미 KST라고 가정 (테스트 등에서 시각만 지정할 때)
+        now = now.replace(tzinfo=KST)
+    else:
+        now = now.astimezone(KST)
+
     hour_float = now.hour + now.minute / 60
 
     for slot, info in TIME_SLOT_TEMPLATES.items():

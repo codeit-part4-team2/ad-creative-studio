@@ -1,4 +1,5 @@
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from app.backend.services.exposure import get_current_time_slot, pick_exposure
 
@@ -36,6 +37,19 @@ def test_get_current_time_slot_covers_all_24_hours():
     for hour in range(24):
         slot = get_current_time_slot(datetime(2026, 8, 5, hour, 0))
         assert slot in {"morning", "commute_am", "afternoon", "commute_pm", "evening", "late_night"}
+
+
+def test_utc_time_is_converted_to_kst():
+    """서버가 UTC 등 다른 타임존이어도, KST 기준으로 판정돼야 한다."""
+    utc_time = datetime(2026, 8, 5, 23, 30, tzinfo=ZoneInfo("UTC"))
+    # KST는 UTC+9 → 다음 날 08:30 → 출근 러시아워
+    assert get_current_time_slot(utc_time) == "commute_am"
+
+
+def test_naive_datetime_is_treated_as_kst():
+    """타임존 정보 없는 naive datetime은 이미 KST라고 가정하고 그대로 판정한다."""
+    naive_time = datetime(2026, 8, 5, 8, 30)  # tzinfo 없음
+    assert get_current_time_slot(naive_time) == "commute_am"
 
 
 def test_pick_exposure_returns_matching_result():
