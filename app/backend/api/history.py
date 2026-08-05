@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 
+from app.backend.services import store
 from app.backend.services.store import HISTORY
 
 router = APIRouter(prefix="/api/v1/history", tags=["history"])
@@ -18,5 +19,6 @@ async def toggle_favorite(job_id: str):
     for entry in HISTORY:
         if entry["job_id"] == job_id:
             entry["favorite"] = not entry.get("favorite", False)
+            store.save()
             return {"job_id": job_id, "favorite": entry["favorite"]}
     raise HTTPException(404, "history entry not found")

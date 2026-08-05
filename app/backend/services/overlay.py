@@ -14,7 +14,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from app.prompt.templates import OUTPUT_FORMATS
 
-FONT_PATH = "assets/fonts/NanumSquareBold.ttf"  # TODO: 실제 한글 폰트 파일 배치되면 자동 적용됨
+FONT_PATH = "assets/fonts/NanumGothic-Regular.ttf"  # 한글 지원 폰트, 없으면 시스템 기본으로 자동 폴백
 OUTPUT_DIR = Path("data/outputs")
 
 # 톤별 placeholder 배경색 (실제 모델 연동 전까지 임시) - 톤 느낌을 최소한으로 구분
@@ -31,6 +31,29 @@ TONE_TEXT_COLOR = {
     "premium": "#D4AF37",  # 골드
 }
 
+# 규격별 텍스트 영역 여백/폭 - 이 폭을 넘으면 자동 줄바꿈
+TEXT_MARGIN = 40
+TEXT_AREA_RATIO = 0.85  # 이미지 너비의 85%까지만 텍스트가 차지하도록
+
+
+def _wrap_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, max_width: int) -> list[str]:
+    """max_width(px)를 넘지 않도록 글자 단위로 줄바꿈. 한글은 띄어쓰기가 없어도 넘칠 수 있어 글자 단위로 처리."""
+    if not text:
+        return [""]
+    lines: list[str] = []
+    current = ""
+    for ch in text:
+        candidate = current + ch
+        bbox = draw.textbbox((0, 0), candidate, font=font)
+        if bbox[2] - bbox[0] > max_width and current:
+            lines.append(current)
+            current = ch
+        else:
+            current = candidate
+    if current:
+        lines.append(current)
+    return lines
+
 
 def create_placeholder_background(tone: str, size: tuple[int, int]) -> Image.Image:
     """model_server 연동 전 임시 배경. 실제 생성 이미지가 오면 이 함수 호출부만 교체하면 된다."""
@@ -43,15 +66,37 @@ def overlay_copy(background_image: Image.Image, headline: str, subcopy: str,
     spec = OUTPUT_FORMATS[output_format]
     img = background_image.resize(spec["size"]).convert("RGB")
     draw = ImageDraw.Draw(img)
-    try:
-        font = ImageFont.truetype(FONT_PATH, 44)
-    except OSError:
-        font = ImageFont.load_default()
-
     w, h = spec["size"]
+
+    try:
+        headline_font = ImageFont.truetype(FONT_PATH, max(28, w // 22))
+        subcopy_font = ImageFont.truetype(FONT_PATH, max(20, w // 32))
+    except OSError:
+        headline_font = ImageFont.load_default()
+        subcopy_font = ImageFont.load_default()
+
     text_color = TONE_TEXT_COLOR.get(tone, "white")
-    draw.text((40, h - 160), headline, font=font, fill=text_color)
-    draw.text((40, h - 100), subcopy, font=font, fill=text_color)
+    max_text_width = int(w * TEXT_AREA_RATIO)
+
+    headline_lines = _wrap_text(draw, headline, headline_font, max_text_width)
+    subcopy_lines = _wrap_text(draw, subcopy, subcopy_font, max_text_width)
+
+    # 아래에서부터 쌓아 올려서, 줄바꿈으로 늘어나도 이미지 밖(위/아래)으로 안 벗어나게 한다
+    line_gap = 8
+    headline_size = getattr(headline_font, "size", 20)
+    subcopy_size = getattr(subcopy_font, "size", 14)
+    headline_line_h = headline_size + line_gap
+    subcopy_line_h = subcopy_size + line_gap
+    block_height = len(headline_lines) * headline_line_h + len(subcopy_lines) * subcopy_line_h
+    y = max(TEXT_MARGIN, h - TEXT_MARGIN - block_height)
+
+    for line in headline_lines:
+        draw.text((TEXT_MARGIN, y), line, font=headline_font, fill=text_color)
+        y += headline_line_h
+    for line in subcopy_lines:
+        draw.text((TEXT_MARGIN, y), line, font=subcopy_font, fill=text_color)
+        y += subcopy_line_h
+
     return img
 
 

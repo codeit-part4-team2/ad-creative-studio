@@ -8,6 +8,7 @@ from app.backend.schemas.generation import (
     GenerationResultResponse,
     CopyUpdateRequest,
 )
+from app.backend.services import store
 from app.backend.services.store import PRODUCTS, JOBS, HISTORY
 from app.backend.services.generation_service import generation_service
 from app.prompt.templates import MAX_TIME_SLOTS_PER_REQUEST, estimate_seconds
@@ -46,6 +47,14 @@ async def create_generation(req: GenerationRequest, background_tasks: Background
             f"한 번에 최대 {MAX_TIME_SLOTS_PER_REQUEST}개 시간대까지만 선택 가능 (GPU 대기열 보호)",
         )
 
+    # 중복 생성 요청 방지 - 같은 상품에 대해 이미 진행 중인 job이 있으면 새로 안 만들고 그걸 반환
+    for existing_id, existing_job in JOBS.items():
+        if existing_job["product_id"] == req.product_id and existing_job["status"] in ("queued", "processing"):
+            raise HTTPException(
+                409,
+                f"이미 생성 진행 중인 요청이 있습니다 (job_id={existing_id}). 완료 후 다시 시도해주세요.",
+            )
+
     job_id = f"job_{uuid.uuid4().hex[:6]}"
     total = len(req.tones) * len(req.time_slots)  # 시간대 x 톤만 (규격 곱하지 않음)
     est = estimate_seconds(len(req.tones), len(req.time_slots))
@@ -61,7 +70,8 @@ async def create_generation(req: GenerationRequest, background_tasks: Background
         "result": None,
         "error_message": None,
     }
-    # Sprint 0 임시 구현: MockGenerationService 사용 (R3 서버 완성되면 generation_service.py 한 줄만 교체)
+    store.save()
+    # generation_service는 USE_MOCK_GENERATION 환경변수로 Mock/실제 모델 서버 중 선택됨
     background_tasks.add_task(run_generation, job_id)
     return GenerationCreateResponse(job_id=job_id, estimated_seconds=est)
 
@@ -95,6 +105,8 @@ async def run_generation(job_id: str) -> None:
         job["status"] = "failed"
         job["error_message"] = str(exc)
         job["current_step"] = None
+    finally:
+        store.save()
 
 
 @router.get("/{job_id}", response_model=GenerationResultResponse)
