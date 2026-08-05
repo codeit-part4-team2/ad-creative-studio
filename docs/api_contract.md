@@ -96,6 +96,22 @@ R2/R3(model_server)와 R4+R5(app/backend) 사이의 계약입니다. 이 문서�
 ### GET /api/v1/usage
 OpenAI 텍스트 사용 비용 현황 ($20 경고 / $25 로컬 전환)
 
+### GET /api/v1/exposure/{product_id}
+지금 이 순간 노출해야 할 시간대 배너 조회 (S1 — 시간대별 제품 노출 알고리즘, 강사님 피드백 반영)
+```json
+{
+  "time_slot": "commute_am",
+  "time_slot_label": "출근 러시아워",
+  "available": true,
+  "tones": [
+    { "tone": "emotional", "time_slot": "commute_am", "headline": "...", "subcopy": "...", "images": {...} }
+  ]
+}
+```
+현재 시각을 6개 시간대 슬롯으로 자동 판정(`app/backend/services/exposure.py`) 후, 해당 상품의
+History에서 그 시간대 결과가 있으면 반환, 없으면 `available: false`. 실제 사이니지·스토어 배너
+자동 전환의 기반 로직.
+
 ---
 
 ## 2. Model Server 계약 (app/backend ↔ model_server, R2·R3 소유)
