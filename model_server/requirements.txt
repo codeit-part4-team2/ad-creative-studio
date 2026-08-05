@@ -1,3 +1,12 @@
+# 설치 안내:
+# torch, torchvision은 CUDA 12.1 빌드가 필용합니다. 아래 순서로 설치하세요.
+
+# pip install torch==2.5.1+cu121 torchvision==0.20.1+cu121 --index-url https://download.pytorch.org/whl/cu121
+# pip install -r model_server/requirements.txt
+
+# (일반 pip install -r requirements.txt만 실행하면 torch/torchvision 설치가 실패합니다)
+
+
 accelerate==1.14.0
 annotated-doc==0.0.5
 annotated-types==0.8.0
