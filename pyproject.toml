@@ -9,6 +9,7 @@ dependencies = [
     "python-multipart",
     "pydantic",
     "httpx",
+    "openai",
 ]
 
 [project.optional-dependencies]
