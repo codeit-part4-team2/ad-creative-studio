@@ -4,6 +4,7 @@ generation_service = LocalOverlayGenerationService() 한 줄만 바꾸면 된다
 """
 import asyncio
 import os
+import uuid
 from abc import ABC, abstractmethod
 
 from app.backend.schemas.generation import GenerationRequest, ToneResult
@@ -54,6 +55,7 @@ class LocalOverlayGenerationService(GenerationService):
             )
 
             results.append(ToneResult(
+                result_id=f"res_{uuid.uuid4().hex[:8]}",
                 tone=item.tone,
                 time_slot=item.time_slot,
                 headline=headline,

@@ -2,6 +2,7 @@ import requests
 import streamlit as st
 
 API_BASE = "http://localhost:8000"
+RUSH_HOUR_SLOTS = {"commute_am", "commute_pm"}
 
 st.title("3 · 생성 이력")
 
@@ -69,3 +70,39 @@ else:
                             key=f"dl_{item['job_id']}_{r['tone']}_{r.get('time_slot','')}_{fmt}",
                         )
                 st.caption(f"{r['headline']} · {r['subcopy']}")
+
+                # 러시아워(출근/퇴근) 결과만 쇼츠 생성 가능
+                if r.get("time_slot") in RUSH_HOUR_SLOTS:
+                    result_id = r.get("result_id")
+                    video_key = f"video_job_{result_id}"
+
+                    if r.get("video_url"):
+                        st.video(f"{API_BASE}{r['video_url']}")
+                    elif st.session_state.get(video_key):
+                        # 요청은 이미 보냈고 조회 중
+                        try:
+                            status_resp = requests.get(
+                                f"{API_BASE}/api/v1/videos/{st.session_state[video_key]}", timeout=10)
+                            status = status_resp.json()
+                            if status["status"] == "completed":
+                                st.rerun()  # History 다시 불러와서 video_url 반영된 걸 보여줌
+                            elif status["status"] == "failed":
+                                st.error(f"쇼츠 생성 실패: {status.get('error_message')}")
+                                del st.session_state[video_key]
+                            else:
+                                st.info(f"쇼츠 생성 중... ({status['status']})")
+                        except requests.exceptions.RequestException as e:
+                            st.error(f"쇼츠 상태 조회 실패: {e}")
+                    else:
+                        if st.button("🎬 러시아워 쇼츠 만들기", key=f"shorts_{result_id}"):
+                            try:
+                                create_resp = requests.post(
+                                    f"{API_BASE}/api/v1/videos",
+                                    json={"result_id": result_id},
+                                    timeout=10,
+                                )
+                                create_resp.raise_for_status()
+                                st.session_state[video_key] = create_resp.json()["video_job_id"]
+                                st.rerun()
+                            except requests.exceptions.RequestException as e:
+                                st.error(f"쇼츠 생성 요청 실패: {e}")

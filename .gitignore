@@ -187,8 +187,10 @@ __marimo__/
 # 업로드/생성 결과물 - 실제 파일은 레포에 안 올림
 data/uploads/*
 data/outputs/*
+data/videos/*
 !data/uploads/.gitkeep
 !data/outputs/.gitkeep
+!data/videos/.gitkeep
 data/samples/*
 !data/samples/.gitkeep
 

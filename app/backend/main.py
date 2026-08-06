@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from app.backend.api import products, generations, jobs, history, usage, exposure, download
+from app.backend.api import products, generations, jobs, history, usage, exposure, download, videos
 from app.backend.services import store
 
 
@@ -22,9 +22,11 @@ app.include_router(history.router)
 app.include_router(usage.router)
 app.include_router(exposure.router)
 app.include_router(download.router)
+app.include_router(videos.router)
 
 Path("data/uploads").mkdir(parents=True, exist_ok=True)
 Path("data/outputs").mkdir(parents=True, exist_ok=True)
+Path("data/videos").mkdir(parents=True, exist_ok=True)
 app.mount("/files", StaticFiles(directory="data"), name="files")
 
 

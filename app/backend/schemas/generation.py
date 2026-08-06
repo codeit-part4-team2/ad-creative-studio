@@ -43,11 +43,13 @@ class JobStatusResponse(BaseModel):
 
 
 class ToneResult(BaseModel):
+    result_id: str  # 쇼츠 생성 등 개별 결과 단위 참조용 (M3/S2와 별개로 추가)
     tone: ToneLiteral
     time_slot: Optional[TimeSlotLiteral] = None
     headline: str
     subcopy: str
     images: dict[str, str]  # output_format -> url
+    video_url: Optional[str] = None  # 러시아워 쇼츠 생성 완료 시 채워짐
 
 
 class GenerationResultResponse(BaseModel):
