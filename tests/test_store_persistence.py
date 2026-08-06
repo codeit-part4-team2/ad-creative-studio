@@ -100,3 +100,38 @@ def test_load_marks_zombie_jobs_as_failed(tmp_path, monkeypatch):
     assert "error_message" in store.JOBS["job_zombie_queued"]
     assert store.JOBS["job_zombie_processing"]["status"] == "failed"
     assert store.JOBS["job_done"]["status"] == "completed"  # 이미 끝난 job은 안 건드림
+
+
+def test_load_backfills_missing_result_id_for_old_data(tmp_path, monkeypatch):
+    """
+    result_id가 필수 필드로 추가되기 전(쇼츠 기능 이전)에 저장된 데이터가 남아있어도,
+    load() 시점에 자동으로 채워져서 GET /generations/{id}가 500 없이 동작해야 한다.
+    """
+    store_file = tmp_path / "store.json"
+    old_data = {
+        "products": {},
+        "jobs": {
+            "job_old": {
+                "status": "completed",
+                "result": [
+                    {"tone": "emotional", "time_slot": "morning",
+                     "headline": "h", "subcopy": "s", "images": {}},  # result_id 없음
+                ],
+            }
+        },
+        "history": [
+            {"job_id": "job_old", "product_id": "prd_1", "favorite": False,
+             "results": [
+                 {"tone": "emotional", "time_slot": "morning",
+                  "headline": "h", "subcopy": "s", "images": {}},  # result_id 없음
+             ]},
+        ],
+    }
+    import json
+    store_file.write_text(json.dumps(old_data), encoding="utf-8")
+    monkeypatch.setattr(store, "STORE_PATH", store_file)
+
+    store.load()
+
+    assert store.JOBS["job_old"]["result"][0]["result_id"]  # 자동으로 채워짐
+    assert store.HISTORY[0]["results"][0]["result_id"]

@@ -10,6 +10,7 @@
 다중 사용자를 실제로 받게 되면 SQLite/PostgreSQL 또는 Redis로 교체 예정.
 """
 import json
+import uuid
 from pathlib import Path
 
 STORE_PATH = Path("var/store.json")
@@ -57,6 +58,25 @@ def load() -> None:
             job["status"] = "failed"
             job["error_message"] = "서버 재시작으로 생성이 중단되었습니다. 다시 시도해주세요."
             job["current_step"] = None
+
+    _migrate_missing_result_ids()
+
+
+def _migrate_missing_result_ids() -> None:
+    """
+    ToneResult.result_id가 필수 필드로 추가되기 전(쇼츠 기능 이전)에 저장된
+    var/store.json이 남아있으면, result_id 없는 결과를 GET /generations/{id}가
+    pydantic 검증에서 500으로 떨어뜨릴 수 있다. 로드 시점에 없는 것만 채워서
+    이전 데이터도 그대로 계속 쓸 수 있게 한다 (Sprint0~1 수준의 가벼운 마이그레이션).
+    """
+    for job in JOBS.values():
+        for r in (job.get("result") or []):
+            if isinstance(r, dict) and not r.get("result_id"):
+                r["result_id"] = f"res_migrated_{uuid.uuid4().hex[:8]}"
+    for entry in HISTORY:
+        for r in entry.get("results", []):
+            if isinstance(r, dict) and not r.get("result_id"):
+                r["result_id"] = f"res_migrated_{uuid.uuid4().hex[:8]}"
 
 
 def reset_for_tests() -> None:

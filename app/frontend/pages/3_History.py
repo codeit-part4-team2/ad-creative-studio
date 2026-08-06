@@ -1,8 +1,10 @@
 import requests
 import streamlit as st
 
+from app.backend.services.video_generation_service import RUSH_HOUR_SLOTS  # 백엔드와 동일 값 공유
+# (프론트에서 따로 정의하면 나중에 시간대 추가/변경 시 한쪽만 고치기 쉬움 - 팀 리뷰 반영)
+
 API_BASE = "http://localhost:8000"
-RUSH_HOUR_SLOTS = {"commute_am", "commute_pm"}
 
 st.title("3 · 생성 이력")
 

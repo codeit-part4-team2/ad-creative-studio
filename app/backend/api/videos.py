@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from app.backend.services import store
 from app.backend.services.video_generation_service import (
     video_generation_service,
     RUSH_HOUR_SLOTS,
@@ -54,9 +55,12 @@ async def get_video_status(job_id: str):
 
     if result.status == "completed" and result.video_url:
         # History의 해당 result에도 video_url을 남겨서, 새로고침해도 다시 볼 수 있게 한다.
+        # store.save() 안 하면 서버 재시작 시(배포 갱신 등) 이미 완성된 쇼츠의 video_url이
+        # History에서 사라진다 - 즐겨찾기 토글/생성완료와 동일한 영속화 규칙을 여기도 따른다.
         _, tone_result = find_tone_result(VIDEO_JOBS[job_id]["result_id"])
         if tone_result is not None:
             tone_result["video_url"] = result.video_url
+            store.save()
 
     return {
         "video_job_id": job_id,

@@ -413,3 +413,28 @@ def test_video_creation_404_for_unknown_result_id():
 def test_video_status_404_for_unknown_job():
     resp = client.get("/api/v1/videos/video_doesnotexist")
     assert resp.status_code == 404
+
+
+def test_video_completion_persists_video_url_across_restart():
+    """쇼츠 완료 시 store.save()가 호출돼서, 재시작(load) 후에도 video_url이 남아있어야 한다."""
+    pid = _upload_product()
+    r = client.post("/api/v1/generations", json={"product_id": pid, "time_slots": ["commute_am"]})
+    job_id = r.json()["job_id"]
+    time.sleep(0.5)
+
+    result = client.get(f"/api/v1/generations/{job_id}").json()
+    result_id = result["results"][0]["result_id"]
+
+    video_resp = client.post("/api/v1/videos", json={"result_id": result_id})
+    video_job_id = video_resp.json()["video_job_id"]
+    client.get(f"/api/v1/videos/{video_job_id}")  # completed로 만들고 video_url 반영
+
+    # 재시작을 흉내: 메모리 비우고 store.load()로 복구
+    HISTORY_backup_check = store.HISTORY.copy()
+    PRODUCTS.clear()
+    JOBS.clear()
+    HISTORY.clear()
+    store.load()
+
+    restored = next(h for h in HISTORY if h["job_id"] == job_id)
+    assert restored["results"][0]["video_url"] == "/files/videos/mock_short.mp4"
