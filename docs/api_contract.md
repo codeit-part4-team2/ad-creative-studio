@@ -112,6 +112,29 @@ OpenAI 텍스트 사용 비용 현황 ($20 경고 / $25 로컬 전환)
 History에서 그 시간대 결과가 있으면 반환, 없으면 `available: false`. 실제 사이니지·스토어 배너
 자동 전환의 기반 로직.
 
+### POST /api/v1/videos
+러시아워(출근/퇴근) 시간대 결과 한정 쇼츠(짧은 광고 영상) 생성 요청.
+```json
+// 요청
+{ "result_id": "res_005528a3" }
+// 응답
+{ "video_job_id": "video_mock_d50f19", "status": "queued" }
+```
+요청에 `time_slot`은 받지 않는다 — `result_id`로 실제 결과를 찾아 그 결과에 저장된
+`time_slot`으로 러시아워 여부를 판정한다 (사용자가 `result_id`와 다른 `time_slot`을
+잘못 보내서 시간대가 어긋나는 걸 원천 차단). `commute_am`/`commute_pm` 결과가 아니면 400.
+실제 렌더링(TTS+영상 합성)은 쇼츠 담당자의 `generate_rush_hour_short(scenes, output_filename)`가
+맡는다(9:16, 1080×1920, ~30초 MP4). 우리 쪽은 `result_id`→`scenes` 조립(`video_generation_service.
+build_scenes_from_result`)과 어댑터 인터페이스(`VideoGenerationService`)만 담당 — `generation_
+service.py`와 동일한 Mock→실제 한 줄 전환 패턴(`USE_MOCK_VIDEO`).
+
+### GET /api/v1/videos/{job_id}
+쇼츠 생성 상태 조회. 완료되면 `video_url`이 채워지고, History의 해당 결과에도 자동 반영된다.
+```json
+{ "video_job_id": "video_mock_d50f19", "status": "completed",
+  "video_url": "/files/videos/mock_short.mp4", "error_message": null }
+```
+
 ---
 
 ## 2. Model Server 계약 (app/backend ↔ model_server, R2·R3 소유)

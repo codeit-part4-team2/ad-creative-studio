@@ -107,9 +107,32 @@
 - [x] Favorite 등록
 - [x] 다운로드 완료 (7번과 연동, 구현 완료)
 
+## 12. 러시아워 쇼츠 (신규 — 쇼츠 담당자 연동 대기)
+- [x] `result_id`를 `ToneResult`에 추가, `GET /generations/{id}` 응답에 포함
+- [x] `POST /api/v1/videos`, `GET /api/v1/videos/{job_id}` — Mock으로 요청~조회 흐름 완성
+- [x] `result_id → scenes` 조립 로직 (`video_generation_service.build_scenes_from_result`)
+- [x] 출근/퇴근 시간대만 허용하는 검증 (그 외 400) — `time_slot`은 요청으로 안 받고
+      `result_id`로 찾은 실제 결과 기준 자동 판정 (사용자가 잘못된 time_slot을 보내는
+      경우를 원천 차단, 팀 리뷰 반영)
+- [x] History 화면에 "🎬 러시아워 쇼츠 만들기" 버튼 + `st.video()` 결과 표시
+- [x] 완료 시 History의 해당 결과에 `video_url` 반영
+- [ ] ⏳ 쇼츠 담당자의 `generate_rush_hour_short(scenes, output_filename)` 완성 후
+      `RushHourVideoGenerationService` 구현 + `USE_MOCK_VIDEO=false` 전환. **연동 전 반드시
+      합의할 것 3가지**(팀 리뷰):
+      1) 담당자 함수의 정확한 입출력 형식(파라미터명·반환값이 scenes/output_path→MP4경로
+         계약과 일치하는지)
+      2) `video_url`에 실제 MP4 파일이 존재하는지 (Mock 단계는 URL 문자열만 검증했음,
+         최종 통합 시 실제 파일 존재 테스트 추가 필요)
+      3) MoviePy·FFmpeg·한글 폰트 등 실행환경이 서비스 서버에도 설치돼 있는지
+         (담당자에게 패키지 버전·설치 방법·실행 예시 요청)
+- [ ] 쇼츠 job 상태 영속화(재시작 시 유지) — 지금은 인메모리만, `store.py` 패턴 적용 필요
+- [ ] (참고, 지금 안 해도 됨) 실제 렌더링 연동 시 BackgroundTasks가 무거워질 수 있음 —
+      MVP는 단일 요청 기준으로 충분, 다중 사용자 운영 시에만 별도 Worker/Queue 검토
+
 ---
 
 ## 다음 우선순위 (남은 🔴 — 급하진 않음, 여유 있을 때)
 1. `USE_LLM_COPY=true` 실제 팀 key로 재검증, 톤별 문구 차이 확인
 2. 생성 실패 시 재시도 흐름(버튼) 추가
 3. History에서 바로 재생성하는 기능
+4. 쇼츠(video) job 상태 영속화
