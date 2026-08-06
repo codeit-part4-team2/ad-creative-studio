@@ -242,7 +242,7 @@ def test_download_one_404_for_unknown_job():
     assert resp.status_code == 404
 
 
-def test_download_one_404_for_unfinished_job():
+def test_download_one_409_for_unfinished_job():
     pid = _upload_product()
     r = client.post("/api/v1/generations", json={"product_id": pid, "time_slots": ["morning"]})
     job_id = r.json()["job_id"]

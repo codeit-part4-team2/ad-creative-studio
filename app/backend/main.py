@@ -9,7 +9,7 @@ from app.backend.services import store
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    store.load()  # 서버 재시작 시 data/store.json에서 이전 상태 복구 (통합 체크리스트 갭)
+    store.load()  # 서버 재시작 시 var/store.json에서 이전 상태 복구 (통합 체크리스트 갭)
     yield
 
 

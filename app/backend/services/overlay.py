@@ -120,6 +120,11 @@ def generate_and_save(job_id: str, tone: str, time_slot: str, headline: str, sub
     URL은 OUTPUT_DIR의 실제 위치를 기준으로 동적으로 만든다(하드코딩 안 함) -
     테스트에서 OUTPUT_DIR을 data/outputs/ 하위의 별도 서브폴더로 monkeypatch해서
     실제 데모 파일(data/outputs/ 최상위)을 안 건드리고 격리할 수 있게 하기 위함.
+
+    TODO(follow-up, blocking 아님): 생성할 때마다 톤4종×규격3종 = 최대 12개 PNG가
+    data/outputs/에 계속 쌓이기만 하고 지우는 로직이 없다. 데모 단계에선 무해하지만,
+    운영 단계에선 오래된 파일 정리 정책(예: N일 지난 파일 삭제, 혹은 History에서
+    삭제된 job의 파일도 같이 삭제)이 필요하다.
     """
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     urls: dict[str, str] = {}

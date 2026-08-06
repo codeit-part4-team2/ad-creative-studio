@@ -86,7 +86,12 @@ async def download_all(job_id: str):
             tone = tone_result["tone"]
             slot = tone_result.get("time_slot") or "default"
             for fmt, url in tone_result["images"].items():
-                file_path = _url_to_path(url)
+                try:
+                    file_path = _url_to_path(url)
+                except HTTPException:
+                    # 경로 하나가 이상해도(예: R3 연동 후 형식이 섞이는 경우) 나머지
+                    # 정상 파일들까지 통째로 실패시키면 안 된다 - 이 파일만 건너뛴다.
+                    continue
                 if file_path.exists():
                     zf.write(file_path, arcname=f"{slot}_{tone}_{fmt}.png")
                     file_count += 1

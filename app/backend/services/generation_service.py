@@ -1,6 +1,6 @@
 """
 생성 로직을 서비스 인터페이스로 분리 - 나중에 R3 모델 서버가 완성되면
-generation_service = MockGenerationService() 한 줄만 바꾸면 된다 (UI/API 구조 변경 없음).
+generation_service = LocalOverlayGenerationService() 한 줄만 바꾸면 된다 (UI/API 구조 변경 없음).
 """
 import asyncio
 import os
@@ -19,7 +19,7 @@ class GenerationService(ABC):
         raise NotImplementedError
 
 
-class MockGenerationService(GenerationService):
+class LocalOverlayGenerationService(GenerationService):
     """
     R3 모델 서버 없이 완료 처리 (Gate 0용).
     문구(M3)는 copy_generator로 생성(USE_LLM_COPY 켜면 실제 LLM, 기본은 규칙 기반).
@@ -80,4 +80,4 @@ class ModelServerGenerationService(GenerationService):
 
 # USE_MOCK_GENERATION=false 로 실제 모델 서버(R3 완성 후) 사용, 기본값은 true(Mock)
 _use_mock = os.getenv("USE_MOCK_GENERATION", "true").strip().lower() != "false"
-generation_service: GenerationService = MockGenerationService() if _use_mock else ModelServerGenerationService()
+generation_service: GenerationService = LocalOverlayGenerationService() if _use_mock else ModelServerGenerationService()

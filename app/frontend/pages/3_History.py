@@ -24,10 +24,33 @@ else:
     for item in reversed(history):
         star = "⭐" if item.get("favorite") else "☆"
         with st.expander(f"{star} {item['job_id']} · {len(item['results'])}개 결과"):
-            if st.button(f"{'즐겨찾기 해제' if item.get('favorite') else '⭐ 즐겨찾기 추가'}",
-                         key=f"fav_{item['job_id']}"):
-                requests.patch(f"{API_BASE}/api/v1/history/{item['job_id']}/favorite", timeout=10)
-                st.rerun()
+            col_fav, col_dl = st.columns(2)
+
+            with col_fav:
+                if st.button(f"{'즐겨찾기 해제' if item.get('favorite') else '⭐ 즐겨찾기 추가'}",
+                             key=f"fav_{item['job_id']}"):
+                    try:
+                        r = requests.patch(f"{API_BASE}/api/v1/history/{item['job_id']}/favorite", timeout=10)
+                        r.raise_for_status()
+                        st.rerun()
+                    except requests.exceptions.RequestException as e:
+                        st.error(f"즐겨찾기 변경 실패: {e}")
+
+            with col_dl:
+                try:
+                    zip_resp = requests.get(f"{API_BASE}/api/v1/download/{item['job_id']}/all", timeout=10)
+                    if zip_resp.status_code == 200:
+                        st.download_button(
+                            "📦 전체 다운로드 (ZIP)",
+                            data=zip_resp.content,
+                            file_name=f"{item['job_id']}_all.zip",
+                            mime="application/zip",
+                            key=f"dl_all_{item['job_id']}",
+                        )
+                    else:
+                        st.caption("다운로드 불가 (파일 없음)")
+                except requests.exceptions.RequestException:
+                    st.caption("다운로드 서버 연결 실패")
 
             for r in item["results"]:
                 st.markdown(f"**{tone_label_map.get(r['tone'], r['tone'])} · {r.get('time_slot', '')}**")
@@ -36,4 +59,13 @@ else:
                     with col:
                         st.caption(fmt)
                         st.image(f"{API_BASE}{url}" if url.startswith("/") else url, width=150)
+                        # 개별 이미지 다운로드 (톤×시간대×규격 단위)
+                        img_bytes = requests.get(f"{API_BASE}{url}", timeout=10).content
+                        st.download_button(
+                            "⬇",
+                            data=img_bytes,
+                            file_name=f"{item['job_id']}_{r.get('time_slot', '')}_{r['tone']}_{fmt}.png",
+                            mime="image/png",
+                            key=f"dl_{item['job_id']}_{r['tone']}_{r.get('time_slot','')}_{fmt}",
+                        )
                 st.caption(f"{r['headline']} · {r['subcopy']}")
