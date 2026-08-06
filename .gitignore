@@ -181,7 +181,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 # ============================================
-# 프로젝트 전용 (팀 공용 템플릿에 없는 것들 — 삭제 금지)
+# 프로젝트 전용 (팀장님 템플릿에 없는 것들 — 삭제 금지)
 # ============================================
 
 # 업로드/생성 결과물 - 실제 파일은 레포에 안 올림
@@ -191,6 +191,12 @@ data/outputs/*
 !data/outputs/.gitkeep
 data/samples/*
 !data/samples/.gitkeep
+
+# 서비스 상태 파일 영속화 - data/ 밖(var/)에 저장 (data/는 정적 서빙되므로 그 안에 두면 안 됨)
+# var/ 자체는 위쪽 표준 Python 템플릿(패키징 섹션)에서 이미 무시되고 있음.
+# 아래는 안전망: var/로 옮기기 전 버전을 실행해본 적 있는 팀원 컴퓨터엔 data/store.json이
+# 아직 남아있을 수 있는데, 그게 실수로 커밋되면 상품명·가격·전체 이력이 그대로 공개된다.
+data/store.json
 
 # 모델 체크포인트 - R2 LoRA 학습 시작하면 용량 커짐, 절대 커밋 금지
 models/
@@ -206,5 +212,6 @@ logs/
 # 골든 데이터셋 원본 (라이선스 확인 전까지는 레포에 안 올림, .gitkeep만 유지)
 eval/golden_dataset/*
 !eval/golden_dataset/.gitkeep
+
+# 저작권 있는 테스트용 원본 제품 이미지 (김재헌님 PR #4)
 model_server/experiments/product_sample.jpeg
-data/store.json

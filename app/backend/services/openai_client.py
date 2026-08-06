@@ -15,6 +15,9 @@ from typing import Optional
 
 WARNING_USD = float(os.getenv("OPENAI_WARNING_THRESHOLD_USD", 20))
 HARD_LIMIT_USD = float(os.getenv("OPENAI_BUDGET_LIMIT_USD", 25))
+# 참고: 이건 엄격한 결제 차단이 아니라 soft application limit이다.
+# 호출 "전"에 누적액을 검사하고 호출 "후"에 실제 사용량을 기록하므로, 동시 요청 여러 개가
+# 상한 직전에 동시에 통과하면 총액이 상한을 살짝 넘을 수 있다. 소규모 데모 수준에서는 무방.
 # 소스 디렉토리가 아니라 logs/ 에 저장 - .gitignore가 logs/ 를 이미 제외하므로 실수 커밋 방지
 USAGE_LOG_PATH = Path("logs/openai_usage.json")
 USAGE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -106,7 +109,7 @@ def call_text_model(prompt: str, model: Optional[str] = None, system: Optional[s
         spent = _load_spent()
     if spent >= HARD_LIMIT_USD:
         print(f"[BUDGET] 예산 상한(${HARD_LIMIT_USD}) 초과 — 로컬 폴백으로 전환")
-        return _call_local_fallback(prompt)
+        return _call_local_fallback(prompt, reason="budget_exceeded")
     if spent >= WARNING_USD:
         print(f"[WARNING] OpenAI 누적 비용 ${spent:.2f} — 경고선(${WARNING_USD}) 초과")
 
@@ -122,7 +125,7 @@ def call_text_model(prompt: str, model: Optional[str] = None, system: Optional[s
         response = client.chat.completions.create(model=model, messages=messages)
     except Exception as exc:  # noqa: BLE001 - 레이트리밋/타임아웃/일시적 5xx 등 전부 폴백으로
         print(f"[ERROR] OpenAI 호출 실패, 로컬 폴백으로 전환: {exc}")
-        return _call_local_fallback(prompt)
+        return _call_local_fallback(prompt, reason=f"api_error: {exc}")
 
     usage = response.usage
     _record_cost(model, usage.prompt_tokens, usage.completion_tokens)
@@ -130,7 +133,12 @@ def call_text_model(prompt: str, model: Optional[str] = None, system: Optional[s
     return response.choices[0].message.content
 
 
-def _call_local_fallback(prompt: str) -> str:
-    # TODO: 예산 초과/API 실패 시 로컬 소형 텍스트 모델로 대체 (결정 8) - 지금은 더미 응답
-    # NVIDIA NIM(build.nvidia.com) 무료 API를 여기 연결하는 방안 검토 중
-    return f"[로컬 폴백 응답] {prompt[:50]}..."
+def _call_local_fallback(prompt: str, reason: str = "unknown") -> str:
+    """
+    예산 초과/API 실패 시 대체 응답. reason을 문자열에 남겨두면, 이 값이(JSON이 아니므로)
+    copy_generator에서 json.loads 실패로 규칙 기반 폴백까지 이어질 때 로그만 보고도
+    "왜" 실패했는지(예산 초과인지 API 에러인지) 구분할 수 있다.
+    TODO: 예산 초과/API 실패 시 로컬 소형 텍스트 모델로 대체 (결정 8) - 지금은 더미 응답
+    NVIDIA NIM(build.nvidia.com) 무료 API를 여기 연결하는 방안 검토 중
+    """
+    return f"[로컬 폴백 응답 - 사유: {reason}] {prompt[:50]}..."

@@ -95,6 +95,6 @@ if st.session_state.get("results"):
         for col, (fmt, url) in zip(cols, r["images"].items()):
             with col:
                 st.caption(fmt)
-                st.image(url, width=150)  # TODO: 실제 생성 이미지로 교체 (지금은 mock URL)
+                st.image(f"{API_BASE}{url}" if url.startswith("/") else url, width=150)
         st.info(f"{r['headline']}\n\n{r['subcopy']}")
         st.divider()
