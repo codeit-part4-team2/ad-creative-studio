@@ -32,6 +32,7 @@ for lang, case in test_cases.items():
         product_image=product_image,
         prompt=case["prompt"],
         negative_prompt=case["negative_prompt"],
+        seed=42,
     )
     output_path = os.path.join(SCRIPT_DIR, f"test_inference_output_{lang}.png")
     result.save(output_path)
