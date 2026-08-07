@@ -19,10 +19,12 @@
 
 ## 가상환경 (venv) 활성화
 
-⚠️ venv는 프롬프트 디렉토리 (`ad-creative-studio/`) 안이 아니라 홈 디렉토리(`~/serving/`)에 위치합니다.
+⚠️ venv는 프로젝트 디렉토리 (`ad-creative-studio/`) 안이 아니라 홈 디렉토리(`~/serving/`)에 위치합니다.
+
+GCP 콘솔에서 SSH로 접속한 후 (위 "접속 방법" 참고), 아래 명령으로 활성화하세요:
+
 
 ```bash
-ssh gcp-serving-vm
 source ~/serving/venv/bin/activate
 ```
 
