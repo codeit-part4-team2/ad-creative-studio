@@ -16,3 +16,18 @@
 ## 주의 사항
 - VM은 프로젝트당 1개 유지 (추가 생성 시 별도 과금)
 - API key 등 민감정보는 .env에만 저장, GitHub 업로드 금지
+
+## 가상환경 (venv) 활성화
+
+⚠️ venv는 프롬프트 디렉토리 (`ad-creative-studio/`) 안이 아니라 홈 디렉토리(`~/serving/`)에 위치합니다.
+
+```bash
+ssh gcp-serving-vm
+source ~/serving/venv/bin/activate
+```
+
+활성화되면 프롬프트 앞에 `(venv)`가 표시됩니다. 이후 프로젝트 디렉토리로 이동해 작업하세요.
+
+```bash
+cd ~/ad-creative-studio
+```
