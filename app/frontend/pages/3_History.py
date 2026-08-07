@@ -1,8 +1,15 @@
 import requests
 import streamlit as st
 
-from app.backend.services.video_generation_service import RUSH_HOUR_SLOTS  # 백엔드와 동일 값 공유
-# (프론트에서 따로 정의하면 나중에 시간대 추가/변경 시 한쪽만 고치기 쉬움 - 팀 리뷰 반영)
+# 원래는 app.backend.services.video_generation_service의 RUSH_HOUR_SLOTS를 import해서
+# 백엔드와 상수를 공유하려 했으나, Streamlit이 페이지를 실행하는 방식/환경에 따라
+# `app` 패키지가 sys.path에 안 잡혀서 ModuleNotFoundError로 History 페이지 전체가
+# 죽는 문제가 실제로 발생했다 (pytest는 pyproject.toml의 pythonpath 설정 덕에
+# 항상 잡히지만, streamlit run으로 띄울 땐 그 설정이 적용 안 됨).
+# 프론트↔백엔드 프로세스 경계를 넘는 import는 이런 환경 의존성 위험이 있어서,
+# 값을 다시 로컬 상수로 되돌린다 - 실제 판정은 어차피 백엔드가 하므로(400 반환),
+# 이 상수는 "버튼을 보여줄지 말지"만 결정하는 UX용이라 중복이어도 위험은 낮다.
+RUSH_HOUR_SLOTS = {"commute_am", "commute_pm"}
 
 API_BASE = "http://localhost:8000"
 
@@ -20,7 +27,7 @@ except requests.exceptions.ConnectionError:
     st.stop()
 
 if not history:
-    msg = "즐겨찾기한 광고가 없습니다." if favorite_only else "아직 생성한 광고가 없습니다. **1 Product**에서 시작해보세요."
+    msg = "즐겨찾기한 광고가 없습니다." if favorite_only else "아직 생성한 광고가 없습니다. **광고 만들기**에서 첫 광고를 만들어보세요."
     st.info(msg)
 else:
     tone_label_map = {"emotional": "감성", "modern": "모던", "practical": "실용", "premium": "프리미엄"}
@@ -61,16 +68,23 @@ else:
                 for col, (fmt, url) in zip(cols, r["images"].items()):
                     with col:
                         st.caption(fmt)
-                        st.image(f"{API_BASE}{url}" if url.startswith("/") else url, width=150)
+                        image_url = f"{API_BASE}{url}" if url.startswith("/") else url
+                        st.image(image_url, width=150)
                         # 개별 이미지 다운로드 (톤×시간대×규격 단위)
-                        img_bytes = requests.get(f"{API_BASE}{url}", timeout=10).content
-                        st.download_button(
-                            "⬇",
-                            data=img_bytes,
-                            file_name=f"{item['job_id']}_{r.get('time_slot', '')}_{r['tone']}_{fmt}.png",
-                            mime="image/png",
-                            key=f"dl_{item['job_id']}_{r['tone']}_{r.get('time_slot','')}_{fmt}",
-                        )
+                        try:
+                            img_bytes = requests.get(image_url, timeout=10).content
+                        except requests.exceptions.RequestException:
+                            img_bytes = None
+                        if img_bytes is not None:
+                            st.download_button(
+                                "⬇",
+                                data=img_bytes,
+                                file_name=f"{item['job_id']}_{r.get('time_slot', '')}_{r['tone']}_{fmt}.png",
+                                mime="image/png",
+                                key=f"dl_{item['job_id']}_{r['tone']}_{r.get('time_slot','')}_{fmt}",
+                            )
+                        else:
+                            st.caption("다운로드 불가")
                 st.caption(f"{r['headline']} · {r['subcopy']}")
 
                 # 러시아워(출근/퇴근) 결과만 쇼츠 생성 가능
