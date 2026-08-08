@@ -17,7 +17,7 @@ model_server 연동 후에는 배경만 실제 생성 이미지로 교체하면 
 import uuid
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from app.prompt.templates import OUTPUT_FORMATS
 
@@ -70,10 +70,27 @@ def create_placeholder_background(tone: str, size: tuple[int, int]) -> Image.Ima
     return Image.new("RGB", size, color)
 
 
+def _fit_and_pad(image: Image.Image, size: tuple[int, int]) -> Image.Image:
+    """
+    단순 resize()는 비율을 무시하고 강제로 규격에 맞춰서, 정사각형이 아닌 실제 생성
+    이미지(모델에서 받은 배경)를 규격이 다른 3종(1:1/가로형/세로형)으로 뽑을 때
+    제품이 눌리거나 늘어난다. 이 프로젝트의 평가 1순위 지표가 제품 보존율이라
+    후처리 단계에서 비율을 깨면 안 된다 - 비율은 유지한 채 캔버스 중앙에 배치하고
+    남는 부분은 흰색으로 채운다(레터박스). placeholder(단색) 배경일 때도 결과는
+    기존 resize()와 사실상 동일하므로 Mock 경로에는 영향 없다.
+    """
+    fitted = ImageOps.contain(image.convert("RGB"), size, method=Image.Resampling.LANCZOS)
+    canvas = Image.new("RGB", size, "white")
+    x = (size[0] - fitted.width) // 2
+    y = (size[1] - fitted.height) // 2
+    canvas.paste(fitted, (x, y))
+    return canvas
+
+
 def overlay_copy(background_image: Image.Image, headline: str, subcopy: str,
                   output_format: str, tone: str = "modern") -> Image.Image:
     spec = OUTPUT_FORMATS[output_format]
-    img = background_image.resize(spec["size"]).convert("RGB")
+    img = _fit_and_pad(background_image, spec["size"])
     draw = ImageDraw.Draw(img)
     w, h = spec["size"]
 
@@ -112,10 +129,14 @@ def overlay_copy(background_image: Image.Image, headline: str, subcopy: str,
 
 
 def generate_and_save(job_id: str, tone: str, time_slot: str, headline: str, subcopy: str,
-                       output_formats: list[str]) -> dict[str, str]:
+                       output_formats: list[str], background_image: "Image.Image | None" = None) -> dict[str, str]:
     """
-    톤별 placeholder 배경 위에 규격별로 실제 오버레이 이미지를 만들어 OUTPUT_DIR에 저장하고,
+    배경 위에 규격별로 실제 오버레이 이미지를 만들어 OUTPUT_DIR에 저장하고,
     /files/... 정적 서빙 URL을 규격별로 반환한다 (M3+S2 실제 동작).
+
+    background_image를 안 주면(Mock 경로) 톤별 placeholder를 새로 만들고,
+    실제로 받은 배경 이미지가 있으면(model_server 연동 경로) 그걸 그대로 쓴다 -
+    오버레이·규격 분기 로직은 배경이 어디서 왔든 완전히 동일하게 재사용된다.
 
     URL은 OUTPUT_DIR의 실제 위치를 기준으로 동적으로 만든다(하드코딩 안 함) -
     테스트에서 OUTPUT_DIR을 data/outputs/ 하위의 별도 서브폴더로 monkeypatch해서
@@ -130,7 +151,7 @@ def generate_and_save(job_id: str, tone: str, time_slot: str, headline: str, sub
     urls: dict[str, str] = {}
     for fmt in output_formats:
         spec = OUTPUT_FORMATS[fmt]
-        background = create_placeholder_background(tone, spec["size"])
+        background = background_image if background_image is not None else create_placeholder_background(tone, spec["size"])
         final_image = overlay_copy(background, headline, subcopy, fmt, tone=tone)
 
         filename = f"{job_id}_{tone}_{time_slot}_{fmt}_{uuid.uuid4().hex[:6]}.png"

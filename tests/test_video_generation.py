@@ -104,3 +104,22 @@ def test_mock_service_get_status_returns_completed_with_url():
     result = asyncio.run(mock.get_status("video_mock_abc123"))
     assert result.status == "completed"
     assert result.video_url == "/files/videos/mock_short.mp4"
+
+
+def test_frontend_rush_hour_slots_constant_matches_backend():
+    """
+    3_History.py는 streamlit run 환경 문제로 백엔드 상수를 import 못 하고 로컬에
+    하드코딩된 값을 쓴다 (의도된 결정). 두 값이 어긋나면 백엔드가 조용히 400만 던지고
+    프론트는 원인 모른 채 버튼만 눈에 보이는 상태가 되므로, 소스 텍스트를 직접 읽어
+    두 상수가 항상 같은 값인지 회귀 테스트로 잡는다.
+    """
+    import re
+    from pathlib import Path
+
+    history_path = Path(__file__).parent.parent / "app" / "frontend" / "pages" / "3_History.py"
+    source = history_path.read_text(encoding="utf-8")
+    match = re.search(r'RUSH_HOUR_SLOTS\s*=\s*\{([^}]*)\}', source)
+    assert match, "3_History.py에서 RUSH_HOUR_SLOTS 정의를 못 찾음 (삭제/이름변경됐다면 이 테스트도 갱신 필요)"
+
+    frontend_values = {v.strip().strip('"').strip("'") for v in match.group(1).split(",") if v.strip()}
+    assert frontend_values == vgs.RUSH_HOUR_SLOTS

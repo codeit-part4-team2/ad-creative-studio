@@ -1,6 +1,8 @@
 """
-생성 로직을 서비스 인터페이스로 분리 - 나중에 R3 모델 서버가 완성되면
-generation_service = LocalOverlayGenerationService() 한 줄만 바꾸면 된다 (UI/API 구조 변경 없음).
+생성 로직을 서비스 인터페이스로 분리.
+USE_MOCK_GENERATION=true(기본값) -> LocalOverlayGenerationService (Mock 배경)
+USE_MOCK_GENERATION=false -> ModelServerGenerationService (R3 model_server 실제 호출)
+파일 맨 아래 한 줄 조건으로 선택되며, UI/API 구조는 어느 쪽이든 동일하다.
 """
 import asyncio
 import os
@@ -70,14 +72,78 @@ class LocalOverlayGenerationService(GenerationService):
 
 class ModelServerGenerationService(GenerationService):
     """
-    R3 model_server 연동용 - 아직 미구현.
-    TODO: app/backend/services/model_server_client.request_generation() 을
-    plan(시간대x톤)마다 호출하고, 실패/타임아웃은 예외로 던져서
+    R3 model_server 연동. docs/api_contract.md의 /infer 계약대로:
+    이미지 프롬프트(영어)/negative_prompt는 prompt_builder가 만들고, model_server는
+    "배경만" 생성해서 URL로 돌려준다 (제품 보존은 R2/R3 담당) - 우리는 그 배경 위에
+    LocalOverlayGenerationService와 완전히 동일한 오버레이/규격 로직을 그대로 적용한다.
+    문구(M3)는 동일하게 copy_generator를 쓴다 - Mock/Real이 배경 생성 방식만 다르고
+    나머지 파이프라인은 100% 재사용된다.
+
+    실패(status: failed)/타임아웃(model_server_client의 120초)은 예외로 던져서
     run_generation()의 try/except가 job을 'failed'로 처리하게 한다.
-    request_generation()은 이미 httpx.AsyncClient 기반이라 별도 to_thread 불필요.
     """
+
     async def generate(self, job_id: str, req: GenerationRequest, product: dict) -> list[ToneResult]:
-        raise NotImplementedError("R3 model_server 연동 후 구현 예정")
+        from app.backend.api.generations import build_generation_plan  # 순환 import 방지용 지연 import
+        from app.backend.services import model_server_client
+        from app.prompt import builder as prompt_builder
+
+        job = JOBS[job_id]
+        plan = build_generation_plan(req, product)
+        results: list[ToneResult] = []
+
+        for i, item in enumerate(plan):
+            job["current_step"] = f"{item.time_slot}/{item.tone} 생성 중"
+
+            prompt_result = prompt_builder.build(item)  # image_prompt(영어)/negative_prompt
+            response = await model_server_client.request_generation(
+                product_id=req.product_id,
+                # TODO(R3와 합의 필요): product["image_url"]은 우리 서버 기준 상대경로
+                # ("/files/uploads/...")다. Mock 서버는 이 값을 실제로 안 써서 지금은
+                # 문제없지만, model_server가 별도 VM에 뜨면 이 경로만으로는 어느 서버에서
+                # 이미지를 가져와야 하는지 알 수 없다. 절대 URL 전달 / 이미지 직접 전송
+                # (multipart·base64) / 공용 스토리지(GCS·S3) 중 R3와 계약으로 정할 것.
+                product_image_url=product["image_url"],
+                tone=item.tone,
+                image_prompt=prompt_result.image_prompt,
+                negative_prompt=prompt_result.negative_prompt,
+                time_slot=item.time_slot,
+            )
+
+            if response.get("status") != "done":
+                raise RuntimeError(
+                    f"model_server 생성 실패 ({item.tone}/{item.time_slot}): "
+                    f"{response.get('error_message', '알 수 없는 오류')}"
+                )
+
+            background_image = await model_server_client.fetch_generated_image(
+                response["generated_image_url"]
+            )
+
+            headline, subcopy = await asyncio.to_thread(copy_generator.build_ad_copy, item)
+            images = await asyncio.to_thread(
+                overlay.generate_and_save,
+                job_id=job_id,
+                tone=item.tone,
+                time_slot=item.time_slot or "default",
+                headline=headline,
+                subcopy=subcopy,
+                output_formats=req.output_formats,
+                background_image=background_image,
+            )
+
+            results.append(ToneResult(
+                result_id=f"res_{uuid.uuid4().hex[:8]}",
+                tone=item.tone,
+                time_slot=item.time_slot,
+                headline=headline,
+                subcopy=subcopy,
+                images=images,
+            ))
+            job["completed_count"] = i + 1
+            job["progress"] = int((i + 1) / job["total_count"] * 100)
+
+        return results
 
 
 # USE_MOCK_GENERATION=false 로 실제 모델 서버(R3 완성 후) 사용, 기본값은 true(Mock)
