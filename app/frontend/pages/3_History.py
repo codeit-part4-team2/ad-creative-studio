@@ -72,7 +72,9 @@ else:
                         st.image(image_url, width=150)
                         # 개별 이미지 다운로드 (톤×시간대×규격 단위)
                         try:
-                            img_bytes = requests.get(image_url, timeout=10).content
+                            img_resp = requests.get(image_url, timeout=10)
+                            img_resp.raise_for_status()  # 4xx/5xx도 실패로 처리 (안 하면 빈/에러 바이트가 "성공"으로 넘어감)
+                            img_bytes = img_resp.content
                         except requests.exceptions.RequestException:
                             img_bytes = None
                         if img_bytes is not None:

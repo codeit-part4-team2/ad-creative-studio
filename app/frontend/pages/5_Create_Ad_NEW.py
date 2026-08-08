@@ -159,6 +159,10 @@ def render_review_and_generate_step():
             }, timeout=10)
             resp.raise_for_status()
             st.session_state.job_id = resp.json()["job_id"]
+            # 이전 생성 결과가 session_state에 남아있으면 render_result_step이
+            # "이미 결과 있음"으로 착각해서 새 job_id를 폴링하지 않고 옛 결과를
+            # 그대로 보여준다 (설정 [수정] 후 재생성했을 때 실제로 재현됨) - 명시적으로 비운다.
+            st.session_state.results = []
             st.session_state.wizard_step = 4
             st.rerun()
         except requests.exceptions.ConnectionError:
