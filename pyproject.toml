@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "small-appliance-ad-service"
 version = "0.1.0"
@@ -10,18 +14,31 @@ dependencies = [
     "pydantic",
     "httpx",
     "openai",
+    "pillow",
+    "requests",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest", "nbstripout"]
 frontend = ["streamlit>=1.27", "requests", "pillow"]  # streamlit>=1.27: st.switch_page 사용
+model = [
+    "accelerate>=1,<2",
+    "diffusers==0.39.0",
+    "numpy>=2.3,<3",
+    "opencv-python-headless>=4.10,<6",
+    "peft>=0.17,<1",
+    "rembg[gpu]>=2.0.75,<3",
+    "safetensors>=0.8,<1",
+    "transformers>=4.41.2,<6",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
-include = ["app*"]
+include = ["app*", "model_server*"]
+exclude = ["model_server.experiments*"]
 
 [tool.ruff]
 line-length = 120

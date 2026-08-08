@@ -1,93 +1,173 @@
-import torch
-from diffusers import StableDiffusionXLControlNetPipeline, ControlNetModel, AutoencoderKL
-from controlnet_aux import CannyDetector
+from __future__ import annotations
+
+import hashlib
+import re
+import time
+import uuid
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
+from pathlib import Path
+from threading import Lock
+from typing import Protocol
+
 from PIL import Image
 
-def _fit_square(image: Image.Image, size: int = 1024) -> Image.Image:
-    """
-    비율을 유지한 채 size x size 캔버스 중앙에 배치한다 (레터박스).
-    단순 resize는 세로로 긴 상품을 가로로 눌러버려서 제품 보존율을 떨어뜨린다.
-    """
-    image = image.convert("RGB")
-    image.thumbnail((size, size), Image.LANCZOS)
-    canvas = Image.new("RGB", (size, size), (255,255,255))
-    canvas.paste(image, ((size - image.width) // 2, (size - image.height) // 2))
-    return canvas
+from model_server.compositing import composite_product
+from model_server.config import InferenceConfig, InferenceProfile
+from model_server.pipelines import GenerationResult
+from model_server.preprocessing import PreparationResult
+from model_server.timing import StageTimings
 
 
-def load_pipeline():
-    """
-    서버 시작 시 1회만 호출.
-    ControlNet, VAE, SDXL 파이프라인, IP-Adapter를 로딩해서 완성된 pipe 객체를 반환한다.
-    """
-    if not torch.cuda.is_available():
-        raise RuntimeError("model_server는 CUDA GPU가 필요합니다. VM의 GPU 할당 상태를 확인하세요.")
-    device = "cuda"
-    dtype = torch.float16
-
-    # 1. ControlNet (Canny, SDXL용) 로딩
-    controlnet = ControlNetModel.from_pretrained(
-        "diffusers/controlnet-canny-sdxl-1.0",
-        torch_dtype = dtype
-    )
-
-    # 2. 개선된 VAE 로딩
-    vae = AutoencoderKL.from_pretrained(
-        "madebyollin/sdxl-vae-fp16-fix",
-        torch_dtype=dtype
-    )
-
-    # 3. SDXL + ControlNet 파이프라인 조립
-    pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
-        "stabilityai/stable-diffusion-xl-base-1.0",
-        controlnet=controlnet,
-        vae=vae,
-        torch_dtype=dtype
-    )
-    pipe = pipe.to(device)
-
-    # 4. IP-Adapter 로딩 (스타일 참조 이미지 반영용)
-    pipe.load_ip_adapter(
-        "h94/IP-Adapter",
-        subfolder="sdxl_models",
-        weight_name="ip-adapter_sdxl.bin"
-    )
-
-    return pipe
+class Preprocessor(Protocol):
+    def prepare(self, cache_key: str, image_url: str) -> PreparationResult: ...
 
 
-def generate_image(pipe,product_image,prompt,negative_prompt,ip_adapter_scale=0.6,num_inference_steps=20, seed=None):
-    """
-    요청마다 호출.
-    이미 로딩된 pipe와 상품 이미지(PIL Image), 프롬프트를 받아서 생성된 이미지(PIL Image)를 반환한다.
-    """
-    # 5. Canny edge 추출 (ControlNet 입력용)
-    canny_detector = CannyDetector()
-    product_image = _fit_square(product_image, 1024)
-    canny_image = canny_detector(
-        product_image,
-        detect_resolution=1024,
-        image_resolution=1024,
-    )
+class Pipeline(Protocol):
+    def load(self) -> None: ...
 
-    # 6. IP-Adapter scale 적용 (요청마다 다른 값 가능)
-    pipe.set_ip_adapter_scale(ip_adapter_scale)
+    def generate(
+        self,
+        *,
+        cache_key: str,
+        prompt: str,
+        negative_prompt: str,
+        artifacts: object,
+    ) -> GenerationResult: ...
 
-    # 7. seed 고정 (재현 가능한 비교를 위해)
-    generator = None
-    if seed is not None:
-        generator = torch.Generator(device=pipe.device).manual_seed(seed)
 
-    # 8. 실제 생성 실행
-    result = pipe(
-        prompt = prompt,
-        negative_prompt = negative_prompt,
-        image = canny_image,
-        ip_adapter_image = product_image,
-        num_inference_steps = num_inference_steps,
-        height=1024,
-        width=1024,
-        generator=generator,
-    ).images[0]
+class OutputStore(Protocol):
+    def save(self, image: Image.Image, *, tone: str) -> str: ...
 
-    return result
+
+@dataclass(frozen=True, slots=True)
+class InferenceResult:
+    status: str
+    generated_image_url: str | None
+    product_preserved: bool | None
+    preservation_method: str | None
+    gen_time_sec: float | None
+    stage_times_sec: Mapping[str, float] = field(default_factory=dict)
+    cache_hit: bool | None = None
+    model_profile: str | None = None
+    num_inference_steps: int | None = None
+    peak_vram_gb: float | None = None
+    error_message: str | None = None
+
+
+class FileOutputStore:
+    def __init__(self, output_dir: Path, *, url_prefix: str) -> None:
+        self._output_dir = output_dir
+        self._url_prefix = url_prefix.rstrip("/")
+        self._output_dir.mkdir(parents=True, exist_ok=True)
+
+    def save(self, image: Image.Image, *, tone: str) -> str:
+        safe_tone = re.sub(r"[^a-zA-Z0-9_-]+", "-", tone).strip("-") or "image"
+        filename = f"{safe_tone}_{uuid.uuid4().hex[:12]}.png"
+        image.convert("RGB").save(self._output_dir / filename, format="PNG")
+        return f"{self._url_prefix}/{filename}"
+
+
+def _cache_key(product_id: str, product_image_url: str) -> str:
+    digest = hashlib.sha256(
+        f"{product_id}\0{product_image_url}".encode("utf-8")
+    ).hexdigest()
+    return digest
+
+
+def _cuda_synchronize() -> None:
+    try:
+        import torch
+    except ImportError:
+        return
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+
+class InferenceEngine:
+    def __init__(
+        self,
+        *,
+        config: InferenceConfig,
+        preprocessor: Preprocessor,
+        pipeline: Pipeline,
+        output_store: OutputStore,
+        compositor: Callable[..., Image.Image] = composite_product,
+        synchronize: Callable[[], None] = _cuda_synchronize,
+    ) -> None:
+        self._config = config
+        self._preprocessor = preprocessor
+        self._pipeline = pipeline
+        self._output_store = output_store
+        self._compositor = compositor
+        self._synchronize = synchronize
+        self._gpu_lock = Lock()
+
+    @property
+    def model_loaded(self) -> bool:
+        return bool(getattr(self._pipeline, "is_loaded", False))
+
+    def load_model(self) -> None:
+        self._pipeline.load()
+
+    def run(
+        self,
+        *,
+        product_id: str,
+        product_image_url: str,
+        tone: str,
+        image_prompt: str,
+        negative_prompt: str,
+    ) -> InferenceResult:
+        started_at = time.perf_counter()
+        timings = StageTimings(synchronize=self._synchronize)
+        cache_key = _cache_key(product_id, product_image_url)
+
+        with timings.measure("preprocess"):
+            preparation = self._preprocessor.prepare(
+                cache_key,
+                product_image_url,
+            )
+
+        with self._gpu_lock:
+            with timings.measure("generate"):
+                generation = self._pipeline.generate(
+                    cache_key=cache_key,
+                    prompt=image_prompt,
+                    negative_prompt=negative_prompt,
+                    artifacts=preparation.artifacts,
+                )
+
+        output = generation.image
+        if generation.requires_composite:
+            with timings.measure("composite"):
+                output = self._compositor(
+                    output,
+                    preparation.artifacts.product_rgba,
+                )
+            product_preserved: bool | None = True
+            preservation_method = "source_alpha_composite"
+        else:
+            product_preserved = None
+            preservation_method = "not_evaluated"
+
+        with timings.measure("save"):
+            generated_image_url = self._output_store.save(output, tone=tone)
+
+        steps = (
+            self._config.fast_steps
+            if self._config.profile is InferenceProfile.FAST_COMPOSITE
+            else self._config.quality_steps
+        )
+        return InferenceResult(
+            status="done",
+            generated_image_url=generated_image_url,
+            product_preserved=product_preserved,
+            preservation_method=preservation_method,
+            gen_time_sec=round(time.perf_counter() - started_at, 6),
+            stage_times_sec=timings.as_dict(),
+            cache_hit=preparation.cache_hit,
+            model_profile=self._config.profile.value,
+            num_inference_steps=steps,
+            peak_vram_gb=generation.peak_vram_gb,
+        )

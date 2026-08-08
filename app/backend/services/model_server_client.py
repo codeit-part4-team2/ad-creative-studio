@@ -4,10 +4,22 @@ UI 완성 전에도 통합 테스트가 가능하다. 계약 상세는 docs/api_
 """
 import os
 import io
+from urllib.parse import urljoin, urlparse
+
 import httpx
 from PIL import Image
 
 MODEL_SERVER_URL = os.getenv("MODEL_SERVER_URL", "http://localhost:8001")
+BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "http://localhost:8000")
+
+
+def _resolve_product_image_url(product_image_url: str) -> str:
+    parsed = urlparse(product_image_url)
+    if parsed.scheme in {"http", "https"} and parsed.netloc:
+        return product_image_url
+    if parsed.scheme or not product_image_url.startswith("/"):
+        raise ValueError("product_image_url must be an HTTP(S) URL or an absolute API path")
+    return urljoin(f"{BACKEND_PUBLIC_URL.rstrip('/')}/", product_image_url.lstrip("/"))
 
 
 async def request_generation(product_id: str, product_image_url: str, tone: str,
@@ -15,10 +27,10 @@ async def request_generation(product_id: str, product_image_url: str, tone: str,
                               time_slot: str | None) -> dict:
     payload = {
         "product_id": product_id,
-        "product_image_url": product_image_url,
+        "product_image_url": _resolve_product_image_url(product_image_url),
         "tone": tone,
         "image_prompt": image_prompt,
-        "negative_prompt": negative_prompt,
+        "negative_prompt": negative_prompt or "",
         "time_slot": time_slot,
     }
     async with httpx.AsyncClient(timeout=120) as client:
