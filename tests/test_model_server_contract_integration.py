@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import get_args
 
+import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -58,6 +59,33 @@ def test_backend_resolves_relative_product_image_for_remote_model_server(monkeyp
 
     assert posted[0][0] == "http://model.internal:8001/infer"
     assert posted[0][1]["product_image_url"] == "http://backend.internal:8000/files/uploads/prd_1.png"
+
+
+def test_backend_rejects_absolute_product_url_from_another_origin(monkeypatch) -> None:
+    monkeypatch.setattr(
+        model_server_client,
+        "BACKEND_PUBLIC_URL",
+        "http://backend.internal:8000",
+    )
+
+    with pytest.raises(ValueError, match="BACKEND_PUBLIC_URL origin"):
+        model_server_client._resolve_product_image_url(
+            "http://169.254.169.254/latest/meta-data/"
+        )
+
+
+def test_backend_accepts_absolute_product_url_from_its_own_origin(monkeypatch) -> None:
+    monkeypatch.setattr(
+        model_server_client,
+        "BACKEND_PUBLIC_URL",
+        "http://backend.internal:8000",
+    )
+
+    resolved = model_server_client._resolve_product_image_url(
+        "http://backend.internal:8000/files/uploads/prd_1.png"
+    )
+
+    assert resolved == "http://backend.internal:8000/files/uploads/prd_1.png"
 
 
 def test_model_server_time_slots_match_backend_contract() -> None:

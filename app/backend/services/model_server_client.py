@@ -13,11 +13,28 @@ MODEL_SERVER_URL = os.getenv("MODEL_SERVER_URL", "http://localhost:8001")
 BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "http://localhost:8000")
 
 
+def _http_origin(url: str) -> tuple[str, str, int]:
+    parsed = urlparse(url)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or parsed.hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise ValueError("URL must have an HTTP(S) origin without credentials")
+    default_port = 443 if parsed.scheme == "https" else 80
+    return parsed.scheme, parsed.hostname.lower(), parsed.port or default_port
+
+
 def _resolve_product_image_url(product_image_url: str) -> str:
     parsed = urlparse(product_image_url)
     if parsed.scheme in {"http", "https"} and parsed.netloc:
+        if _http_origin(product_image_url) != _http_origin(BACKEND_PUBLIC_URL):
+            raise ValueError(
+                "product_image_url must use the BACKEND_PUBLIC_URL origin"
+            )
         return product_image_url
-    if parsed.scheme or not product_image_url.startswith("/"):
+    if parsed.scheme or parsed.netloc or not product_image_url.startswith("/"):
         raise ValueError("product_image_url must be an HTTP(S) URL or an absolute API path")
     return urljoin(f"{BACKEND_PUBLIC_URL.rstrip('/')}/", product_image_url.lstrip("/"))
 

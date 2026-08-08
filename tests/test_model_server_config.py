@@ -13,6 +13,7 @@ def test_default_config_selects_four_step_fast_composite_profile() -> None:
     assert config.fast_guidance_scale == 1.0
     assert config.image_size == 1024
     assert config.allow_cpu_inference is False
+    assert config.image_allowed_origins == ("http://localhost:8000",)
 
 
 def test_config_rejects_unknown_profile() -> None:
@@ -33,3 +34,23 @@ def test_config_parses_explicit_boolean_values() -> None:
 
     assert config.enable_torch_compile is True
     assert config.allow_cpu_inference is True
+
+
+def test_config_parses_explicit_image_origin_allowlist() -> None:
+    config = InferenceConfig.from_env({
+        "MODEL_IMAGE_ALLOWED_ORIGINS": (
+            "https://backend.example, http://backend.internal:8000/"
+        ),
+    })
+
+    assert config.image_allowed_origins == (
+        "https://backend.example",
+        "http://backend.internal:8000",
+    )
+
+
+def test_config_rejects_image_origin_with_path() -> None:
+    with pytest.raises(ValueError, match="MODEL_IMAGE_ALLOWED_ORIGINS"):
+        InferenceConfig.from_env({
+            "MODEL_IMAGE_ALLOWED_ORIGINS": "https://backend.example/files",
+        })

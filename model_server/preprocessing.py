@@ -15,6 +15,7 @@ from model_server.compositing import fit_product_rgba
 
 class _HttpResponse(Protocol):
     headers: dict[str, str]
+    status_code: int
 
     def raise_for_status(self) -> None: ...
 
@@ -45,6 +46,7 @@ class HttpImageDownloader:
     def __init__(
         self,
         *,
+        allowed_origins: Iterable[str],
         request_get: Callable[..., _HttpResponse] = _requests_get,
         max_bytes: int = 15 * 1024 * 1024,
         max_pixels: int = 40_000_000,
@@ -52,22 +54,51 @@ class HttpImageDownloader:
     ) -> None:
         if max_bytes <= 0 or max_pixels <= 0:
             raise ValueError("download limits must be greater than zero")
+        normalized_origins = frozenset(
+            self._http_origin(origin, origin_only=True)
+            for origin in allowed_origins
+        )
+        if not normalized_origins:
+            raise ValueError("allowed_origins must contain at least one origin")
+        self._allowed_origins = normalized_origins
         self._request_get = request_get
         self._max_bytes = max_bytes
         self._max_pixels = max_pixels
         self._timeout = timeout
 
-    def __call__(self, url: str) -> Image.Image:
+    @staticmethod
+    def _http_origin(
+        url: str,
+        *,
+        origin_only: bool,
+    ) -> tuple[str, str, int]:
         parsed = urlparse(url)
-        if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
-            raise ValueError("product image URL must use HTTP or HTTPS")
+        if (
+            parsed.scheme.lower() not in {"http", "https"}
+            or parsed.hostname is None
+            or parsed.username is not None
+            or parsed.password is not None
+            or (origin_only and parsed.path not in {"", "/"})
+            or (origin_only and (parsed.params or parsed.query or parsed.fragment))
+        ):
+            raise ValueError("product image URL must use a valid HTTP(S) origin")
+        scheme = parsed.scheme.lower()
+        default_port = 443 if scheme == "https" else 80
+        return scheme, parsed.hostname.lower(), parsed.port or default_port
+
+    def __call__(self, url: str) -> Image.Image:
+        origin = self._http_origin(url, origin_only=False)
+        if origin not in self._allowed_origins:
+            raise ValueError("product image URL is outside the allowed origin list")
 
         response = self._request_get(
             url,
             stream=True,
             timeout=self._timeout,
-            allow_redirects=True,
+            allow_redirects=False,
         )
+        if 300 <= response.status_code < 400:
+            raise ValueError("product image redirects are not allowed")
         response.raise_for_status()
 
         content_type = response.headers.get("content-type", "").split(";", 1)[0]

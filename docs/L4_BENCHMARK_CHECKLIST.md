@@ -10,6 +10,7 @@
 nvidia-smi
 python --version
 python -c "import torch,diffusers,transformers; print(torch.__version__, diffusers.__version__, transformers.__version__)"
+python -m pip freeze --all > benchmark-environment.txt
 ```
 
 아래 항목을 결과와 함께 저장합니다.
@@ -18,6 +19,8 @@ python -c "import torch,diffusers,transformers; print(torch.__version__, diffuse
 - Python, PyTorch, Diffusers, Transformers 버전
 - Git commit 또는 전달받은 소스 SHA-256
 - 프로필, step, guidance scale, compile 여부
+- `MODEL_IMAGE_ALLOWED_ORIGINS` 값과 backend 접근 가능 여부
+- GCP 방화벽 또는 reverse proxy에서 model server 8001 포트를 backend에만 허용했는지
 
 ## 실험 행렬
 
@@ -40,6 +43,11 @@ python -c "import torch,diffusers,transformers; print(torch.__version__, diffuse
 - 첫 요청 cold-start 시간
 - 캐시 miss와 hit 각각의 시간
 - peak VRAM과 OOM 여부
+
+순차 지연시간 측정과 별도로, 서로 다른 `product_id`와 `product_image_url` 두 건을
+동시에 요청합니다. 두 요청의 preprocess가 서로를 막지 않는지 확인하고, GPU generate
+단계는 의도대로 직렬 실행되는지 기록합니다. 같은 상품의 반복 요청만 사용하면 키별
+캐시 동시성 문제를 발견할 수 없습니다.
 
 ## 품질 판정
 

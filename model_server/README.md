@@ -31,6 +31,10 @@ python -m pip install torch==2.12.1 torchvision==0.27.1 \
 python -m pip install -r model_server/requirements.txt
 ```
 
+`model_server/requirements.txt`의 직접 의존성은 L4 벤치마크 재현을 위해 정확한
+버전으로 고정되어 있습니다. PyTorch와 torchvision은 CUDA wheel 인덱스가 별도이므로
+위 명령처럼 먼저 설치합니다.
+
 설치 용량은 PyTorch와 SDXL 가중치 때문에 수 GB 이상입니다. 모델 가중치는 Git에
 커밋하지 않습니다.
 
@@ -43,6 +47,9 @@ curl -X POST http://127.0.0.1:8001/warmup
 ```
 
 `/warmup`은 첫 사용자 요청 전에 모델 다운로드·로드를 끝내기 위한 엔드포인트입니다.
+실패하면 내부 예외 문자열 대신
+`{"status":"failed","model_loaded":false,"error_message":"model_load_failed"}`를
+반환합니다.
 `ENABLE_TORCH_COMPILE=true`일 때 실제 그래프 컴파일은 첫 `/infer`에서 일어나므로,
 측정 전 동일 payload로 한 번 더 추론 워밍업해야 합니다.
 CPU 추론은 실수로 대형 모델을 내려받지 않도록 기본 차단됩니다.
@@ -58,9 +65,14 @@ backend가 별도 프로세스 또는 호스트라면 다음 값을 실제 접�
 ```dotenv
 MODEL_SERVER_URL=http://model-server:8001
 BACKEND_PUBLIC_URL=http://backend:8000
+MODEL_IMAGE_ALLOWED_ORIGINS=http://backend:8000
 MODEL_OUTPUT_DIR=/srv/ad-creative-studio/data/outputs
 USE_MOCK_GENERATION=false
 ```
+
+`MODEL_IMAGE_ALLOWED_ORIGINS`는 model server가 상품 이미지를 내려받을 수 있는
+HTTP(S) origin의 쉼표 구분 목록입니다. 요청 URL은 이 목록과 일치해야 하고 redirect는
+허용하지 않습니다.
 
 모델 서버 설정은 루트 [환경변수 예시](../.env.example)에 정리되어 있습니다.
 

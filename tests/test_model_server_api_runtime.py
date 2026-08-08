@@ -27,6 +27,13 @@ class _FailingEngine:
         raise RuntimeError("secret internal path and token")
 
 
+class _FailingWarmupEngine:
+    model_loaded = False
+
+    def load_model(self) -> None:
+        raise RuntimeError("secret model repository and access token")
+
+
 def _payload() -> dict[str, str]:
     return {
         "product_id": "p-1",
@@ -73,3 +80,19 @@ def test_health_is_available_without_loading_model_weights() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "model_loaded": False}
+
+
+def test_warmup_failure_returns_structured_error_without_internal_details() -> None:
+    app.dependency_overrides[get_engine] = lambda: _FailingWarmupEngine()
+    try:
+        response = TestClient(app, raise_server_exceptions=False).post("/warmup")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "failed",
+        "model_loaded": False,
+        "error_message": "model_load_failed",
+    }
+    assert "secret" not in response.text

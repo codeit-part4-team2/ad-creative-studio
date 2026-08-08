@@ -44,3 +44,9 @@ class InferResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: Literal["ok"] = "ok"
     model_loaded: bool
+
+
+class WarmupResponse(BaseModel):
+    status: Literal["ok", "failed"]
+    model_loaded: bool
+    error_message: str | None = None

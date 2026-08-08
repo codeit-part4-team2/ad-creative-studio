@@ -14,8 +14,14 @@ from model_server.preprocessing import (
 
 
 class _FakeResponse:
-    def __init__(self, payload: bytes, content_type: str = "image/png") -> None:
+    def __init__(
+        self,
+        payload: bytes,
+        content_type: str = "image/png",
+        status_code: int = 200,
+    ) -> None:
         self._payload = payload
+        self.status_code = status_code
         self.headers = {
             "content-type": content_type,
             "content-length": str(len(payload)),
@@ -124,6 +130,7 @@ def test_rembg_segmenter_initializes_one_session_for_multiple_images() -> None:
 def test_http_downloader_rejects_non_http_scheme_without_requesting() -> None:
     requested: list[str] = []
     downloader = HttpImageDownloader(
+        allowed_origins={"https://images.example"},
         request_get=lambda url, **_: requested.append(url),
         max_bytes=1024,
         max_pixels=10_000,
@@ -140,6 +147,7 @@ def test_http_downloader_stops_response_larger_than_limit() -> None:
     response = _FakeResponse(payload)
     response.headers["content-length"] = "2048"
     downloader = HttpImageDownloader(
+        allowed_origins={"https://images.example"},
         request_get=lambda *_args, **_kwargs: response,
         max_bytes=1024,
         max_pixels=10_000,
@@ -152,6 +160,7 @@ def test_http_downloader_stops_response_larger_than_limit() -> None:
 def test_http_downloader_decodes_valid_image_and_normalizes_rgb() -> None:
     response = _FakeResponse(_png_bytes((10, 5)))
     downloader = HttpImageDownloader(
+        allowed_origins={"https://images.example"},
         request_get=lambda *_args, **_kwargs: response,
         max_bytes=1024,
         max_pixels=100,
@@ -161,3 +170,36 @@ def test_http_downloader_decodes_valid_image_and_normalizes_rgb() -> None:
 
     assert image.mode == "RGB"
     assert image.size == (10, 5)
+
+
+def test_http_downloader_rejects_origin_outside_allowlist_before_request() -> None:
+    requested: list[str] = []
+    downloader = HttpImageDownloader(
+        request_get=lambda url, **_: requested.append(url),
+        allowed_origins={"https://images.example"},
+        max_bytes=1024,
+        max_pixels=100,
+    )
+
+    with pytest.raises(ValueError, match="allowed origin"):
+        downloader("http://169.254.169.254/latest/meta-data/")
+
+    assert requested == []
+
+
+def test_http_downloader_rejects_redirects_from_allowed_origin() -> None:
+    response = _FakeResponse(_png_bytes(), status_code=302)
+    request_options: list[dict[str, object]] = []
+    downloader = HttpImageDownloader(
+        request_get=lambda *_args, **kwargs: (
+            request_options.append(kwargs) or response
+        ),
+        allowed_origins={"https://images.example"},
+        max_bytes=1024,
+        max_pixels=100,
+    )
+
+    with pytest.raises(ValueError, match="redirect"):
+        downloader("https://images.example/product.png")
+
+    assert request_options[0]["allow_redirects"] is False

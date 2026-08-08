@@ -20,7 +20,12 @@ from model_server.preprocessing import (
     ProductPreprocessor,
     RembgSegmenter,
 )
-from model_server.schemas import HealthResponse, InferRequest, InferResponse
+from model_server.schemas import (
+    HealthResponse,
+    InferRequest,
+    InferResponse,
+    WarmupResponse,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -58,7 +63,9 @@ def _build_engine() -> InferenceEngine:
     )
     preprocessor = ProductPreprocessor(
         cache=cache,
-        downloader=HttpImageDownloader(),
+        downloader=HttpImageDownloader(
+            allowed_origins=config.image_allowed_origins,
+        ),
         segmenter=RembgSegmenter(),
         image_size=config.image_size,
         product_fill_ratio=config.product_fill_ratio,
@@ -94,12 +101,24 @@ def health() -> HealthResponse:
     )
 
 
-@app.post("/warmup", response_model=HealthResponse)
+@app.post(
+    "/warmup",
+    response_model=WarmupResponse,
+    response_model_exclude_none=True,
+)
 def warmup(
     engine: Annotated[InferenceEngine, Depends(get_engine)],
-) -> HealthResponse:
-    engine.load_model()
-    return HealthResponse(model_loaded=engine.model_loaded)
+) -> WarmupResponse:
+    try:
+        engine.load_model()
+    except Exception:
+        LOGGER.exception("model warmup failed")
+        return WarmupResponse(
+            status="failed",
+            model_loaded=False,
+            error_message="model_load_failed",
+        )
+    return WarmupResponse(status="ok", model_loaded=engine.model_loaded)
 
 
 @app.post("/infer", response_model=InferResponse)

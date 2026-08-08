@@ -3,16 +3,16 @@
 # python -m pip install torch==2.12.1 torchvision==0.27.1 \
 #   --index-url https://download.pytorch.org/whl/cu132
 
-accelerate>=1,<2
+accelerate==1.14.0
 diffusers==0.39.0
-fastapi>=0.115,<1
-numpy>=2.3,<3
-opencv-python-headless>=4.10,<6
-peft>=0.17,<1
-pillow>=12.1,<13
-pydantic>=2.10,<3
-rembg[gpu]>=2.0.75,<3
-requests>=2.32,<3
-safetensors>=0.8,<1
-transformers>=4.41.2,<6
-uvicorn[standard]>=0.30,<1
+fastapi==0.141.1
+numpy==2.2.6
+opencv-python-headless==5.0.0.93
+peft==0.20.0
+pillow==12.2.0
+pydantic==2.13.4
+rembg[gpu]==2.0.76
+requests==2.34.2
+safetensors==0.8.0
+transformers==5.14.1
+uvicorn[standard]==0.52.1

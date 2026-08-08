@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from typing import Mapping
+from urllib.parse import urlparse
 
 
 class InferenceProfile(str, Enum):
@@ -39,6 +40,42 @@ def _positive_float(name: str, raw: str) -> float:
     return value
 
 
+def _normalize_http_origin(name: str, raw: str) -> str:
+    parsed = urlparse(raw.strip())
+    if (
+        parsed.scheme not in {"http", "https"}
+        or parsed.hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+    ):
+        raise ValueError(f"{name} must contain HTTP(S) origins without paths")
+
+    host = parsed.hostname.lower()
+    rendered_host = f"[{host}]" if ":" in host else host
+    default_port = 443 if parsed.scheme == "https" else 80
+    port = parsed.port
+    port_suffix = "" if port in {None, default_port} else f":{port}"
+    return f"{parsed.scheme}://{rendered_host}{port_suffix}"
+
+
+def _image_allowed_origins(environ: Mapping[str, str]) -> tuple[str, ...]:
+    name = "MODEL_IMAGE_ALLOWED_ORIGINS"
+    raw = environ.get(
+        name,
+        environ.get("BACKEND_PUBLIC_URL", "http://localhost:8000"),
+    )
+    candidates = [item.strip() for item in raw.split(",") if item.strip()]
+    if not candidates:
+        raise ValueError(f"{name} must contain at least one origin")
+    return tuple(
+        dict.fromkeys(_normalize_http_origin(name, item) for item in candidates)
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class InferenceConfig:
     profile: InferenceProfile = InferenceProfile.FAST_COMPOSITE
@@ -53,6 +90,7 @@ class InferenceConfig:
     product_fill_ratio: float = 0.5
     cache_max_entries: int = 16
     cache_ttl_seconds: float = 3600.0
+    image_allowed_origins: tuple[str, ...] = ("http://localhost:8000",)
     enable_torch_compile: bool = False
     allow_cpu_inference: bool = False
 
@@ -129,6 +167,7 @@ class InferenceConfig:
                     "PRODUCT_CACHE_TTL_SECONDS", str(defaults.cache_ttl_seconds)
                 ),
             ),
+            image_allowed_origins=_image_allowed_origins(environ),
             enable_torch_compile=_parse_bool(
                 "ENABLE_TORCH_COMPILE",
                 environ.get(
