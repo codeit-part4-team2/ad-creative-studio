@@ -217,3 +217,4 @@ eval/golden_dataset/*
 
 # 저작권 있는 테스트용 원본 제품 이미지 (김재헌님 PR #4)
 model_server/experiments/product_sample.jpeg
+model_server/experiments/microwave.webp
