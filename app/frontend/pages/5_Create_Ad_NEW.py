@@ -21,6 +21,63 @@ TIME_SLOT_OPTIONS = [
 MAX_SLOTS = 3
 TONE_LABEL_MAP = {"emotional": "감성", "modern": "모던", "practical": "실용", "premium": "프리미엄"}
 
+# 로딩 화면 단계 - (경과초, 라벨). 실제 백엔드가 세부 stage를 안 돌려줘서(job["current_step"]은
+# "시간대/톤 생성 중" 정도만 줌) 지금은 경과시간 기준으로 단계 메시지를 고른다.
+# 지금 값은 quality_regenerate 실측(P50 17.4초) 기준 - fast_composite 실측(목표 4~8초) 나오면
+# 이 임계값들을 그 비율에 맞춰 다시 조정할 것. 가짜 퍼센트(83% 같은)는 신뢰를 떨어뜨리니 안 쓴다 -
+# "지금 이 단계를 하고 있다"는 정성적 신호만 준다.
+LOADING_STAGES = [
+    (0, "상품 정보를 확인했어요"),
+    (2, "시간대에 맞는 광고 콘셉트를 구성했어요"),
+    (5, "제품이 돋보이는 배경을 만들고 있어요"),
+    (12, "광고 문구를 자연스럽게 조합하고 있어요"),
+    (15, "거의 다 됐어요 - 최종 결과를 정리하고 있어요"),
+]
+MAX_POLL_SECONDS = 45  # fast_composite로 바뀌면 낮춰도 됨, 지금은 17초 P95 기준 여유 있게
+
+
+def _render_loading_experience(job_id: str):
+    """
+    단순 스피너 대신, 실제 파이프라인 단계에 맞춘 체크리스트형 로딩 화면.
+    완료/실패 판정은 반드시 백엔드 job 상태(진짜 사실)로 하고, 화면에 보이는 단계
+    메시지만 경과시간으로 고른다 - 그래서 fast_composite로 훨씬 빨리 끝나도
+    (예: 6초) 문제없이 바로 "완료"로 넘어간다(중간 단계를 억지로 다 보여주지 않음).
+    """
+    start = time.time()
+    with st.status("광고를 만들고 있어요 ✨", expanded=True) as status:
+        placeholder = st.empty()
+        for _ in range(int(MAX_POLL_SECONDS / 0.5)):
+            job = requests.get(f"{API_BASE}/api/v1/jobs/{job_id}", timeout=10).json()
+
+            if job["status"] == "completed":
+                status.update(label="광고가 완성됐어요 🎉", state="complete")
+                return
+            if job["status"] == "failed":
+                status.update(label=f"생성 실패: {job.get('error_message', '알 수 없는 오류')}", state="error")
+                st.stop()
+
+            elapsed = time.time() - start
+            lines = []
+            reached_current = False
+            for threshold, label in LOADING_STAGES:
+                if elapsed >= threshold:
+                    lines.append(f"✅ {label}")
+                elif not reached_current:
+                    lines.append(f"🎨 {label}")  # 지금 진행 중인 단계
+                    reached_current = True
+                    if label == "제품이 돋보이는 배경을 만들고 있어요":
+                        # 가장 오래 걸리는(모델 추론) 단계에만 살짝 친근한 보조문구를 붙인다 -
+                        # 메인 상태 메시지는 서비스스럽게, 보조문구만 캐주얼하게(치용님 아이디어)
+                        lines.append("　　좋은 상태로 제품을 포장하고 있습니다 :)")
+                else:
+                    lines.append(f"⬜ {label}")  # 아직 안 온 단계
+            placeholder.markdown("\n\n".join(lines))
+            time.sleep(0.5)
+
+        status.update(label="예상보다 오래 걸리고 있어요 - 잠시 후 다시 확인해주세요", state="error")
+        st.stop()
+
+
 st.title("광고 만들기")
 
 if "wizard_step" not in st.session_state:
@@ -141,34 +198,34 @@ def render_review_and_generate_step():
 
     slots = st.session_state.get("time_slots", [])
     labels = [label for key, label, _ in TIME_SLOT_OPTIONS if key in slots]
-    est_seconds = len(slots) * 4 * 15
 
     st.write(f"**상품**: {st.session_state.product_name}")
     st.write(f"**시간대**: {', '.join(labels)}")
     st.write(f"**생성 개수**: 톤 4종 × 시간대 {len(slots)}개 = {len(slots) * 4}개 (규격 3종씩)")
-    st.caption(f"예상 소요 시간: 약 {est_seconds}초")
+    # 예상 소요시간은 일부러 안 보여준다 - 모델팀 구조(fast_composite/quality_regenerate/
+    # 캐시/배치)가 계속 바뀌는 중이라 지금 숫자를 계산해서 보여주면 오히려 신뢰를 깎는다.
+    # 실제 E2E 실측 끝나면 그때 진짜 근거 있는 숫자로 넣는다.
+    st.caption("선택한 시간대와 생성 옵션에 따라 잠시 시간이 걸릴 수 있어요.")
 
-    if st.session_state.wizard_step != 3:
-        return
-
-    if st.button("🎨 광고 생성", type="primary", key="generate_btn"):
-        try:
-            resp = requests.post(f"{API_BASE}/api/v1/generations", json={
-                "product_id": st.session_state.product_id,
-                "time_slots": slots,
-            }, timeout=10)
-            resp.raise_for_status()
-            st.session_state.job_id = resp.json()["job_id"]
-            # 이전 생성 결과가 session_state에 남아있으면 render_result_step이
-            # "이미 결과 있음"으로 착각해서 새 job_id를 폴링하지 않고 옛 결과를
-            # 그대로 보여준다 (설정 [수정] 후 재생성했을 때 실제로 재현됨) - 명시적으로 비운다.
-            st.session_state.results = []
-            st.session_state.wizard_step = 4
-            st.rerun()
-        except requests.exceptions.ConnectionError:
-            st.error(f"백엔드({API_BASE})에 연결할 수 없습니다.")
-        except requests.exceptions.HTTPError as e:
-            st.error(f"생성 요청 실패: {e.response.text}")
+    if st.session_state.wizard_step == 3:  # 4단계(생성 요청 완료 후)로 넘어가면 버튼 다시 안 보여줌
+        if st.button("🎨 광고 생성", type="primary", key="generate_btn"):
+            try:
+                resp = requests.post(f"{API_BASE}/api/v1/generations", json={
+                    "product_id": st.session_state.product_id,
+                    "time_slots": slots,
+                }, timeout=10)
+                resp.raise_for_status()
+                st.session_state.job_id = resp.json()["job_id"]
+                # 이전 생성 결과가 session_state에 남아있으면 render_result_step이
+                # "이미 결과 있음"으로 착각해서 새 job_id를 폴링하지 않고 옛 결과를
+                # 그대로 보여준다 (설정 [수정] 후 재생성했을 때 실제로 재현됨) - 명시적으로 비운다.
+                st.session_state.results = []
+                st.session_state.wizard_step = 4
+                st.rerun()
+            except requests.exceptions.ConnectionError:
+                st.error(f"백엔드({API_BASE})에 연결할 수 없습니다.")
+            except requests.exceptions.HTTPError as e:
+                st.error(f"생성 요청 실패: {e.response.text}")
 
 
 def render_result_step():
@@ -179,24 +236,7 @@ def render_result_step():
     job_id = st.session_state.job_id
 
     if not st.session_state.get("results"):
-        with st.status("광고를 만들고 있어요...", expanded=True) as status:
-            placeholder = st.empty()
-            for _ in range(60):
-                job = requests.get(f"{API_BASE}/api/v1/jobs/{job_id}", timeout=10).json()
-                placeholder.write(
-                    f"{job['status']} · {job['completed_count']}/{job['total_count']} "
-                    f"· {job.get('current_step') or ''}"
-                )
-                if job["status"] == "completed":
-                    status.update(label="완료!", state="complete")
-                    break
-                if job["status"] == "failed":
-                    status.update(label=f"실패: {job.get('error_message')}", state="error")
-                    st.stop()
-                time.sleep(0.5)
-            else:
-                status.update(label="시간 초과 - 다시 시도해주세요", state="error")
-                st.stop()
+        _render_loading_experience(job_id)
 
         result = requests.get(f"{API_BASE}/api/v1/generations/{job_id}", timeout=10).json()
         st.session_state.results = result["results"]
