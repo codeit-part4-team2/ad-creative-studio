@@ -152,8 +152,7 @@ class VideoWorkflowService:
             return self._persist_locked(job)
 
     def run_render(self, video_job_id: str) -> None:
-        if not self._render_lock.acquire(blocking=False):
-            raise WorkflowConflict("다른 영상이 렌더링 중입니다")
+        self._render_lock.acquire()
         try:
             with self._state_lock:
                 job = self._get_locked(video_job_id)

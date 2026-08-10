@@ -1,4 +1,5 @@
 import hashlib
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -213,6 +214,72 @@ def test_run_render_persists_processing_before_renderer_and_warning(workflow):
     assert rendered.video_sha256 == hashlib.sha256(b"verified-mp4").hexdigest()
     assert rendered.music_warning == "music_unavailable"
     assert rendered.video_url == f"/files/videos/{job.video_job_id}.mp4"
+
+
+def test_concurrent_render_requests_queue_instead_of_leaving_job_stuck(
+    tmp_path,
+    board,
+):
+    first_started = threading.Event()
+    release_first = threading.Event()
+    call_lock = threading.Lock()
+    call_count = 0
+
+    class QueuedRenderer(FakeRenderer):
+        def render(self, storyboard, *, output_path, music_path):
+            nonlocal call_count
+            with call_lock:
+                call_count += 1
+                current_call = call_count
+            if current_call == 1:
+                first_started.set()
+                assert release_first.wait(timeout=2)
+            return super().render(
+                storyboard,
+                output_path=output_path,
+                music_path=music_path,
+            )
+
+    service = VideoWorkflowService(
+        renderer=QueuedRenderer(),
+        music_catalog=None,
+        publisher=FakePublisher(),
+        now=lambda: NOW,
+        video_dir=tmp_path / "videos",
+        storyboard_builder=lambda result_id: Storyboard(
+            result_id=result_id,
+            product_id=board.product_id,
+            tone=board.tone,
+            time_slot=board.time_slot,
+            product_name=board.product_name,
+            image_path=board.image_path,
+            scenes=board.scenes,
+            source_fingerprint=board.source_fingerprint,
+        ),
+        fingerprint_builder=lambda _: board.source_fingerprint,
+    )
+    first = service.create("res_1")
+    second = service.create("res_2")
+    errors: list[Exception] = []
+
+    def render(video_job_id: str) -> None:
+        try:
+            service.run_render(video_job_id)
+        except Exception as exc:
+            errors.append(exc)
+
+    first_thread = threading.Thread(target=render, args=(first.video_job_id,))
+    second_thread = threading.Thread(target=render, args=(second.video_job_id,))
+    first_thread.start()
+    assert first_started.wait(timeout=1)
+    second_thread.start()
+    release_first.set()
+    first_thread.join(timeout=2)
+    second_thread.join(timeout=2)
+
+    assert errors == []
+    assert service.get(first.video_job_id).render_status is RenderStatus.COMPLETED
+    assert service.get(second.video_job_id).render_status is RenderStatus.COMPLETED
 
 
 def test_run_render_records_sanitized_failure(tmp_path, board):
