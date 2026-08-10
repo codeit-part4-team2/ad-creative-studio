@@ -80,6 +80,7 @@ def _image_allowed_origins(environ: Mapping[str, str]) -> tuple[str, ...]:
 class InferenceConfig:
     profile: InferenceProfile = InferenceProfile.FAST_COMPOSITE
     image_size: int = 1024
+    fast_background_size: int = 768
     seed: int = 42
     fast_steps: int = 4
     fast_guidance_scale: float = 1.0
@@ -110,6 +111,18 @@ class InferenceConfig:
         if image_size % 8:
             raise ValueError("IMAGE_SIZE must be divisible by 8")
 
+        fast_background_size = _positive_int(
+            "FAST_BACKGROUND_SIZE",
+            environ.get(
+                "FAST_BACKGROUND_SIZE",
+                str(defaults.fast_background_size),
+            ),
+        )
+        if fast_background_size % 8:
+            raise ValueError("FAST_BACKGROUND_SIZE must be divisible by 8")
+        if fast_background_size > image_size:
+            raise ValueError("FAST_BACKGROUND_SIZE must not exceed IMAGE_SIZE")
+
         product_fill_ratio = _positive_float(
             "PRODUCT_FILL_RATIO",
             environ.get("PRODUCT_FILL_RATIO", str(defaults.product_fill_ratio)),
@@ -120,6 +133,7 @@ class InferenceConfig:
         return cls(
             profile=profile,
             image_size=image_size,
+            fast_background_size=fast_background_size,
             seed=int(environ.get("SEED", str(defaults.seed))),
             fast_steps=_positive_int(
                 "FAST_NUM_INFERENCE_STEPS",

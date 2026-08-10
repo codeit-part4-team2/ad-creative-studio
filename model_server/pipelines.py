@@ -218,8 +218,8 @@ class DiffusersGenerationPipeline:
                 negative_prompt=background_negative,
                 num_inference_steps=self._config.fast_steps,
                 guidance_scale=self._config.fast_guidance_scale,
-                width=self._config.image_size,
-                height=self._config.image_size,
+                width=self._config.fast_background_size,
+                height=self._config.fast_background_size,
                 generator=generator,
             )
             requires_composite = True
@@ -248,6 +248,14 @@ class DiffusersGenerationPipeline:
             requires_composite = False
 
         image = output.images[0].convert("RGB")
+        if (
+            self._config.profile is InferenceProfile.FAST_COMPOSITE
+            and image.size != (self._config.image_size, self._config.image_size)
+        ):
+            image = image.resize(
+                (self._config.image_size, self._config.image_size),
+                Image.Resampling.LANCZOS,
+            )
         return GenerationResult(
             image=image,
             requires_composite=requires_composite,

@@ -23,7 +23,9 @@ class _FakePipeline:
 
     def __call__(self, **kwargs: object) -> SimpleNamespace:
         self.calls.append(kwargs)
-        return SimpleNamespace(images=[Image.new("RGB", (16, 16), "green")])
+        width = int(kwargs.get("width", 16))
+        height = int(kwargs.get("height", 16))
+        return SimpleNamespace(images=[Image.new("RGB", (width, height), "green")])
 
     def prepare_ip_adapter_image_embeds(self, **_: object) -> list[str]:
         self.embedding_calls += 1
@@ -48,7 +50,11 @@ def test_background_prompt_requests_an_empty_lower_center_product_area() -> None
 
 
 def test_fast_pipeline_is_lazy_and_uses_four_step_lcm_parameters() -> None:
-    config = replace(InferenceConfig(), image_size=16)
+    config = replace(
+        InferenceConfig(),
+        image_size=16,
+        fast_background_size=8,
+    )
     fake = _FakePipeline()
     loads: list[InferenceProfile] = []
     pipeline = DiffusersGenerationPipeline(
@@ -74,8 +80,9 @@ def test_fast_pipeline_is_lazy_and_uses_four_step_lcm_parameters() -> None:
     assert result.peak_vram_gb == 3.25
     assert fake.calls[0]["num_inference_steps"] == 4
     assert fake.calls[0]["guidance_scale"] == 1.0
-    assert fake.calls[0]["width"] == 16
-    assert fake.calls[0]["height"] == 16
+    assert fake.calls[0]["width"] == 8
+    assert fake.calls[0]["height"] == 8
+    assert result.image.size == (16, 16)
     assert "image" not in fake.calls[0]
     assert "ip_adapter_image" not in fake.calls[0]
 
@@ -140,5 +147,7 @@ def test_quality_pipeline_reuses_ip_adapter_embedding_for_same_product() -> None
     assert len(fake.calls) == 2
     assert fake.calls[0]["num_inference_steps"] == 30
     assert fake.calls[0]["guidance_scale"] == 7.5
+    assert fake.calls[0]["width"] == 16
+    assert fake.calls[0]["height"] == 16
     assert fake.calls[0]["image"].mode == "RGB"
     assert fake.calls[0]["ip_adapter_image_embeds"] == ["cached-embedding"]

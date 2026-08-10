@@ -12,6 +12,7 @@ def test_default_config_selects_four_step_fast_composite_profile() -> None:
     assert config.fast_steps == 4
     assert config.fast_guidance_scale == 1.0
     assert config.image_size == 1024
+    assert config.fast_background_size == 768
     assert config.allow_cpu_inference is False
     assert config.image_allowed_origins == ("http://localhost:8000",)
 
@@ -24,6 +25,20 @@ def test_config_rejects_unknown_profile() -> None:
 def test_config_rejects_non_positive_step_count() -> None:
     with pytest.raises(ValueError, match="FAST_NUM_INFERENCE_STEPS"):
         InferenceConfig.from_env({"FAST_NUM_INFERENCE_STEPS": "0"})
+
+
+def test_config_parses_explicit_fast_background_size() -> None:
+    config = InferenceConfig.from_env({"FAST_BACKGROUND_SIZE": "512"})
+
+    assert config.fast_background_size == 512
+
+
+@pytest.mark.parametrize("value", ["0", "770", "1032"])
+def test_fast_background_size_must_be_positive_aligned_and_not_larger(
+    value: str,
+) -> None:
+    with pytest.raises(ValueError, match="FAST_BACKGROUND_SIZE"):
+        InferenceConfig.from_env({"FAST_BACKGROUND_SIZE": value})
 
 
 def test_config_parses_explicit_boolean_values() -> None:
