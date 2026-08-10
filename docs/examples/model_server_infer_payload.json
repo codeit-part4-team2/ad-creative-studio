@@ -1,0 +1,8 @@
+{
+  "product_id": "prd_benchmark_001",
+  "product_image_url": "http://127.0.0.1:8000/files/uploads/replace-with-real-product.png",
+  "tone": "premium",
+  "image_prompt": "premium product advertisement scene, elegant marble surface, soft studio lighting",
+  "negative_prompt": "blurry, text, watermark, duplicated product",
+  "time_slot": "evening"
+}

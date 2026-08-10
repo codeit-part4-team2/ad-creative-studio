@@ -145,7 +145,7 @@ service.py`와 동일한 Mock→실제 한 줄 전환 패턴(`USE_MOCK_VIDEO`).
 ```json
 {
   "product_id": "prd_001",
-  "product_image_url": "/files/products/prd_001.png",
+  "product_image_url": "http://backend:8000/files/uploads/prd_001.png",
   "tone": "emotional",
   "image_prompt": "Create a product advertisement background for ... (영어)",
   "negative_prompt": "blurry, distorted product, extra logo, watermark",
@@ -157,17 +157,73 @@ service.py`와 동일한 Mock→실제 한 줄 전환 패턴(`USE_MOCK_VIDEO`).
 ```json
 {
   "status": "done",
-  "generated_image_url": "https://.../bg.png",
+  "generated_image_url": "/files/outputs/bg.png",
   "product_preserved": true,
-  "gen_time_sec": 8.4
+  "gen_time_sec": 8.4,
+  "gpu_queue_wait_sec": 0.0,
+  "preservation_method": "source_alpha_composite",
+  "stage_times_sec": {
+    "preprocess": 0.8,
+    "gpu_queue_wait": 0.0,
+    "generate": 6.9,
+    "composite": 0.2,
+    "save": 0.1
+  },
+  "cache_hit": true,
+  "model_profile": "fast_composite",
+  "num_inference_steps": 4,
+  "background_size": 768,
+  "output_size": 1024,
+  "peak_vram_gb": null
 }
 ```
 
 `image_prompt`/`negative_prompt`는 `app/prompt/builder.py`가 만들어서 전달합니다.
 `product_preserved`는 R2/R3가 자체 검증 후 반환 — 평가 1순위 지표(제품 보존율)와 연동됩니다.
+기존 필드는 그대로 유지하며, 성능·보존 메타데이터는 선택 필드입니다.
+`gpu_queue_wait_sec`는 프로세스 내부 GPU 잠금 획득 전 대기시간이고,
+`stage_times_sec.generate`는 실제 GPU 모델 호출시간입니다. 전체 `gen_time_sec`에는
+두 시간이 모두 포함됩니다.
+`product_image_url`은 model_server에서 접근 가능한 HTTP(S) 절대 URL이어야 합니다.
+backend는 저장된 상대경로를 `BACKEND_PUBLIC_URL` 기준 절대 URL로 변환해 전송합니다.
+이미 절대 URL인 경우에도 `BACKEND_PUBLIC_URL`과 같은 origin만 허용합니다.
+model_server는 `MODEL_IMAGE_ALLOWED_ORIGINS`에 등록된 origin만 내려받고 redirect를
+거부합니다.
+`generated_image_url`이 상대경로면 backend가 `MODEL_SERVER_URL`을 붙여 다운로드합니다.
+
+### GET {MODEL_SERVER_URL}/health
+
+모델 가중치를 로드하지 않고 프로세스 상태를 확인합니다.
+
+```json
+{ "status": "ok", "model_loaded": false }
+```
+
+### POST {MODEL_SERVER_URL}/warmup
+
+최초 사용자 요청 전에 모델 가중치를 명시적으로 로드합니다. 성공하면
+`model_loaded: true`를 반환합니다. 다운로드·로드 시간은 실제 생성 지연시간과
+분리해서 기록합니다. `torch.compile`을 켠 경우 첫 `/infer`에서 그래프가
+컴파일되므로 측정 전에 실제 payload로 추가 워밍업이 필요합니다.
+
+성공:
+
+```json
+{ "status": "ok", "model_loaded": true }
+```
+
+실패 시 내부 예외 내용은 노출하지 않습니다.
+
+```json
+{
+  "status": "failed",
+  "model_loaded": false,
+  "error_message": "model_load_failed"
+}
+```
 
 ### R3에게 전달할 핵심 경계 (요약)
-- **모델 입력**: 제품 이미지는 URL(정적 파일 경로, `app/backend`가 `/files/uploads/...`로 서빙)로 전달. 바이너리 직접 전송은 안 함
+- **모델 입력**: 제품 이미지는 model_server가 접근 가능한 절대 URL로 전달. backend가 상대 정적 경로를 `BACKEND_PUBLIC_URL`과 결합하며 바이너리 직접 전송은 안 함
 - **시간대/톤 enum**: `app/prompt/schemas.py`의 `TimeSlotLiteral`(6종) / `ToneLiteral`(4종) 그대로 사용
 - **생성 단위**: `시간대 × 톤`만 (출력 규격 3종은 `app/backend`가 후처리로 파생 — model_server가 신경 쓸 필요 없음)
 - **성공 응답**: 위 스키마 그대로 (`status: "done"`)

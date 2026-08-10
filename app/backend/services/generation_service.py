@@ -98,11 +98,8 @@ class ModelServerGenerationService(GenerationService):
             prompt_result = prompt_builder.build(item)  # image_prompt(영어)/negative_prompt
             response = await model_server_client.request_generation(
                 product_id=req.product_id,
-                # TODO(R3와 합의 필요): product["image_url"]은 우리 서버 기준 상대경로
-                # ("/files/uploads/...")다. Mock 서버는 이 값을 실제로 안 써서 지금은
-                # 문제없지만, model_server가 별도 VM에 뜨면 이 경로만으로는 어느 서버에서
-                # 이미지를 가져와야 하는지 알 수 없다. 절대 URL 전달 / 이미지 직접 전송
-                # (multipart·base64) / 공용 스토리지(GCS·S3) 중 R3와 계약으로 정할 것.
+                # client가 backend 기준 상대경로를 BACKEND_PUBLIC_URL과 결합해
+                # model_server에서 접근 가능한 절대 URL로 변환한다.
                 product_image_url=product["image_url"],
                 tone=item.tone,
                 image_prompt=prompt_result.image_prompt,
