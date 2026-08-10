@@ -1,9 +1,10 @@
 # Project State
 
-- Last verified: 2026-08-10 KST after model branch local gate
+- Last verified: 2026-08-10 13:39 KST after final model branch local gate
 - Project root: `G:\Codex\projects\상급프로젝트\team-repo\ad-creative-studio`
 - Runtime or engine: `[VERIFIED]` Python model-server project; L4 report used Python 3.11.15, torch 2.12.1+cu132, NVIDIA L4 24 GB.
-- Branch and code commit: `[VERIFIED] codex/model-server-optimization @ 92ff63c`
-- Worktree state: `[VERIFIED]` only reviewed docs, ledger, and pre-existing `tests/test_api.py` lint cleanup remain before the handoff commit.
-- Related dirty worktree: `[VERIFIED] codex/rush-hour-shorts-design @ fb7c68c` contains locally verified, unsubmitted Shorts implementation.
-- Current milestone: dependency compatibility and 768 fast-background optimization pass locally; model-result-to-Shorts integration is next.
+- Branch and reviewed code/docs commit: `[VERIFIED] codex/model-server-optimization @ 6ba4aa8`
+- Worktree state before this ledger update: `[VERIFIED]` clean; branch was 10 commits ahead of its fork remote and unpushed.
+- Related Shorts worktree: `[VERIFIED] codex/rush-hour-shorts-design @ 58f2bb7`, clean and unpushed.
+- Related integration worktree: `[VERIFIED] codex/model-shorts-integration @ 6bc9178`, clean before applying the new model commits.
+- Current milestone: FP16-safe fast VAE and GPU queue timing pass locally; Shorts and combined branch gates are next.
