@@ -30,25 +30,25 @@
 - Consumes: `AutoencoderKL.from_pretrained(model_id, torch_dtype=dtype, use_safetensors=True)`.
 - Produces: both SDXL pipeline constructors receive the explicit `vae` instance.
 
-- [ ] **Step 1: Add a failing loader test**
+- [x] **Step 1: Add a failing loader test**
 
 Inject fake `torch` and `diffusers` modules, load the fast profile, and assert
 that `StableDiffusionXLPipeline.from_pretrained` receives the exact object
 returned by `AutoencoderKL.from_pretrained` under the `vae` keyword.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `python -m pytest tests/test_model_server_pipelines.py::test_fast_loader_uses_fp16_safe_vae -q`
 
 Expected: FAIL because the fast constructor currently receives no `vae`.
 
-- [ ] **Step 3: Implement the shared VAE load**
+- [x] **Step 3: Implement the shared VAE load**
 
 Load `madebyollin/sdxl-vae-fp16-fix` before the profile branch and pass it to
 both `StableDiffusionXLPipeline` and
 `StableDiffusionXLControlNetPipeline`. Remove the duplicate quality-only load.
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
 Run: `python -m pytest tests/test_model_server_pipelines.py -q`
 
@@ -68,32 +68,32 @@ Expected: all pipeline tests pass.
 - Produces: `InferResponse.gpu_queue_wait_sec: float | None`.
 - Produces: `stage_times_sec["gpu_queue_wait"]` on successful inference.
 
-- [ ] **Step 1: Add failing runtime and API tests**
+- [x] **Step 1: Add failing runtime and API tests**
 
 Hold `InferenceEngine._gpu_lock`, start a request in another thread, release
 the lock after at least 50 milliseconds, and assert the result reports
 `gpu_queue_wait_sec >= 0.04`. Assert API serialization preserves the field.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `python -m pytest tests/test_model_server_inference_runtime.py tests/test_model_server_api_runtime.py -q`
 
 Expected: FAIL because the field and stage do not exist.
 
-- [ ] **Step 3: Implement timed lock acquisition**
+- [x] **Step 3: Implement timed lock acquisition**
 
 Measure `time.perf_counter()` immediately before and after
 `self._gpu_lock.acquire()`, release the lock in `finally`, add the rounded value
 to stage metadata, and set the top-level result field. Do not include CUDA
 synchronization in queue timing.
 
-- [ ] **Step 4: Add benchmark coverage**
+- [x] **Step 4: Add benchmark coverage**
 
 Extend the literal benchmark fixture with `gpu_queue_wait` and assert its
 median appears in `stage_median_sec` while configuration output remains
 unchanged.
 
-- [ ] **Step 5: Verify GREEN**
+- [x] **Step 5: Verify GREEN**
 
 Run: `python -m pytest tests/test_model_server_inference_runtime.py tests/test_model_server_api_runtime.py tests/test_model_server_benchmark_latency.py -q`
 
@@ -114,12 +114,12 @@ Expected: all focused tests pass.
 **Interfaces:**
 - Produces: evidence-safe handoff that distinguishes local verification from the serving owner's external report.
 
-- [ ] **Step 1: Document the selected default and warnings**
+- [x] **Step 1: Document the selected default and warnings**
 
 Record 4 steps as the selected fast default, explain queue timing, and record
 the VAE same-seed comparison as the remaining external gate.
 
-- [ ] **Step 2: Run the model branch gate**
+- [x] **Step 2: Run the model branch gate**
 
 Run:
 
@@ -133,13 +133,13 @@ git diff --check
 
 Expected: every command exits 0.
 
-- [ ] **Step 3: Update and validate the ledger**
+- [x] **Step 3: Update and validate the ledger**
 
 Record the exact branch head, commands, counts, and unresolved L4 checks. Run:
 
 `python "$env:USERPROFILE/.codex/skills/project-continuity-ledger/scripts/ledger.py" check . --json`
 
-- [ ] **Step 4: Commit model-only changes locally**
+- [x] **Step 4: Commit model-only changes locally**
 
 Stage only the reviewed model source, tests, docs, and ledger. Commit without
 pushing.
@@ -154,22 +154,22 @@ pushing.
 - Consumes: the reviewed model-only commit and existing Shorts commits.
 - Produces: a clean combined local branch with no external publication.
 
-- [ ] **Step 1: Run the complete Shorts gate**
+- [x] **Step 1: Run the complete Shorts gate**
 
 Run pytest, Ruff, compileall, `pip check`, `git diff --check`, credential scan,
 and ignored-artifact checks in the Shorts worktree.
 
-- [ ] **Step 2: Cherry-pick the model-only commit into integration**
+- [x] **Step 2: Cherry-pick the model-only commit into integration**
 
 Apply the new model commits in order. Resolve only genuine overlap while
 preserving both dependency groups and both environment contracts.
 
-- [ ] **Step 3: Run the combined gate**
+- [x] **Step 3: Run the combined gate**
 
 Run pytest, Ruff, compileall, `pip check`, `git diff --check`, credential scan,
 and ignored-artifact checks in the integration worktree.
 
-- [ ] **Step 4: Preserve the pre-push state**
+- [x] **Step 4: Preserve the pre-push state**
 
 Confirm all three branches are clean, no listeners remain on ports 8000, 8001,
 8010, 8501, or 8511, and no remote ref changed.
