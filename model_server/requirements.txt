@@ -6,7 +6,7 @@
 accelerate==1.14.0
 diffusers==0.39.0
 fastapi==0.141.1
-numpy==2.2.6
+numpy==2.3.5
 opencv-python-headless==5.0.0.93
 peft==0.20.0
 pillow==12.2.0
