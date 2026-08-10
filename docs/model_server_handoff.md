@@ -2,7 +2,7 @@
 
 ## 로컬 통합 상태
 
-- 기준 원격: `main@43511b6c5c4d9ff2d29a872416ce57591775856c`
+- 최신 확인 원격: `main@0d07c0b` (PR #16 병합 상태)
 - 작업 브랜치: `codex/model-server-optimization`
 - 원격 브랜치: `Adam-1228/ad-creative-studio:codex/model-server-optimization`
 - 팀 저장소 Draft PR: `codeit-part4-team2/ad-creative-studio#15`
@@ -22,9 +22,9 @@ NVIDIA L4 warm 10회 기준 P50 17.39초, P95 17.59초, peak VRAM 16.25GB, 실�
 
 ## 검증 결과
 
-- Python 3.13.13 전체 테스트: `169 passed in 15.02s`
-- Python 3.12 `compileall`: 통과
-- 변경 Python 파일 Ruff 검사: 통과
+- Python 3.13.13 전체 테스트: `181 passed in 27.83s`
+- 전체 Python 소스 `compileall`: 통과
+- `app`, `model_server`, `tests`, `tools`, `scripts` Ruff 검사: 통과
 - `git diff --check`: 통과
 - 변경 트리 비밀정보 패턴 검사: 발견 0건
 - API import 시 Diffusers, Transformers, rembg, OpenCV 로드: 0개
@@ -52,13 +52,16 @@ Python 3.12 인터프리터의 구문 컴파일은 통과했지만 해당 인터
 12. 응답과 벤치마크 결과에 배경 크기와 최종 출력 크기를 분리 기록
 13. fast와 quality 경로에 FP16-safe SDXL VAE를 명시적으로 주입
 14. GPU 잠금 대기시간을 `gpu_queue_wait_sec`와 단계별 timing으로 분리 기록
+15. `requirements-torch-cu132.txt`에 L4용 torch/torchvision과 CUDA 인덱스를 함께 고정
+16. 같은 캐시 실패를 기다리는 스레드마다 독립된 예외 객체를 전달
+17. 이미지 픽셀 상한을 EXIF 처리와 픽셀 디코딩 전에 검사
 
 ## 서빙 담당자 확인 순서
 
 1. `nvidia-smi`에서 NVIDIA L4와 드라이버 확인
-2. CUDA용 PyTorch와 정확히 고정된 `model_server/requirements.txt` 설치
+2. `requirements-torch-cu132.txt`의 CUDA용 PyTorch와 `requirements.txt`의 나머지 의존성 설치
 3. `BACKEND_PUBLIC_URL`과 `MODEL_IMAGE_ALLOWED_ORIGINS`를 실제 backend origin으로 지정
-4. backend를 8000, model_server를 8001로 실행하고 8001 접근을 backend로 제한
+4. backend를 8000, model_server를 8001에서 `--workers 1`로 한 프로세스만 실행하고 8001 접근을 backend로 제한
 5. `POST /warmup` 후 `GET /health`의 `model_loaded=true` 확인
 6. `USE_MOCK_GENERATION=false`로 실제 E2E 한 건 실행
 7. `docs/L4_BENCHMARK_CHECKLIST.md`의 1024/768 배경, 순차·동시 요청 및 4/6/8-step 비교 측정
@@ -73,3 +76,4 @@ Python 3.12 인터프리터의 구문 컴파일은 통과했지만 해당 인터
 - 상품 20개 이상에 대한 rembg 치명 마스크 오류율
 - 4-step 이미지의 시간대·톤 반영 및 6/8-step 대비 블라인드 선호도
 - VM에서 backend의 `BACKEND_PUBLIC_URL` 접근 가능 여부
+- L4 클린 환경에서 두 requirements 파일의 연속 설치와 `pip check`

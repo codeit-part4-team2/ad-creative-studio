@@ -172,6 +172,30 @@ def test_http_downloader_decodes_valid_image_and_normalizes_rgb() -> None:
     assert image.size == (10, 5)
 
 
+def test_http_downloader_rejects_pixel_limit_before_decoding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response = _FakeResponse(_png_bytes((11, 10)))
+    downloader = HttpImageDownloader(
+        allowed_origins={"https://images.example"},
+        request_get=lambda *_args, **_kwargs: response,
+        max_bytes=1024,
+        max_pixels=100,
+    )
+    decode_calls: list[Image.Image] = []
+
+    def unexpected_decode(image: Image.Image, *_args: object, **_kwargs: object) -> None:
+        decode_calls.append(image)
+        raise AssertionError("pixel limit must be checked before image decoding")
+
+    monkeypatch.setattr(Image.Image, "load", unexpected_decode)
+
+    with pytest.raises(ValueError, match="maximum pixel count"):
+        downloader("https://images.example/product.png")
+
+    assert decode_calls == []
+
+
 def test_http_downloader_rejects_origin_outside_allowlist_before_request() -> None:
     requested: list[str] = []
     downloader = HttpImageDownloader(

@@ -12,6 +12,7 @@ from packaging.version import Version
 EXACT_REQUIREMENT = re.compile(
     r"[A-Za-z0-9_.-]+(?:\[[A-Za-z0-9_,.-]+\])?==[^\s;]+"
 )
+CUDA_REQUIREMENTS_FILE = Path("model_server/requirements-torch-cu132.txt")
 
 
 def _requirement_lines(requirements_file: Path) -> list[str]:
@@ -19,6 +20,27 @@ def _requirement_lines(requirements_file: Path) -> list[str]:
         line.strip()
         for line in requirements_file.read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+
+def test_cuda_runtime_dependencies_are_machine_readable_and_exactly_pinned() -> None:
+    lines = _requirement_lines(CUDA_REQUIREMENTS_FILE)
+    requirements = [Requirement(raw) for raw in lines if not raw.startswith("--")]
+    pins = {
+        canonicalize_name(requirement.name): next(
+            Version(item.version)
+            for item in requirement.specifier
+            if item.operator == "=="
+        )
+        for requirement in requirements
+    }
+
+    assert pins == {
+        "torch": Version("2.12.1"),
+        "torchvision": Version("0.27.1"),
+    }
+    assert [line for line in lines if line.startswith("--")] == [
+        "--index-url https://download.pytorch.org/whl/cu132"
     ]
 
 

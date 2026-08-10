@@ -30,14 +30,13 @@ PyTorch CUDA wheel은 VM 드라이버와 맞는
 python -m venv ~/serving/venv
 source ~/serving/venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install torch==2.12.1 torchvision==0.27.1 \
-  --index-url https://download.pytorch.org/whl/cu132
+python -m pip install -r model_server/requirements-torch-cu132.txt
 python -m pip install -r model_server/requirements.txt
 ```
 
-`model_server/requirements.txt`의 직접 의존성은 L4 벤치마크 재현을 위해 정확한
-버전으로 고정되어 있습니다. PyTorch와 torchvision은 CUDA wheel 인덱스가 별도이므로
-위 명령처럼 먼저 설치합니다.
+`model_server/requirements-torch-cu132.txt`는 PyTorch, torchvision 버전과 공식
+CUDA wheel 인덱스를 함께 고정합니다. 나머지 직접 의존성은
+`model_server/requirements.txt`에 정확한 버전으로 고정되어 있습니다.
 
 설치 용량은 PyTorch와 SDXL 가중치 때문에 수 GB 이상입니다. 모델 가중치는 Git에
 커밋하지 않습니다.
@@ -49,6 +48,10 @@ uvicorn model_server.main:app --host 0.0.0.0 --port 8001 --workers 1
 curl http://127.0.0.1:8001/health
 curl -X POST http://127.0.0.1:8001/warmup
 ```
+
+> **운영 필수:** NVIDIA L4 한 장에는 model server 프로세스와 Uvicorn worker를
+> 정확히 하나만 실행합니다. `--workers 1`을 제거하거나 복제본이 같은 GPU를
+> 공유하게 구성하면 프로세스 내부 GPU 잠금이 요청을 직렬화하지 못합니다.
 
 `/warmup`은 첫 사용자 요청 전에 모델 다운로드·로드를 끝내기 위한 엔드포인트입니다.
 실패하면 내부 예외 문자열 대신

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import time
 from collections import OrderedDict
 from collections.abc import Callable
@@ -22,6 +23,19 @@ class _Entry(Generic[ValueT]):
 class _Pending:
     event: Event
     error: BaseException | None = None
+
+
+def _clone_exception(error: BaseException) -> BaseException:
+    try:
+        cloned = copy.copy(error)
+    except Exception:
+        try:
+            cloned = type(error)(*error.args)
+        except Exception:
+            cloned = RuntimeError(str(error))
+    if cloned is error:
+        cloned = RuntimeError(str(error))
+    return cloned.with_traceback(None)
 
 
 class TTLCache(Generic[KeyT, ValueT]):
@@ -64,7 +78,7 @@ class TTLCache(Generic[KeyT, ValueT]):
 
             pending.event.wait()
             if pending.error is not None:
-                raise pending.error
+                raise _clone_exception(pending.error) from None
 
         try:
             value = factory()

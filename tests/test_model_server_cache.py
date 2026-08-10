@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import time
 
 from model_server.cache import TTLCache
 
@@ -125,3 +126,44 @@ def test_cache_coalesces_concurrent_builds_for_the_same_key() -> None:
     assert len(results) == 2
     assert results[0][0] is results[1][0]
     assert sorted(hit for _, hit in results) == [False, True]
+
+
+def test_cache_gives_each_failed_waiter_a_distinct_exception() -> None:
+    cache: TTLCache[str, object] = TTLCache(max_entries=2, ttl_seconds=60.0)
+    factory_started = threading.Event()
+    release = threading.Event()
+    errors: list[RuntimeError] = []
+    errors_lock = threading.Lock()
+    calls = 0
+    calls_lock = threading.Lock()
+
+    def fail() -> object:
+        nonlocal calls
+        with calls_lock:
+            calls += 1
+        factory_started.set()
+        release.wait(timeout=2)
+        raise RuntimeError("product preparation failed")
+
+    def get_value() -> None:
+        try:
+            cache.get_or_create("product", fail)
+        except RuntimeError as exc:
+            with errors_lock:
+                errors.append(exc)
+
+    workers = [threading.Thread(target=get_value) for _ in range(3)]
+    workers[0].start()
+    assert factory_started.wait(timeout=1)
+    workers[1].start()
+    workers[2].start()
+    time.sleep(0.05)
+    release.set()
+    for worker in workers:
+        worker.join(timeout=2)
+
+    assert all(not worker.is_alive() for worker in workers)
+    assert calls == 1
+    assert len(errors) == 3
+    assert len({id(error) for error in errors}) == 3
+    assert {str(error) for error in errors} == {"product preparation failed"}

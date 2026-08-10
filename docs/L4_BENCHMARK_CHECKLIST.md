@@ -12,6 +12,8 @@
 nvidia-smi
 python --version
 python -c "import torch,diffusers,transformers; print(torch.__version__, diffusers.__version__, transformers.__version__)"
+python -c "import torch,torchvision; assert torch.__version__.split('+')[0] == '2.12.1'; assert torchvision.__version__.split('+')[0] == '0.27.1'"
+pgrep -af "uvicorn model_server.main:app"
 python -m pip freeze --all > benchmark-environment.txt
 ```
 
@@ -19,6 +21,7 @@ python -m pip freeze --all > benchmark-environment.txt
 
 - GPU 이름, 드라이버, CUDA, 총 VRAM
 - Python, PyTorch, Diffusers, Transformers 버전
+- `uvicorn model_server.main:app ... --workers 1` 프로세스가 하나만 실행되는지
 - Git commit 또는 전달받은 소스 SHA-256
 - 프로필, step, guidance scale, 배경 생성 크기, 최종 출력 크기, compile 여부
 - `MODEL_IMAGE_ALLOWED_ORIGINS` 값과 backend 접근 가능 여부

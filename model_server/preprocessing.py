@@ -120,9 +120,9 @@ class HttpImageDownloader:
 
         try:
             with Image.open(io.BytesIO(b"".join(chunks))) as decoded:
-                image = ImageOps.exif_transpose(decoded)
-                if image.width * image.height > self._max_pixels:
+                if decoded.width * decoded.height > self._max_pixels:
                     raise ValueError("product image exceeds maximum pixel count")
+                image = ImageOps.exif_transpose(decoded)
                 return image.convert("RGB")
         except UnidentifiedImageError as exc:
             raise ValueError("product image response is not a valid image") from exc
