@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from model_server.config import InferenceConfig
+from model_server.config import InferenceConfig, InferenceProfile
 from model_server.inference import FileOutputStore, InferenceEngine
 from model_server.pipelines import GenerationResult
 from model_server.preprocessing import (
@@ -59,7 +59,11 @@ class _CaptureStore:
 
 
 def test_fast_inference_composites_source_and_returns_stage_metadata() -> None:
-    config = replace(InferenceConfig(), image_size=16)
+    config = replace(
+        InferenceConfig(),
+        image_size=16,
+        fast_background_size=8,
+    )
     preprocessor = _FakePreprocessor()
     pipeline = _FakePipeline()
     store = _CaptureStore()
@@ -86,6 +90,8 @@ def test_fast_inference_composites_source_and_returns_stage_metadata() -> None:
     assert result.cache_hit is True
     assert result.model_profile == "fast_composite"
     assert result.num_inference_steps == 4
+    assert result.background_size == 8
+    assert result.output_size == 16
     assert result.peak_vram_gb == 3.5
     assert set(result.stage_times_sec) == {
         "preprocess",
@@ -98,7 +104,12 @@ def test_fast_inference_composites_source_and_returns_stage_metadata() -> None:
 
 
 def test_quality_result_does_not_claim_unmeasured_product_preservation() -> None:
-    config = replace(InferenceConfig(), image_size=16)
+    config = replace(
+        InferenceConfig(),
+        profile=InferenceProfile.QUALITY_REGENERATE,
+        image_size=16,
+        fast_background_size=8,
+    )
     pipeline = _FakePipeline(requires_composite=False)
     engine = InferenceEngine(
         config=config,
@@ -118,6 +129,8 @@ def test_quality_result_does_not_claim_unmeasured_product_preservation() -> None
 
     assert result.product_preserved is None
     assert result.preservation_method == "not_evaluated"
+    assert result.background_size == 16
+    assert result.output_size == 16
 
 
 def test_inference_engine_serializes_pipeline_generation() -> None:

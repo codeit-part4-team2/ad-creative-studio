@@ -18,6 +18,8 @@ class _SuccessfulEngine:
             cache_hit=False,
             model_profile="fast_composite",
             num_inference_steps=4,
+            background_size=768,
+            output_size=1024,
             peak_vram_gb=3.0,
         )
 
@@ -59,6 +61,8 @@ def test_infer_returns_backward_compatible_fields_and_per_stage_timings() -> Non
     assert body["gen_time_sec"] == 0.5
     assert body["stage_times_sec"] == {"generate": 0.4, "composite": 0.1}
     assert body["num_inference_steps"] == 4
+    assert body["background_size"] == 768
+    assert body["output_size"] == 1024
 
 
 def test_infer_failure_does_not_expose_internal_exception_text() -> None:

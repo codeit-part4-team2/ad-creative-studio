@@ -45,6 +45,19 @@ def summarize_runs(runs: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         )
         for stage in stage_names
     }
+    configuration_keys = (
+        "model_profile",
+        "num_inference_steps",
+        "background_size",
+        "output_size",
+    )
+    configurations = {
+        tuple(run.get(key) for key in configuration_keys)
+        for run in runs
+    }
+    if len(configurations) != 1:
+        raise ValueError("benchmark summary requires one consistent configuration")
+    configuration_values = configurations.pop()
     return {
         "runs": len(runs),
         "latency_sec": {
@@ -54,6 +67,7 @@ def summarize_runs(runs: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
             "max": _rounded(max(latencies)),
         },
         "stage_median_sec": stage_medians,
+        "configuration": dict(zip(configuration_keys, configuration_values)),
     }
 
 

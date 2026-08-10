@@ -51,6 +51,8 @@ class InferenceResult:
     cache_hit: bool | None = None
     model_profile: str | None = None
     num_inference_steps: int | None = None
+    background_size: int | None = None
+    output_size: int | None = None
     peak_vram_gb: float | None = None
     error_message: str | None = None
 
@@ -169,5 +171,19 @@ class InferenceEngine:
             cache_hit=preparation.cache_hit,
             model_profile=self._config.profile.value,
             num_inference_steps=steps,
+            background_size=(
+                generation.background_size
+                if generation.background_size is not None
+                else (
+                    self._config.fast_background_size
+                    if self._config.profile is InferenceProfile.FAST_COMPOSITE
+                    else self._config.image_size
+                )
+            ),
+            output_size=(
+                generation.output_size
+                if generation.output_size is not None
+                else self._config.image_size
+            ),
             peak_vram_gb=generation.peak_vram_gb,
         )

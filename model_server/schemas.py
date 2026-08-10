@@ -37,6 +37,8 @@ class InferResponse(BaseModel):
     cache_hit: bool | None = None
     model_profile: str | None = None
     num_inference_steps: int | None = None
+    background_size: int | None = None
+    output_size: int | None = None
     peak_vram_gb: float | None = None
     error_message: str | None = None
 

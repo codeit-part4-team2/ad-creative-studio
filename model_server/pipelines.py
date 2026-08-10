@@ -23,6 +23,8 @@ class GenerationResult:
     image: Image.Image
     requires_composite: bool
     peak_vram_gb: float | None
+    background_size: int | None = None
+    output_size: int | None = None
 
 
 def build_background_prompt(prompt: str) -> str:
@@ -260,4 +262,10 @@ class DiffusersGenerationPipeline:
             image=image,
             requires_composite=requires_composite,
             peak_vram_gb=self._peak_memory_reader(),
+            background_size=(
+                self._config.fast_background_size
+                if self._config.profile is InferenceProfile.FAST_COMPOSITE
+                else self._config.image_size
+            ),
+            output_size=self._config.image_size,
         )
