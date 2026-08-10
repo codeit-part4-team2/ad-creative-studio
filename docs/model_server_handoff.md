@@ -13,6 +13,13 @@
 NVIDIA L4 warm 10회 기준 P50 17.39초, P95 17.59초, peak VRAM 16.25GB, 실패 0건으로
 측정됐습니다. 이 수치는 전달받은 외부 측정이며 fast 경로의 성능을 의미하지 않습니다.
 
+같은 날 전달받은 fast 보고값은 4-step P50/P95 2.37/3.98초, 6-step
+2.97/4.52초, 8-step 3.46/5.00초이며 peak VRAM은 모두 10.85GB였습니다.
+서로 다른 상품 두 건의 동시 요청에서는 preprocess가 병렬로 완료되고 GPU generate가
+직렬화됐으며 OOM은 없었다고 보고됐습니다. 이 값들은 담당자 메시지로 전달된 외부
+측정이며 원본 JSON, 실행 commit, `background_size`, `output_size`는 아직 직접
+대조하지 않았습니다.
+
 ## 검증 결과
 
 - Python 3.13.13 전체 테스트: `169 passed in 15.02s`
@@ -43,6 +50,8 @@ Python 3.12 인터프리터의 구문 컴파일은 통과했지만 해당 인터
 10. `/warmup` 구조화 실패 응답과 L4 직접 의존성 정확한 버전 고정
 11. fast 경로의 SDXL 배경만 기본 768×768로 생성하고 1024×1024로 정규화한 뒤 제품 합성
 12. 응답과 벤치마크 결과에 배경 크기와 최종 출력 크기를 분리 기록
+13. fast와 quality 경로에 FP16-safe SDXL VAE를 명시적으로 주입
+14. GPU 잠금 대기시간을 `gpu_queue_wait_sec`와 단계별 timing으로 분리 기록
 
 ## 서빙 담당자 확인 순서
 
@@ -53,10 +62,13 @@ Python 3.12 인터프리터의 구문 컴파일은 통과했지만 해당 인터
 5. `POST /warmup` 후 `GET /health`의 `model_loaded=true` 확인
 6. `USE_MOCK_GENERATION=false`로 실제 E2E 한 건 실행
 7. `docs/L4_BENCHMARK_CHECKLIST.md`의 1024/768 배경, 순차·동시 요청 및 4/6/8-step 비교 측정
+8. 이전 stock VAE와 현재 FP16-safe VAE의 768/4-step 동일 seed 비교 측정
 
 ## 아직 검증되지 않은 항목
 
-- fast 경로의 NVIDIA L4 cold/warm latency, P50/P95, peak VRAM, OOM
+- fast 보고값의 원본 JSON, 정확한 실행 commit, `background_size=768`, `output_size=1024`
+- 1024/4-step B0와 768/4-step B의 동일 조건 비교
+- FP16-safe VAE 적용 후 NVIDIA L4 cold/warm latency, P50/P95, peak VRAM, OOM
 - SDXL·LCM-LoRA·ControlNet·IP-Adapter 가중치 다운로드와 라이선스 승인 상태
 - 상품 20개 이상에 대한 rembg 치명 마스크 오류율
 - 4-step 이미지의 시간대·톤 반영 및 6/8-step 대비 블라인드 선호도

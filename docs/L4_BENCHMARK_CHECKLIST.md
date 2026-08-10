@@ -43,7 +43,7 @@ python -m pip freeze --all > benchmark-environment.txt
 
 - API 전체 P50/P95
 - 응답 `background_size`와 `output_size`가 실험 행렬과 일치하는지
-- `preprocess`, `generate`, `composite`, `save` 단계별 중앙값
+- `preprocess`, `gpu_queue_wait`, `generate`, `composite`, `save` 단계별 중앙값
 - 첫 요청 cold-start 시간
 - 캐시 miss와 hit 각각의 시간
 - peak VRAM과 OOM 여부
@@ -52,6 +52,20 @@ python -m pip freeze --all > benchmark-environment.txt
 동시에 요청합니다. 두 요청의 preprocess가 서로를 막지 않는지 확인하고, GPU generate
 단계는 의도대로 직렬 실행되는지 기록합니다. 같은 상품의 반복 요청만 사용하면 키별
 캐시 동시성 문제를 발견할 수 없습니다.
+
+## FP16-safe VAE 후속 비교
+
+fast 경로가 `madebyollin/sdxl-vae-fp16-fix`를 명시적으로 사용한 후보와 이전 stock
+SDXL VAE 결과를 같은 seed, 상품, 프롬프트, 768 배경, 4-step 조건으로 비교합니다.
+
+- P50/P95와 `generate`, `gpu_queue_wait` 단계 중앙값
+- peak VRAM, OOM, 실패 건수
+- `AutoencoderKL` dtype 및 deprecated `upcast_vae` 경고 발생 여부
+- 동일 seed 생성 이미지의 배경 디테일, 색상, 밴딩, NaN 또는 검은 이미지 여부
+- 응답 `background_size=768`, `output_size=1024` 확인
+
+모델 카드가 stock VAE와 미세한 출력 차이를 명시하므로 경고가 사라졌다는 사실만으로
+채택하지 않고, 속도와 시각 품질을 함께 판정합니다.
 
 ## 품질 판정
 

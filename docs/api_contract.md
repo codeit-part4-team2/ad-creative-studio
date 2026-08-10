@@ -160,9 +160,11 @@ service.py`와 동일한 Mock→실제 한 줄 전환 패턴(`USE_MOCK_VIDEO`).
   "generated_image_url": "/files/outputs/bg.png",
   "product_preserved": true,
   "gen_time_sec": 8.4,
+  "gpu_queue_wait_sec": 0.0,
   "preservation_method": "source_alpha_composite",
   "stage_times_sec": {
     "preprocess": 0.8,
+    "gpu_queue_wait": 0.0,
     "generate": 6.9,
     "composite": 0.2,
     "save": 0.1
@@ -170,6 +172,8 @@ service.py`와 동일한 Mock→실제 한 줄 전환 패턴(`USE_MOCK_VIDEO`).
   "cache_hit": true,
   "model_profile": "fast_composite",
   "num_inference_steps": 4,
+  "background_size": 768,
+  "output_size": 1024,
   "peak_vram_gb": null
 }
 ```
@@ -177,6 +181,9 @@ service.py`와 동일한 Mock→실제 한 줄 전환 패턴(`USE_MOCK_VIDEO`).
 `image_prompt`/`negative_prompt`는 `app/prompt/builder.py`가 만들어서 전달합니다.
 `product_preserved`는 R2/R3가 자체 검증 후 반환 — 평가 1순위 지표(제품 보존율)와 연동됩니다.
 기존 필드는 그대로 유지하며, 성능·보존 메타데이터는 선택 필드입니다.
+`gpu_queue_wait_sec`는 프로세스 내부 GPU 잠금 획득 전 대기시간이고,
+`stage_times_sec.generate`는 실제 GPU 모델 호출시간입니다. 전체 `gen_time_sec`에는
+두 시간이 모두 포함됩니다.
 `product_image_url`은 model_server에서 접근 가능한 HTTP(S) 절대 URL이어야 합니다.
 backend는 저장된 상대경로를 `BACKEND_PUBLIC_URL` 기준 절대 URL로 변환해 전송합니다.
 이미 절대 URL인 경우에도 `BACKEND_PUBLIC_URL`과 같은 origin만 허용합니다.

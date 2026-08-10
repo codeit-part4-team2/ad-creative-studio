@@ -16,7 +16,9 @@ backend 연동 계약은 [API 계약](../docs/api_contract.md), L4 검증 절차
   `product_preserved`를 임의로 `true`로 표시하지 않습니다.
 
 공통으로 모델은 프로세스당 한 번만 로드하고, 상품 전처리와 IP-Adapter 임베딩을
-TTL/LRU 캐시하며, GPU 호출은 한 번에 하나씩 실행합니다.
+TTL/LRU 캐시하며, GPU 호출은 한 번에 하나씩 실행합니다. 두 프로필 모두
+`madebyollin/sdxl-vae-fp16-fix`를 명시적으로 사용해 SDXL 기본 VAE의 FP32
+디코딩 전환을 피합니다.
 
 ## 설치
 
@@ -56,7 +58,9 @@ curl -X POST http://127.0.0.1:8001/warmup
 측정 전 동일 payload로 한 번 더 추론 워밍업해야 합니다.
 CPU 추론은 실수로 대형 모델을 내려받지 않도록 기본 차단됩니다.
 GPU 모델을 프로세스마다 따로 올리므로 `--workers 1`을 유지해야 합니다. 동시 요청은
-프로세스 내부 GPU 잠금으로 직렬화됩니다.
+프로세스 내부 GPU 잠금으로 직렬화됩니다. 성공 응답의 `gpu_queue_wait_sec`와
+`stage_times_sec.gpu_queue_wait`는 GPU 잠금 획득 전 대기시간을 나타내며,
+`stage_times_sec.generate`는 실제 모델 호출시간만 나타냅니다.
 `/infer`와 `/warmup`은 인증 없는 내부 서비스 엔드포인트이므로 인터넷에 직접 공개하지
 말고 GCP 방화벽 또는 reverse proxy에서 backend만 접근하도록 제한합니다.
 
@@ -90,6 +94,19 @@ python -m tools.benchmark_latency \
   --runs 10
 ```
 
-출력에는 전체 P50/P95, preprocess/generate/composite/save 단계별 중앙값,
+출력에는 전체 P50/P95, preprocess/gpu_queue_wait/generate/composite/save 단계별 중앙값,
 `model_profile`, step, `background_size`, `output_size`가 포함됩니다.
 실제 L4 성능과 이미지 품질은 아직 로컬 테스트만으로 확정할 수 없습니다.
+
+2026-08-10 서빙 담당자 보고에서는 fast 768 후보의 warm 10회 결과가 다음과
+같았습니다. 원본 결과 JSON과 `background_size=768`, `output_size=1024` 메타데이터는
+아직 이 저장소에서 직접 검증하지 않았으므로 외부 보고값으로만 취급합니다.
+
+| Step | P50 | P95 | Peak VRAM | 제품 보존 응답 |
+|---:|---:|---:|---:|---:|
+| 4 | 2.37s | 3.98s | 10.85GB | 10/10 true |
+| 6 | 2.97s | 4.52s | 10.85GB | 10/10 true |
+| 8 | 3.46s | 5.00s | 10.85GB | 10/10 true |
+
+기본값은 4-step을 유지합니다. FP16-safe VAE 적용 전후의 속도와 동일 seed 이미지
+차이는 L4에서 다시 비교한 뒤 merge 여부를 판단합니다.
