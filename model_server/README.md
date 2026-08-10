@@ -9,7 +9,8 @@ backend 연동 계약은 [API 계약](../docs/api_contract.md), L4 검증 절차
 ## 프로필
 
 - `fast_composite` (기본): SDXL + LCM-LoRA 4-step으로 빈 광고 배경을 만든 뒤,
-  rembg로 분리한 원본 상품을 알파 합성합니다. 제품 픽셀 보존과 낮은 지연시간이 목적입니다.
+  기본 768×768 배경을 1024×1024로 확대한 후 rembg로 분리한 1024×1024 원본 상품
+  캔버스를 알파 합성합니다. `FAST_BACKGROUND_SIZE=1024`로 기존 조건을 재현할 수 있습니다.
 - `quality_regenerate`: SDXL + 공식 Canny ControlNet + IP-Adapter를 30-step으로
   실행하는 비교군입니다. 제품 보존 여부를 측정하지 않았으므로 성공 응답에서도
   `product_preserved`를 임의로 `true`로 표시하지 않습니다.
@@ -19,7 +20,8 @@ TTL/LRU 캐시하며, GPU 호출은 한 번에 하나씩 실행합니다.
 
 ## 설치
 
-Python 3.11 또는 3.12 환경을 권장합니다. PyTorch CUDA wheel은 VM 드라이버와 맞는
+Python 3.11 이상이 필요하며 L4 기준 환경은 Python 3.11 또는 3.12를 사용합니다.
+PyTorch CUDA wheel은 VM 드라이버와 맞는
 공식 인덱스에서 먼저 설치한 뒤 나머지 의존성을 설치합니다.
 
 ```bash
@@ -88,5 +90,6 @@ python -m tools.benchmark_latency \
   --runs 10
 ```
 
-출력에는 전체 P50/P95와 preprocess/generate/composite/save 단계별 중앙값이 포함됩니다.
+출력에는 전체 P50/P95, preprocess/generate/composite/save 단계별 중앙값,
+`model_profile`, step, `background_size`, `output_size`가 포함됩니다.
 실제 L4 성능과 이미지 품질은 아직 로컬 테스트만으로 확정할 수 없습니다.

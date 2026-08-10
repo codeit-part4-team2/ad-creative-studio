@@ -9,6 +9,10 @@
 - merge: PM 승인 및 L4 실측 전까지 수행하지 않음
 - 모델 가중치 다운로드 및 NVIDIA L4 실제 추론: 수행하지 않음
 
+2026-08-10 서빙 담당자 실험 A 보고에서 `quality_regenerate`, 1024×1024, 30-step은
+NVIDIA L4 warm 10회 기준 P50 17.39초, P95 17.59초, peak VRAM 16.25GB, 실패 0건으로
+측정됐습니다. 이 수치는 전달받은 외부 측정이며 fast 경로의 성능을 의미하지 않습니다.
+
 ## 검증 결과
 
 - Python 3.13.13 전체 테스트: `169 passed in 15.02s`
@@ -37,6 +41,8 @@ Python 3.12 인터프리터의 구문 컴파일은 통과했지만 해당 인터
 8. 서로 다른 상품의 전처리는 병렬 실행하고 같은 상품의 중복 계산만 합치는 키별 캐시 동시성
 9. backend 동일 origin 및 model server 허용 origin 검사, 이미지 redirect 차단
 10. `/warmup` 구조화 실패 응답과 L4 직접 의존성 정확한 버전 고정
+11. fast 경로의 SDXL 배경만 기본 768×768로 생성하고 1024×1024로 정규화한 뒤 제품 합성
+12. 응답과 벤치마크 결과에 배경 크기와 최종 출력 크기를 분리 기록
 
 ## 서빙 담당자 확인 순서
 
@@ -46,11 +52,11 @@ Python 3.12 인터프리터의 구문 컴파일은 통과했지만 해당 인터
 4. backend를 8000, model_server를 8001로 실행하고 8001 접근을 backend로 제한
 5. `POST /warmup` 후 `GET /health`의 `model_loaded=true` 확인
 6. `USE_MOCK_GENERATION=false`로 실제 E2E 한 건 실행
-7. `docs/L4_BENCHMARK_CHECKLIST.md`의 순차·동시 요청 및 4/6/8-step 비교 측정
+7. `docs/L4_BENCHMARK_CHECKLIST.md`의 1024/768 배경, 순차·동시 요청 및 4/6/8-step 비교 측정
 
 ## 아직 검증되지 않은 항목
 
-- NVIDIA L4의 실제 cold/warm latency, P50/P95, peak VRAM, OOM
+- fast 경로의 NVIDIA L4 cold/warm latency, P50/P95, peak VRAM, OOM
 - SDXL·LCM-LoRA·ControlNet·IP-Adapter 가중치 다운로드와 라이선스 승인 상태
 - 상품 20개 이상에 대한 rembg 치명 마스크 오류율
 - 4-step 이미지의 시간대·톤 반영 및 6/8-step 대비 블라인드 선호도

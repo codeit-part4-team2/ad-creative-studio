@@ -2,8 +2,8 @@
 
 | Priority | Status | Action | Acceptance evidence | Blocker |
 |---|---|---|---|---|
-| 1 | `[VERIFIED]` | Review the 2026-08-10 design. | User approval of the written specification. | None |
-| 2 | `[UNVERIFIED]` | Write the TDD implementation plan. | Plan self-review passes with no placeholders or scope gaps. | Written-spec approval |
-| 3 | `[UNVERIFIED]` | Fix dependency pins and add semantic compatibility regression coverage. | Clean Python 3.11 resolution and `pip check`. | Plan approval |
-| 4 | `[UNVERIFIED]` | Add configurable 768 fast background and 1024 output normalization. | Focused tests, full regression, then L4 benchmark. | Plan approval and L4 access for final timing |
-| 5 | `[UNVERIFIED]` | Reconcile the locally verified Shorts worktree with the model result contract. | Local API/browser E2E using a persisted model result. | Model contract implementation |
+| 1 | `[VERIFIED]` | Review the 2026-08-10 design and plan. | User approval and committed design/plan. | None |
+| 2 | `[VERIFIED]` | Fix dependency pins and add semantic compatibility regression coverage. | Focused test and full local gate pass. | Clean L4 environment resolution remains external. |
+| 3 | `[VERIFIED]` | Add configurable 768 fast background, 1024 normalization, and explicit size metadata. | 175 tests plus Ruff, compileall, pip check, and diff check pass. | L4 timing and visual quality remain external. |
+| 4 | `[UNVERIFIED]` | Reconcile the locally verified Shorts worktree with the model result contract. | Local API/browser E2E using a persisted model result. | None |
+| 5 | `[UNVERIFIED]` | Ask serving owner to rerun clean install and B0/B/C/D/E matrix. | Resolver succeeds; benchmark JSON and image samples are returned. | L4 access and multi-GB dependencies. |

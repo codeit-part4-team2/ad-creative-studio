@@ -303,7 +303,7 @@ def test_exposure_returns_unavailable_when_no_matching_generation():
 def test_exposure_accepts_at_query_param_for_demo():
     """?at= 파라미터로 임의 시각 기준 조회 가능 (발표 데모용)."""
     pid = _upload_product()
-    r = client.post("/api/v1/generations", json={"product_id": pid, "time_slots": ["evening"]})
+    client.post("/api/v1/generations", json={"product_id": pid, "time_slots": ["evening"]})
     time.sleep(0.5)
 
     resp = client.get(f"/api/v1/exposure/{pid}", params={"at": "2026-08-05T20:30:00+09:00"})
@@ -430,7 +430,6 @@ def test_video_completion_persists_video_url_across_restart():
     client.get(f"/api/v1/videos/{video_job_id}")  # completed로 만들고 video_url 반영
 
     # 재시작을 흉내: 메모리 비우고 store.load()로 복구
-    HISTORY_backup_check = store.HISTORY.copy()
     PRODUCTS.clear()
     JOBS.clear()
     HISTORY.clear()

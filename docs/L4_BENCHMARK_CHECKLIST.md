@@ -2,7 +2,9 @@
 
 ## 목적
 
-같은 상품, 프롬프트, seed, 1024×1024 조건에서 기존 품질 경로와 fast 경로의 warm latency와 시각 품질을 비교합니다. 최초 모델 다운로드·로딩·컴파일 시간은 별도 cold-start 값으로 기록합니다.
+같은 상품, 프롬프트, seed, 최종 1024×1024 출력 조건에서 기존 품질 경로와 fast
+경로의 warm latency와 시각 품질을 비교합니다. fast 경로는 배경 생성 크기만 1024와
+768로 나눠 측정합니다. 최초 모델 다운로드·로딩·컴파일 시간은 별도 cold-start 값으로 기록합니다.
 
 ## 환경 기록
 
@@ -18,19 +20,20 @@ python -m pip freeze --all > benchmark-environment.txt
 - GPU 이름, 드라이버, CUDA, 총 VRAM
 - Python, PyTorch, Diffusers, Transformers 버전
 - Git commit 또는 전달받은 소스 SHA-256
-- 프로필, step, guidance scale, compile 여부
+- 프로필, step, guidance scale, 배경 생성 크기, 최종 출력 크기, compile 여부
 - `MODEL_IMAGE_ALLOWED_ORIGINS` 값과 backend 접근 가능 여부
 - GCP 방화벽 또는 reverse proxy에서 model server 8001 포트를 backend에만 허용했는지
 
 ## 실험 행렬
 
-| 실험 | 프로필 | Step | Compile |
-|---|---|---:|---|
-| A | `quality_regenerate` | 30 | false |
-| B | `fast_composite` | 4 | false |
-| C | `fast_composite` | 6 | false |
-| D | `fast_composite` | 8 | false |
-| E | 최적 fast 설정 | 선택 | true |
+| 실험 | 프로필 | 배경 크기 | 최종 크기 | Step | Compile |
+|---|---|---:|---:|---:|---|
+| A | `quality_regenerate` | 1024 | 1024 | 30 | false |
+| B0 | `fast_composite` | 1024 | 1024 | 4 | false |
+| B | `fast_composite` | 768 | 1024 | 4 | false |
+| C | `fast_composite` | 768 | 1024 | 6 | false |
+| D | `fast_composite` | 768 | 1024 | 8 | false |
+| E | 선정된 fast 설정 | 768 | 1024 | 선택 | true |
 
 각 실험은 모델 로드 후 워밍업 1회, 측정 10회 이상 수행합니다. 서로 다른 프로필은 같은 프로세스에 동시에 올리지 않습니다.
 요청 예시는 `docs/examples/model_server_infer_payload.json`을 복사해 실제 업로드 URL로
@@ -39,6 +42,7 @@ python -m pip freeze --all > benchmark-environment.txt
 ## 성능 판정
 
 - API 전체 P50/P95
+- 응답 `background_size`와 `output_size`가 실험 행렬과 일치하는지
 - `preprocess`, `generate`, `composite`, `save` 단계별 중앙값
 - 첫 요청 cold-start 시간
 - 캐시 miss와 hit 각각의 시간
