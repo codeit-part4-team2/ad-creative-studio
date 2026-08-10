@@ -8,7 +8,10 @@ def test_summarize_runs_reports_nearest_rank_p95_and_stage_medians() -> None:
         [
             {
                 "gen_time_sec": value,
-                "stage_times_sec": {"generate": value - 0.2},
+                "stage_times_sec": {
+                    "gpu_queue_wait": value / 10,
+                    "generate": value - 0.2,
+                },
                 "model_profile": "fast_composite",
                 "num_inference_steps": 4,
                 "background_size": 768,
@@ -26,7 +29,7 @@ def test_summarize_runs_reports_nearest_rank_p95_and_stage_medians() -> None:
             "p95": 5.0,
             "max": 5.0,
         },
-        "stage_median_sec": {"generate": 2.8},
+        "stage_median_sec": {"generate": 2.8, "gpu_queue_wait": 0.3},
         "configuration": {
             "model_profile": "fast_composite",
             "num_inference_steps": 4,

@@ -14,7 +14,12 @@ class _SuccessfulEngine:
             product_preserved=True,
             preservation_method="source_alpha_composite",
             gen_time_sec=0.5,
-            stage_times_sec={"generate": 0.4, "composite": 0.1},
+            gpu_queue_wait_sec=0.05,
+            stage_times_sec={
+                "gpu_queue_wait": 0.05,
+                "generate": 0.4,
+                "composite": 0.1,
+            },
             cache_hit=False,
             model_profile="fast_composite",
             num_inference_steps=4,
@@ -59,7 +64,12 @@ def test_infer_returns_backward_compatible_fields_and_per_stage_timings() -> Non
     assert body["status"] == "done"
     assert body["generated_image_url"] == "/files/outputs/premium.png"
     assert body["gen_time_sec"] == 0.5
-    assert body["stage_times_sec"] == {"generate": 0.4, "composite": 0.1}
+    assert body["gpu_queue_wait_sec"] == 0.05
+    assert body["stage_times_sec"] == {
+        "gpu_queue_wait": 0.05,
+        "generate": 0.4,
+        "composite": 0.1,
+    }
     assert body["num_inference_steps"] == 4
     assert body["background_size"] == 768
     assert body["output_size"] == 1024

@@ -47,6 +47,7 @@ class InferenceResult:
     product_preserved: bool | None
     preservation_method: str | None
     gen_time_sec: float | None
+    gpu_queue_wait_sec: float | None = None
     stage_times_sec: Mapping[str, float] = field(default_factory=dict)
     cache_hit: bool | None = None
     model_profile: str | None = None
@@ -131,7 +132,10 @@ class InferenceEngine:
                 product_image_url,
             )
 
-        with self._gpu_lock:
+        queue_started_at = time.perf_counter()
+        self._gpu_lock.acquire()
+        gpu_queue_wait_sec = round(time.perf_counter() - queue_started_at, 6)
+        try:
             with timings.measure("generate"):
                 generation = self._pipeline.generate(
                     cache_key=cache_key,
@@ -139,6 +143,8 @@ class InferenceEngine:
                     negative_prompt=negative_prompt,
                     artifacts=preparation.artifacts,
                 )
+        finally:
+            self._gpu_lock.release()
 
         output = generation.image
         if generation.requires_composite:
@@ -161,13 +167,18 @@ class InferenceEngine:
             if self._config.profile is InferenceProfile.FAST_COMPOSITE
             else self._config.quality_steps
         )
+        stage_times_sec = {
+            "gpu_queue_wait": gpu_queue_wait_sec,
+            **timings.as_dict(),
+        }
         return InferenceResult(
             status="done",
             generated_image_url=generated_image_url,
             product_preserved=product_preserved,
             preservation_method=preservation_method,
             gen_time_sec=round(time.perf_counter() - started_at, 6),
-            stage_times_sec=timings.as_dict(),
+            gpu_queue_wait_sec=gpu_queue_wait_sec,
+            stage_times_sec=stage_times_sec,
             cache_hit=preparation.cache_hit,
             model_profile=self._config.profile.value,
             num_inference_steps=steps,

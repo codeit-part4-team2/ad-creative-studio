@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -93,12 +94,16 @@ def test_fast_inference_composites_source_and_returns_stage_metadata() -> None:
     assert result.background_size == 8
     assert result.output_size == 16
     assert result.peak_vram_gb == 3.5
+    assert result.gpu_queue_wait_sec is not None
+    assert result.gpu_queue_wait_sec >= 0.0
     assert set(result.stage_times_sec) == {
         "preprocess",
+        "gpu_queue_wait",
         "generate",
         "composite",
         "save",
     }
+    assert result.stage_times_sec["gpu_queue_wait"] == result.gpu_queue_wait_sec
     assert store.saved[0].getpixel((8, 8)) == (220, 10, 20)
     assert store.saved[0].getpixel((0, 0)) == (0, 128, 0)
 
@@ -191,6 +196,95 @@ def test_inference_engine_serializes_pipeline_generation() -> None:
     assert call_count == 2
     assert not first.is_alive()
     assert not second.is_alive()
+
+
+def test_inference_engine_reports_gpu_queue_wait_separately() -> None:
+    prepared = threading.Event()
+    results: list[object] = []
+
+    class SignalingPreprocessor(_FakePreprocessor):
+        def prepare(self, cache_key: str, image_url: str) -> PreparationResult:
+            result = super().prepare(cache_key, image_url)
+            prepared.set()
+            return result
+
+    engine = InferenceEngine(
+        config=replace(InferenceConfig(), image_size=16),
+        preprocessor=SignalingPreprocessor(),
+        pipeline=_FakePipeline(),
+        output_store=_CaptureStore(),
+        synchronize=lambda: None,
+    )
+    engine._gpu_lock.acquire()
+
+    request = threading.Thread(
+        target=lambda: results.append(
+            engine.run(
+                product_id="p-queued",
+                product_image_url="https://images.example/product.png",
+                tone="premium",
+                image_prompt="premium studio",
+                negative_prompt="",
+            )
+        )
+    )
+    request.start()
+    assert prepared.wait(timeout=1)
+    time.sleep(0.06)
+    engine._gpu_lock.release()
+    request.join(timeout=2)
+
+    assert not request.is_alive()
+    assert len(results) == 1
+    result = results[0]
+    assert result.gpu_queue_wait_sec is not None
+    assert result.gpu_queue_wait_sec >= 0.04
+    assert result.stage_times_sec["gpu_queue_wait"] == result.gpu_queue_wait_sec
+
+
+def test_inference_engine_releases_gpu_lock_after_generation_failure() -> None:
+    class FailsOncePipeline(_FakePipeline):
+        def __init__(self) -> None:
+            super().__init__()
+            self.attempts = 0
+
+        def generate(self, **kwargs: object) -> GenerationResult:
+            self.attempts += 1
+            if self.attempts == 1:
+                raise RuntimeError("generation failed")
+            return super().generate(**kwargs)
+
+    engine = InferenceEngine(
+        config=replace(InferenceConfig(), image_size=16),
+        preprocessor=_FakePreprocessor(),
+        pipeline=FailsOncePipeline(),
+        output_store=_CaptureStore(),
+        synchronize=lambda: None,
+    )
+
+    try:
+        engine.run(
+            product_id="p-failing",
+            product_image_url="https://images.example/product.png",
+            tone="premium",
+            image_prompt="premium studio",
+            negative_prompt="",
+        )
+    except RuntimeError as exc:
+        assert str(exc) == "generation failed"
+    else:
+        raise AssertionError("first generation must fail")
+
+    result = engine.run(
+        product_id="p-retry",
+        product_image_url="https://images.example/product.png",
+        tone="premium",
+        image_prompt="premium studio",
+        negative_prompt="",
+    )
+
+    assert result.status == "done"
+    assert result.gpu_queue_wait_sec is not None
 
 
 def test_file_output_store_creates_png_and_public_url(tmp_path: Path) -> None:

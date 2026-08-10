@@ -33,6 +33,7 @@ class InferResponse(BaseModel):
     product_preserved: bool | None = None
     preservation_method: str | None = None
     gen_time_sec: float | None = None
+    gpu_queue_wait_sec: float | None = None
     stage_times_sec: dict[str, float] = Field(default_factory=dict)
     cache_hit: bool | None = None
     model_profile: str | None = None
