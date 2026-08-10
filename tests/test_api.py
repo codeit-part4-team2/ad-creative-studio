@@ -1,19 +1,41 @@
 import io
+import hashlib
 import shutil
 import time
 import uuid
 import zipfile
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.backend.main import app
-from app.backend.services import store, overlay, video_generation_service
+from app.backend.schemas.video import VideoJob
+from app.backend.services import store, overlay
+from app.backend.services.video_renderer import RenderResult
+from app.backend.services.video_workflow import VideoWorkflowService
+from app.backend.services.youtube_publisher import DisabledPublisher
 from app.backend.services.store import PRODUCTS, JOBS, HISTORY
 from app.backend.schemas.generation import GenerationRequest
 from app.backend.api.generations import build_generation_plan
 
 client = TestClient(app)
+
+
+class _ApiTestRenderer:
+    def render(self, storyboard, *, output_path, music_path):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"test-video")
+        return RenderResult(
+            output_path=output_path,
+            sha256=hashlib.sha256(output_path.read_bytes()).hexdigest(),
+            duration_sec=12.5,
+            width=1080,
+            height=1920,
+            video_codec="h264",
+            audio_codec="aac",
+            music_warning="music_unavailable",
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -35,17 +57,25 @@ def _clear_store(tmp_path, monkeypatch):
     test_output_dir = overlay.OUTPUT_DIR / f"_pytest_{uuid.uuid4().hex[:8]}"
     monkeypatch.setattr(overlay, "OUTPUT_DIR", test_output_dir)
 
-    monkeypatch.setattr(video_generation_service, "VIDEO_DIR", tmp_path / "videos")
+    app.state.video_workflow = VideoWorkflowService(
+        renderer=_ApiTestRenderer(),
+        music_catalog=None,
+        publisher=DisabledPublisher("test_channel"),
+        now=lambda: datetime.now(timezone.utc),
+        video_dir=tmp_path / "videos",
+    )
 
     PRODUCTS.clear()
     JOBS.clear()
     HISTORY.clear()
+    store.VIDEO_JOBS.clear()
     yield
     if test_output_dir.exists():
         shutil.rmtree(test_output_dir)  # 테스트가 만든 서브폴더만 삭제 - 형제 파일은 안 건드림
     PRODUCTS.clear()
     JOBS.clear()
     HISTORY.clear()
+    store.VIDEO_JOBS.clear()
 
 
 def _upload_product(name="스팀 에어프라이어 5L"):
@@ -377,19 +407,19 @@ def test_video_creation_flow_for_rush_hour_slot():
     assert result_id.startswith("res_")
 
     video_resp = client.post("/api/v1/videos", json={"result_id": result_id})
-    assert video_resp.status_code == 200
+    assert video_resp.status_code == 202
     video_job_id = video_resp.json()["video_job_id"]
-    assert video_resp.json()["status"] == "queued"
+    assert video_resp.json()["render_status"] == "queued"
 
     status_resp = client.get(f"/api/v1/videos/{video_job_id}")
     assert status_resp.status_code == 200
-    assert status_resp.json()["status"] == "completed"
-    assert status_resp.json()["video_url"] == "/files/videos/mock_short.mp4"
+    assert status_resp.json()["render_status"] == "completed"
+    assert status_resp.json()["video_url"] == f"/files/videos/{video_job_id}.mp4"
 
     # History의 결과에도 video_url이 반영돼야 함 (새로고침해도 다시 보이도록)
     updated_history = client.get("/api/v1/history").json()
     updated_result = updated_history[0]["results"][0]
-    assert updated_result["video_url"] == "/files/videos/mock_short.mp4"
+    assert updated_result["video_url"] == f"/files/videos/{video_job_id}.mp4"
 
 
 def test_video_creation_rejects_non_rush_hour_slot():
@@ -433,7 +463,9 @@ def test_video_completion_persists_video_url_across_restart():
     PRODUCTS.clear()
     JOBS.clear()
     HISTORY.clear()
+    store.VIDEO_JOBS.clear()
     store.load()
 
-    restored = next(h for h in HISTORY if h["job_id"] == job_id)
-    assert restored["results"][0]["video_url"] == "/files/videos/mock_short.mp4"
+    restored = VideoJob.model_validate(store.VIDEO_JOBS[video_job_id])
+    assert restored.video_url == f"/files/videos/{video_job_id}.mp4"
+    assert restored.render_status == "completed"

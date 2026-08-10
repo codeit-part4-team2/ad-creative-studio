@@ -1,5 +1,97 @@
 # API Contract
 
+## 러시아워 쇼츠 승인 API (현재 계약)
+
+이 절은 아래에 남아 있는 초기 Mock 영상 설명을 대체합니다. 쇼츠는 `commute_am` 또는
+`commute_pm` 결과에서만 만들 수 있으며 1080x1920, 30fps, H.264/AAC, 10~15초입니다.
+음성 합성 없이 검증된 음악과 자막을 사용하고, 음악이 없으면 경고가 있는 무음 미리보기를 만듭니다.
+
+### POST /api/v1/videos
+
+요청은 `{ "result_id": "res_005528a3" }`입니다. 성공 시 `202`와 아래 응답을 반환합니다.
+
+```json
+{ "video_job_id": "video_4fd12ab89c31", "render_status": "queued" }
+```
+
+알 수 없는 결과는 `404`, 러시아워가 아닌 결과는 `400`, 활성 중복 작업은 `409`입니다.
+렌더링은 BackgroundTasks에서 실행되며 생성 응답은 승인을 의미하지 않습니다.
+
+### GET /api/v1/videos/{video_job_id}
+
+렌더링, 검수, 외부 게시 상태를 분리해 반환합니다.
+
+```json
+{
+  "video_job_id": "video_4fd12ab89c31",
+  "result_id": "res_005528a3",
+  "product_id": "prd_001",
+  "tone": "practical",
+  "time_slot": "commute_am",
+  "render_status": "completed",
+  "approval_status": "pending",
+  "publish_status": "not_requested",
+  "video_url": "/files/videos/video_4fd12ab89c31.mp4",
+  "music_warning": "music_unavailable"
+}
+```
+
+### POST /api/v1/videos/{video_job_id}/approve
+
+```json
+{
+  "activation_at": "2026-08-10T08:00:00+09:00",
+  "publish_to_youtube": false,
+  "allow_silent": true
+}
+```
+
+- `activation_at`은 UTC offset이 필수이고 현재보다 최소 10분 이후여야 합니다.
+- `commute_am`은 KST 08:00 이상 09:30 미만, `commute_pm`은 18:00 이상 19:30 미만입니다.
+- 원본 광고 지문과 MP4 SHA-256을 승인 직전에 다시 검사합니다.
+- `music_warning`이 있으면 `allow_silent=true`가 명시돼야 합니다.
+- 동일 요청은 멱등이며, 승인 이후 다른 예약 조건으로 변경하면 `409`입니다.
+- 일정 검증 실패는 `422`, 상태·무결성·무음 확인 충돌은 `409`입니다.
+- YouTube 요청 시 성공 응답은 우선 `publish_status=pending`이며 업로드는 백그라운드 처리됩니다.
+
+### POST /api/v1/videos/{video_job_id}/reject
+
+검수 대기 상태만 거절할 수 있습니다. 성공 시 `200`, 이미 승인 또는 거절된 작업은 `409`입니다.
+
+### GET /api/v1/youtube/status
+
+```json
+{
+  "configured": false,
+  "connection_id": "demo_merchant_channel",
+  "token_available": false
+}
+```
+
+토큰 값, OAuth 파일 경로, 클라이언트 비밀은 반환하지 않습니다.
+
+### GET /api/v1/exposure/{product_id}
+
+기존 배너 응답에 `video`가 추가됩니다. 승인·렌더 완료·활성 시각 도달·상품/러시아워 일치
+조건을 모두 만족하는 최신 영상만 반환합니다. YouTube 게시 실패는 내부 노출을 막지 않습니다.
+
+```json
+{
+  "time_slot": "commute_am",
+  "available": true,
+  "tones": [],
+  "video": {
+    "video_job_id": "video_4fd12ab89c31",
+    "video_url": "/files/videos/video_4fd12ab89c31.mp4"
+  }
+}
+```
+
+서버 재시작 시 중단된 렌더는 `failed`, 결과가 불확실한 YouTube 업로드는
+`needs_review`로 복구합니다. 내부 승인 상태는 YouTube 상태와 독립적으로 유지됩니다.
+
+---
+
 R2/R3(model_server)와 R4+R5(app/backend) 사이의 계약입니다. 이 문서만 맞으면
 서로 상대방의 구현을 기다리지 않고 병렬로 개발할 수 있습니다.
 

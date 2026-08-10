@@ -1,0 +1,56 @@
+{
+  "tracks": [
+    {
+      "key": "emotional_warm_01",
+      "file": "emotional_warm_01.mp3",
+      "tone": "emotional",
+      "title": "Unconfigured emotional track",
+      "source_url": "https://example.invalid/license",
+      "license": "Not configured",
+      "commercial_use": false,
+      "attribution_required": false,
+      "attribution_text": "",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "bpm": 80
+    },
+    {
+      "key": "modern_clean_01",
+      "file": "modern_clean_01.mp3",
+      "tone": "modern",
+      "title": "Unconfigured modern track",
+      "source_url": "https://example.invalid/license",
+      "license": "Not configured",
+      "commercial_use": false,
+      "attribution_required": false,
+      "attribution_text": "",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "bpm": 110
+    },
+    {
+      "key": "practical_upbeat_01",
+      "file": "practical_upbeat_01.mp3",
+      "tone": "practical",
+      "title": "Unconfigured practical track",
+      "source_url": "https://example.invalid/license",
+      "license": "Not configured",
+      "commercial_use": false,
+      "attribution_required": false,
+      "attribution_text": "",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "bpm": 120
+    },
+    {
+      "key": "premium_ambient_01",
+      "file": "premium_ambient_01.mp3",
+      "tone": "premium",
+      "title": "Unconfigured premium track",
+      "source_url": "https://example.invalid/license",
+      "license": "Not configured",
+      "commercial_use": false,
+      "attribution_required": false,
+      "attribution_text": "",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "bpm": 70
+    }
+  ]
+}

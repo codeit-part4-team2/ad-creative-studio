@@ -218,3 +218,13 @@ eval/golden_dataset/*
 # 저작권 있는 테스트용 원본 제품 이미지 (김재헌님 PR #4)
 model_server/experiments/product_sample.jpeg
 model_server/experiments/microwave.webp
+
+# 승인된 운영 음악은 라이선스 증빙과 함께 배포 환경에서만 관리
+assets/music/*
+!assets/music/README.md
+!assets/music/manifest.example.json
+
+# YouTube OAuth material must never enter source control
+client_secrets*.json
+youtube_token*.json
+token.pickle

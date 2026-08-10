@@ -21,13 +21,22 @@ STORE_PATH = Path("var/store.json")
 PRODUCTS: dict[str, dict] = {}
 JOBS: dict[str, dict] = {}
 HISTORY: list[dict] = []
+VIDEO_JOBS: dict[str, dict] = {}
 
 
 def save() -> None:
     STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = STORE_PATH.with_suffix(".tmp")
     tmp.write_text(
-        json.dumps({"products": PRODUCTS, "jobs": JOBS, "history": HISTORY}, ensure_ascii=False),
+        json.dumps(
+            {
+                "products": PRODUCTS,
+                "jobs": JOBS,
+                "history": HISTORY,
+                "video_jobs": VIDEO_JOBS,
+            },
+            ensure_ascii=False,
+        ),
         encoding="utf-8",
     )
     tmp.replace(STORE_PATH)  # 원자적 교체 - 쓰기 도중 죽어도 기존 파일 안 깨짐
@@ -48,6 +57,8 @@ def load() -> None:
     JOBS.update(data.get("jobs", {}))
     HISTORY.clear()
     HISTORY.extend(data.get("history", []))
+    VIDEO_JOBS.clear()
+    VIDEO_JOBS.update(data.get("video_jobs", {}))
 
     # 좀비 job 정리: 서버가 죽기 전 queued/processing 상태였던 job은, 그걸 돌리던
     # BackgroundTask가 재시작으로 같이 사라졌으므로 다시는 완료되지 않는다.
@@ -60,6 +71,7 @@ def load() -> None:
             job["current_step"] = None
 
     _migrate_missing_result_ids()
+    _recover_video_jobs()
 
 
 def _migrate_missing_result_ids() -> None:
@@ -73,6 +85,22 @@ def _migrate_missing_result_ids() -> None:
         for r in (job.get("result") or []):
             if isinstance(r, dict) and not r.get("result_id"):
                 r["result_id"] = f"res_migrated_{uuid.uuid4().hex[:8]}"
+
+
+def _recover_video_jobs() -> None:
+    """재시작으로 중단된 영상 작업을 중복 실행되지 않는 안전한 상태로 바꾼다."""
+    for job in VIDEO_JOBS.values():
+        if job.get("render_status") in {"queued", "processing"}:
+            job["render_status"] = "failed"
+            job["error_message"] = (
+                "서버 재시작으로 영상 생성이 중단되었습니다. 다시 시도해주세요."
+            )
+        if (
+            job.get("publish_status") == "pending"
+            and not job.get("youtube_video_id")
+        ):
+            job["publish_status"] = "needs_review"
+            job["youtube_error"] = "게시 성공 여부를 확인한 뒤 다시 시도해주세요."
     for entry in HISTORY:
         for r in entry.get("results", []):
             if isinstance(r, dict) and not r.get("result_id"):
@@ -84,5 +112,6 @@ def reset_for_tests() -> None:
     PRODUCTS.clear()
     JOBS.clear()
     HISTORY.clear()
+    VIDEO_JOBS.clear()
     if STORE_PATH.exists():
         STORE_PATH.unlink()
