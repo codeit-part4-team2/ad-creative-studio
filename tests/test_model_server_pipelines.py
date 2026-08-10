@@ -120,6 +120,74 @@ def test_default_loader_fails_before_diffusers_import_without_cuda(monkeypatch) 
         _load_diffusers_pipeline(InferenceConfig())
 
 
+def test_fast_loader_uses_fp16_safe_vae(monkeypatch) -> None:
+    from model_server.pipelines import _load_diffusers_pipeline
+
+    fp16 = object()
+    vae = object()
+    vae_calls: list[tuple[str, dict[str, object]]] = []
+    pipeline_calls: list[tuple[str, dict[str, object]]] = []
+
+    class FakeAutoencoderKL:
+        @classmethod
+        def from_pretrained(cls, model_id: str, **kwargs: object) -> object:
+            vae_calls.append((model_id, kwargs))
+            return vae
+
+    class FakeStableDiffusionXLPipeline:
+        def __init__(self) -> None:
+            self.scheduler = SimpleNamespace(config={"name": "base"})
+
+        @classmethod
+        def from_pretrained(
+            cls,
+            model_id: str,
+            **kwargs: object,
+        ) -> "FakeStableDiffusionXLPipeline":
+            pipeline_calls.append((model_id, kwargs))
+            return cls()
+
+        def load_lora_weights(self, *_: object, **__: object) -> None:
+            return None
+
+        def set_adapters(self, *_: object, **__: object) -> None:
+            return None
+
+        def to(self, _: str) -> "FakeStableDiffusionXLPipeline":
+            return self
+
+    class FakeLCMScheduler:
+        @classmethod
+        def from_config(cls, config: object) -> object:
+            return SimpleNamespace(config=config)
+
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: True),
+        float16=fp16,
+        float32=object(),
+    )
+    fake_diffusers = SimpleNamespace(
+        AutoencoderKL=FakeAutoencoderKL,
+        ControlNetModel=object,
+        LCMScheduler=FakeLCMScheduler,
+        StableDiffusionXLControlNetPipeline=object,
+        StableDiffusionXLPipeline=FakeStableDiffusionXLPipeline,
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setitem(sys.modules, "diffusers", fake_diffusers)
+
+    loaded = _load_diffusers_pipeline(InferenceConfig())
+
+    assert loaded.device == "cuda"
+    assert vae_calls == [
+        (
+            "madebyollin/sdxl-vae-fp16-fix",
+            {"torch_dtype": fp16, "use_safetensors": True},
+        )
+    ]
+    assert pipeline_calls[0][1]["vae"] is vae
+
+
 def test_quality_pipeline_reuses_ip_adapter_embedding_for_same_product() -> None:
     config = replace(
         InferenceConfig(),

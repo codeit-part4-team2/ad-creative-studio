@@ -97,9 +97,16 @@ def _load_diffusers_pipeline(config: InferenceConfig) -> LoadedPipeline:
     if device == "cuda":
         base_kwargs["variant"] = "fp16"
 
+    vae = AutoencoderKL.from_pretrained(
+        "madebyollin/sdxl-vae-fp16-fix",
+        torch_dtype=dtype,
+        use_safetensors=True,
+    )
+
     if config.profile is InferenceProfile.FAST_COMPOSITE:
         pipeline = StableDiffusionXLPipeline.from_pretrained(
             "stabilityai/stable-diffusion-xl-base-1.0",
+            vae=vae,
             **base_kwargs,
         )
         pipeline.scheduler = LCMScheduler.from_config(pipeline.scheduler.config)
@@ -111,11 +118,6 @@ def _load_diffusers_pipeline(config: InferenceConfig) -> LoadedPipeline:
     else:
         controlnet = ControlNetModel.from_pretrained(
             "diffusers/controlnet-canny-sdxl-1.0",
-            torch_dtype=dtype,
-            use_safetensors=True,
-        )
-        vae = AutoencoderKL.from_pretrained(
-            "madebyollin/sdxl-vae-fp16-fix",
             torch_dtype=dtype,
             use_safetensors=True,
         )
