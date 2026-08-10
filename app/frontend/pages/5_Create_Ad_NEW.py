@@ -21,17 +21,21 @@ TIME_SLOT_OPTIONS = [
 MAX_SLOTS = 3
 TONE_LABEL_MAP = {"emotional": "감성", "modern": "모던", "practical": "실용", "premium": "프리미엄"}
 
-# 로딩 화면 단계 - (경과초, 라벨). 실제 백엔드가 세부 stage를 안 돌려줘서(job["current_step"]은
-# "시간대/톤 생성 중" 정도만 줌) 지금은 경과시간 기준으로 단계 메시지를 고른다.
-# 지금 값은 quality_regenerate 실측(P50 17.4초) 기준 - fast_composite 실측(목표 4~8초) 나오면
-# 이 임계값들을 그 비율에 맞춰 다시 조정할 것. 가짜 퍼센트(83% 같은)는 신뢰를 떨어뜨리니 안 쓴다 -
-# "지금 이 단계를 하고 있다"는 정성적 신호만 준다.
+# 로딩 화면 단계 - (경과초, 라벨, 보조문구 또는 None). 실제 백엔드가 세부 stage를 아직
+# 안 돌려줘서(job["current_step"]은 "시간대/톤 생성 중" 정도만 줌) 지금은 경과시간 기준으로
+# 단계 메시지만 고른다 - 완료/실패 여부는 반드시 backend job status로 판정한다(아래 참고).
+# 임계값은 순수 모델 추론시간(L4 실측 fast_composite B: P50 2.37s)이 아니라 Streamlit→
+# Backend→모델서버→Overlay→History까지 합친 E2E 체감시간 기준이어야 하므로, 최종 baseline
+# 확정 후 실제 E2E latency가 나오면 그때 다시 조정한다. 가짜 퍼센트(83% 같은)는 신뢰를
+# 떨어뜨리니 안 쓴다 - "지금 이 단계를 하고 있다"는 정성적 신호만 준다.
+# 보조문구는 라벨 문자열 비교가 아니라 여기 튜플에 직접 묶어둔다 - 나중에 라벨 문구를
+# 고치면서 보조문구가 조용히 사라지는 걸 방지.
 LOADING_STAGES = [
-    (0, "상품 정보를 확인했어요"),
-    (2, "시간대에 맞는 광고 콘셉트를 구성했어요"),
-    (5, "제품이 돋보이는 배경을 만들고 있어요"),
-    (12, "광고 문구를 자연스럽게 조합하고 있어요"),
-    (15, "거의 다 됐어요 - 최종 결과를 정리하고 있어요"),
+    (0, "상품 정보를 확인했어요", None),
+    (2, "시간대에 맞는 광고 콘셉트를 구성했어요", None),
+    (5, "제품이 돋보이는 배경을 만들고 있어요", "좋은 상태로 제품을 포장하고 있습니다 :)"),
+    (12, "광고 문구를 자연스럽게 조합하고 있어요", None),
+    (15, "거의 다 됐어요 - 최종 결과를 정리하고 있어요", None),
 ]
 MAX_POLL_SECONDS = 45  # fast_composite로 바뀌면 낮춰도 됨, 지금은 17초 P95 기준 여유 있게
 
@@ -47,7 +51,11 @@ def _render_loading_experience(job_id: str):
     with st.status("광고를 만들고 있어요 ✨", expanded=True) as status:
         placeholder = st.empty()
         for _ in range(int(MAX_POLL_SECONDS / 0.5)):
-            job = requests.get(f"{API_BASE}/api/v1/jobs/{job_id}", timeout=10).json()
+            try:
+                job = requests.get(f"{API_BASE}/api/v1/jobs/{job_id}", timeout=10).json()
+            except requests.exceptions.RequestException as e:
+                status.update(label=f"백엔드 연결이 끊겼어요: {e}", state="error")
+                st.stop()
 
             if job["status"] == "completed":
                 status.update(label="광고가 완성됐어요 🎉", state="complete")
@@ -57,20 +65,29 @@ def _render_loading_experience(job_id: str):
                 st.stop()
 
             elapsed = time.time() - start
-            lines = []
-            reached_current = False
-            for threshold, label in LOADING_STAGES:
+            # 마지막 임계값을 넘긴 뒤에도(quality_regenerate처럼 오래 걸리는 경우) 마지막
+            # 단계가 계속 "진행 중(🎨)"으로 남아있게 한다 - 전부 ✅인데 아무 표시도 없이
+            # 멈춰있는 것처럼 보이는 걸 방지.
+            current_idx = 0
+            for i, (threshold, _, _) in enumerate(LOADING_STAGES):
                 if elapsed >= threshold:
+                    current_idx = i
+            lines = []
+            for i, (threshold, label, subtext) in enumerate(LOADING_STAGES):
+                if i < current_idx:
                     lines.append(f"✅ {label}")
-                elif not reached_current:
-                    lines.append(f"🎨 {label}")  # 지금 진행 중인 단계
-                    reached_current = True
-                    if label == "제품이 돋보이는 배경을 만들고 있어요":
-                        # 가장 오래 걸리는(모델 추론) 단계에만 살짝 친근한 보조문구를 붙인다 -
-                        # 메인 상태 메시지는 서비스스럽게, 보조문구만 캐주얼하게(치용님 아이디어)
-                        lines.append("　　좋은 상태로 제품을 포장하고 있습니다 :)")
+                elif i == current_idx:
+                    lines.append(f"🎨 {label}")
+                    if subtext:
+                        lines.append(f"　　{subtext}")
                 else:
-                    lines.append(f"⬜ {label}")  # 아직 안 온 단계
+                    lines.append(f"⬜ {label}")
+            # 실제 진행 개수(백엔드가 주는 사실)도 정성적 단계 표시와 같이 보여준다 -
+            # 응답에 없을 수도 있으니 방어적으로 확인 후에만 표시한다.
+            completed = job.get("completed_count")
+            total = job.get("total_count")
+            if completed is not None and total:
+                lines.append(f"\n**현재 {completed} / {total}개 생성 완료**")
             placeholder.markdown("\n\n".join(lines))
             time.sleep(0.5)
 
