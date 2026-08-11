@@ -1,5 +1,16 @@
 # Model Server Handoff
 
+## 확정된 운영 설정 (2026-08-11, 서빙 담당자 실측 완료)
+
+- 프로필: `fast_composite` / 배경 768 / 4-step / FP16-safe VAE (`madebyollin/sdxl-vae-fp16-fix`)
+- 실행 명령:
+```bash
+uvicorn model_server.main:app --host 0.0.0.0 --port 8001 --workers 1 --env-file .env
+```
+- `.env` 파일은 `load_dotenv()` 코드가 없어 코드에서 자동 로드되지 않으므로, 반드시 `--env-file .env` 옵션으로 명시 전달해야 함 (export 없이 이 옵션만으로 반영 확인됨)
+- L4 실측: P50 1.72s / P95 1.77s (quality_regenerate 30-step 대비 약 10배 빠름)
+- VAE 비교(stock vs FP16-safe, seed=42): PSNR 51.37dB, 속도 약 10% 우위로 FP16-safe 유지 확정
+
 ## 로컬 통합 상태
 
 - 최신 확인 원격: `main@0d07c0b` (PR #16 병합 상태)
