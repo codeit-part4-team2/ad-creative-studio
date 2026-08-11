@@ -3,16 +3,10 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-# 반드시 app.backend.api/services를 import하기 전에 .env를 읽어야 한다 - 아래 라우터들이
-# import되는 순간(모듈 로드 시점) generation_service.py/model_server_client.py 등이
-# 이미 os.getenv(...)로 MODEL_SERVER_URL·USE_MOCK_GENERATION·BACKEND_PUBLIC_URL 등을
-# 읽어버리기 때문이다. load_dotenv()가 없으면 .env 파일 내용이 전혀 반영 안 되고
-# os.getenv()의 기본값(fallback)만 항상 쓰이는데, 지금까지 그 기본값이 우연히 원하는
-# 값(USE_MOCK_GENERATION=true 등)과 같아서 안 걸렸을 뿐이다 (재헌님이 model_server 쪽
-# 동일 버그를 먼저 발견해서 우리 쪽도 확인함).
-from dotenv import load_dotenv
-load_dotenv()
-
+# .env 로딩은 코드(load_dotenv())가 아니라 실행 명령(uvicorn --env-file .env)에서
+# 한다 - model_server(R3)와 같은 방식으로 팀 컨벤션을 통일했다(치용님/재헌님 협의).
+# 실행 시 반드시 --env-file .env를 붙여야 MODEL_SERVER_URL·USE_MOCK_GENERATION 등
+# .env 값이 실제로 반영된다. SETUP.md 실행 명령 참고.
 from app.backend.api import products, generations, jobs, history, usage, exposure, download, videos
 from app.backend.services import store
 

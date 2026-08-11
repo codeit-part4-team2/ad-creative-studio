@@ -1,8 +1,6 @@
-# codeit_part4_team2# 
+# 🔌 소형가전 AI 광고 콘텐츠 생성 서비스
 
-🔌 소형가전 AI 광고 콘텐츠 생성 서비스
-
-코드잇 AI 엔지니어 10기 파트4 2팀 고급 프로젝트 — 쇼핑몰에 입점한 소형가전 판매 소상공인이
+코드잇 AI 엔지니어 10기 파트4 4팀 고급 프로젝트 — 쇼핑몰에 입점한 소형가전 판매 소상공인이
 제품 사진 1장을 올리면 브랜드 톤 4종과 판매 시간대에 맞춘 광고 이미지·문구 세트를 자동 생성하는 서비스입니다.
 
 > **기간**: 2026-08-05 ~ 08-28 (제출), 발표 08-31
@@ -105,7 +103,7 @@ pip install -e ".[dev,frontend]"    # 개발·테스트·웹 UI 전부
 # 또는
 pip install -r requirements.txt
 
-nbstripout --install    # 노트북 작업 시 필수 (최초 1회) — notebooks/README.md 참고
+nbstripout --install --attributes .gitattributes    # 노트북 작업 시 필수 (최초 1회, venv 활성화 상태에서) — notebooks/README.md 참고
 ```
 
 ### 실행
@@ -113,7 +111,9 @@ nbstripout --install    # 노트북 작업 시 필수 (최초 1회) — notebook
 cp .env.example .env            # 실제 값 채우기, 커밋 금지
 
 # 1) 백엔드 API (Mock 모델, 실제 model_server 없이도 동작)
-uvicorn app.backend.main:app --reload --port 8000     # http://127.0.0.1:8000/docs
+# --env-file .env 필수 - 없으면 .env 값이 반영 안 되고 코드 기본값만 쓰인다
+# (model_server와 동일한 실행 컨벤션, load_dotenv()를 코드에 넣지 않기로 팀 협의함)
+uvicorn app.backend.main:app --reload --port 8000 --env-file .env   # http://127.0.0.1:8000/docs
 
 # 2) 프론트엔드 (다른 터미널)
 streamlit run app/frontend/streamlit_app.py            # http://localhost:8501
@@ -128,7 +128,7 @@ pytest -q
 > model_server(R2·R3) 연동 방법은 [docs/api_contract.md](docs/api_contract.md) 참고.
 > Mock↔실제 모델 전환은 `app/backend/services/generation_service.py`의
 > `generation_service` 한 줄만 바꾸면 됩니다.
-> VM 접속 및 모델 서빙 상시 환경은 [`SETUP.md`](./SETUP.md) 참고.
+
 ---
 
 ## 평가 지표
@@ -147,13 +147,14 @@ pytest -q
 
 | 브랜치 | 용도 |
 |---|---|
-| `main` | 항상 실행 가능한 상태 유지. 직접 push 금지, PR로만 반영 |
+| `main` | 항상 실행 가능한 상태 유지. 직접 push 금지 |
+| `develop` | 통합 브랜치 |
 | `feature/<역할>-<내용>` | 예: `feature/r4r5-wizard-ui`, `feature/r3-controlnet` |
 
 - PR 최소 1인 리뷰 (기본 리뷰어: 안은남)
 - 8/22 Gate 2 이후 신규 기능 PR 금지 (기능 프리즈)
-- 흐름: `feature/* → main` (PR 필수)
-- PR 절차 상세: [docs/git_workflow.md](docs/git_workflow.md)
+- 흐름: `feature/* → develop → main`
+- PR 전 브랜치 정비, 충돌 해결 책임, branch protection 설정 등 세부 규칙은 [docs/git_workflow.md](docs/git_workflow.md) 참고
 
 ---
 
@@ -164,6 +165,17 @@ pytest -q
 
 ---
 
+## 오늘(Sprint 0) 완료 기준
+- [x] 저장소 생성, `.gitignore`에서 `.env`/모델/업로드 이미지 차단, `.env.example` 커밋
+- [x] Streamlit → FastAPI 실제 연동: 업로드→선택→생성요청→job 폴링→결과 관통 (더미 모델, 진짜 API)
+- [x] `PromptRequest`/`PromptResult` 스키마 확정, 톤 4종·시간대 6종 템플릿 구조 작성
+- [x] `docs/api_contract.md` 작성 (R3 model_server 계약 포함: enum, 생성단위, 성공/실패, 타임아웃)
+- [x] 생성 단위를 시간대×톤으로 수정 (출력 규격은 후처리로 분리)
+- [x] Mock/실제 모델 서버 교체 가능한 `generation_service.py` 인터페이스, 실패 시 job "failed" 처리
+- [x] 테스트 36개 작성·통과
+- [ ] 팀원 초대, 브랜치 전략 공유
+- [ ] R3와 API 입력·출력 최종 합의
+- [ ] 협업일지에 결정 이유·수정 가능 항목 기록
 
 ---
 
