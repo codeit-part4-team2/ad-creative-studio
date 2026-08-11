@@ -16,3 +16,11 @@ deploy/
 ```
 
 도커 도입 여부는 8/24 재검토 예정 (12 미확정 항목 5번).
+
+## ⚠️ .env 로딩 주의 (systemd 유닛 작성 시 필수 확인)
+
+backend/model_server 둘 다 `.env` 값은 `uvicorn --env-file .env` 플래그로만
+반영됩니다 (`load_dotenv()`를 코드에 넣지 않기로 팀 협의 — PR #18 참고). systemd
+유닛의 `ExecStart`에 이 플래그를 빠뜨리면 `.env`를 아무리 고쳐도 조용히 무시되고
+코드 기본값만 쓰이는 버그가 재발합니다. `ad-service-api.service` 작성 시 반드시
+`--env-file /경로/.env`를 포함해주세요.
