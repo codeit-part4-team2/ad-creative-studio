@@ -113,7 +113,7 @@ nbstripout --install    # 노트북 작업 시 필수 (최초 1회) — notebook
 cp .env.example .env            # 실제 값 채우기, 커밋 금지
 
 # 1) 백엔드 API (Mock 모델, 실제 model_server 없이도 동작)
-uvicorn app.backend.main:app --reload --port 8000     # http://127.0.0.1:8000/docs
+uvicorn app.backend.main:app --reload --port 8000 --env-file .env   # http://127.0.0.1:8000/docs
 
 # 2) 프론트엔드 (다른 터미널)
 streamlit run app/frontend/streamlit_app.py            # http://localhost:8501
