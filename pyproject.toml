@@ -16,7 +16,6 @@ dependencies = [
     "openai",
     "pillow",
     "requests",
-    "python-dotenv",
 ]
 
 [project.optional-dependencies]
