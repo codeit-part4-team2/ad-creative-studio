@@ -1,15 +1,97 @@
+import hashlib
 import json
+import math
 import subprocess
+import wave
+from array import array
 from pathlib import Path
 
-import pytest
 from PIL import Image
 
+from app.backend.services.comic_script import ComicLineKind
+from app.backend.services.scene_images import SceneImage, SceneImageSet
 from app.backend.services.storyboard import Storyboard, StoryboardScene
+from app.backend.services.tts_provider import TTSAudio
 from app.backend.services.video_renderer import (
+    CAPTION_LAYOUT_VERSION,
+    DEADPAN_SILENCE_SEC,
     RushHourVideoRenderer,
     fit_inside,
 )
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _write_voice_wav(path: Path, *, duration_sec: float = 2.1) -> TTSAudio:
+    sample_rate = 44_100
+    samples = array(
+        "h",
+        (
+            round(5_000 * math.sin(2 * math.pi * 330 * index / sample_rate))
+            for index in range(round(sample_rate * duration_sec))
+        ),
+    )
+    with wave.open(str(path), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(samples.tobytes())
+    return TTSAudio(
+        path=path.resolve(),
+        duration_sec=duration_sec,
+        sha256=_sha256(path),
+        engine="fake-melotts",
+        voice_preset="deadpan-ai-v1",
+    )
+
+
+def _scene_images(tmp_path: Path) -> SceneImageSet:
+    scene_images: list[SceneImage] = []
+    for purpose, color in (("hero", "navy"), ("self_aware", "maroon"), ("benefit", "green")):
+        path = tmp_path / f"{purpose}.png"
+        Image.new("RGB", (768, 768), color).save(path)
+        scene_images.append(
+            SceneImage(
+                purpose=purpose,
+                path=path.resolve(),
+                sha256=_sha256(path),
+                source="test",
+            )
+        )
+    return SceneImageSet(images=tuple(scene_images))
+
+
+def _storyboard(tmp_path: Path) -> Storyboard:
+    scenes = (
+        StoryboardScene("테스트 상품입니다.", 2.0, kind=ComicLineKind.INTRO, image_purpose="hero"),
+        StoryboardScene(
+            "저는 퇴근을 하지 않습니다.",
+            2.0,
+            kind=ComicLineKind.SELF_AWARE,
+            image_purpose="self_aware",
+        ),
+        StoryboardScene(
+            "주요 특징은 빠른 조리입니다.",
+            2.0,
+            kind=ComicLineKind.BENEFIT,
+            image_purpose="benefit",
+            accent_terms=("빠른 조리",),
+        ),
+        StoryboardScene("퇴근길에 확인해 보세요.", 2.0, kind=ComicLineKind.CTA, image_purpose="cta"),
+    )
+    return Storyboard(
+        result_id="res_1",
+        product_id="prd_1",
+        tone="premium",
+        time_slot="commute_pm",
+        product_name="테스트 상품",
+        image_path=tmp_path / "unused-legacy-path.png",
+        scenes=scenes,
+        source_fingerprint="a" * 64,
+        script_version="deadpan-ai-v1",
+    )
 
 
 def test_fit_inside_preserves_entire_source_aspect_ratio():
@@ -22,44 +104,22 @@ def test_fit_inside_preserves_entire_source_aspect_ratio():
     assert width / height == 1080 / 1350
 
 
-@pytest.mark.parametrize(
-    ("time_slot", "headline", "color"),
-    [
-        ("commute_am", "출근길 필수템", "#315a78"),
-        ("commute_pm", "퇴근길 한눈에", "#783f5a"),
-    ],
-)
-def test_renderer_outputs_verified_vertical_mp4_with_silent_aac(
-    tmp_path,
-    time_slot,
-    headline,
-    color,
-):
-    image_path = tmp_path / "card.png"
-    Image.new("RGB", (1080, 1350), color).save(image_path)
-    board = Storyboard(
-        result_id="res_1",
-        product_id="prd_1",
-        tone="practical",
-        time_slot=time_slot,
-        product_name="휴대용 선풍기",
-        image_path=image_path,
-        scenes=(
-            StoryboardScene(headline, 2.5),
-            StoryboardScene("가볍고 시원하게", 3.0),
-            StoryboardScene("휴대용 선풍기\n지금 확인해보세요", 4.5),
-        ),
-        source_fingerprint="a" * 64,
+def test_renderer_outputs_verified_vertical_mp4_with_voiced_aac(tmp_path):
+    scene_images = _scene_images(tmp_path)
+    speech_audio = tuple(
+        _write_voice_wav(tmp_path / f"line-{index}.wav")
+        for index in range(4)
     )
-    output_path = tmp_path / f"video_{time_slot}.mp4"
+    output_path = tmp_path / "comic-short.mp4"
 
     result = RushHourVideoRenderer(
         font_path=Path("assets/fonts/NanumGothic-Regular.ttf"),
         preset="ultrafast",
     ).render(
-        board,
+        _storyboard(tmp_path),
+        scene_images=scene_images,
+        speech_audio=speech_audio,
         output_path=output_path,
-        music_path=None,
     )
 
     probe = json.loads(
@@ -81,15 +141,17 @@ def test_renderer_outputs_verified_vertical_mp4_with_silent_aac(
         ).stdout
     )
     streams = {stream["codec_type"]: stream for stream in probe["streams"]}
-    assert result.output_path == output_path
+    assert result.output_path == output_path.resolve()
     assert result.output_path.stat().st_size > 0
     assert result.width == 1080
     assert result.height == 1920
-    assert 10.0 <= result.duration_sec <= 10.2
+    assert 9.95 <= result.duration_sec <= 10.3
     assert result.video_codec == "h264"
     assert result.audio_codec == "aac"
-    assert result.music_warning == "music_unavailable"
+    assert result.caption_layout_version == CAPTION_LAYOUT_VERSION
+    assert result.scene_image_sha256s == scene_images.sha256s
+    assert len(result.tts_audio_sha256) == 64
     assert streams["video"]["width"] == 1080
     assert streams["video"]["height"] == 1920
     assert streams["audio"]["codec_name"] == "aac"
-    assert len(result.sha256) == 64
+    assert DEADPAN_SILENCE_SEC == 0.5
