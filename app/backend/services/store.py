@@ -90,6 +90,12 @@ def _migrate_missing_result_ids() -> None:
 def _recover_video_jobs() -> None:
     """재시작으로 중단된 영상 작업을 중복 실행되지 않는 안전한 상태로 바꾼다."""
     for job in VIDEO_JOBS.values():
+        for removed_field in (
+            "music_key",
+            "music_warning",
+            "silent_publish_confirmed",
+        ):
+            job.pop(removed_field, None)
         if job.get("render_status") in {"queued", "processing"}:
             job["render_status"] = "failed"
             job["error_message"] = (

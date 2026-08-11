@@ -1,12 +1,17 @@
-from datetime import datetime, time, timedelta
-from zoneinfo import ZoneInfo
+from datetime import datetime
 
 import requests
 import streamlit as st
 
+from app.frontend.video_view_state import (
+    KST,
+    RUSH_HOUR_SLOTS,
+    VideoViewKind,
+    build_video_view_state,
+    can_create_rush_hour_short,
+    default_activation_at,
+)
 
-RUSH_HOUR_SLOTS = {"commute_am", "commute_pm"}
-KST = ZoneInfo("Asia/Seoul")
 API_BASE = "http://localhost:8000"
 
 
@@ -14,18 +19,6 @@ def api_url(path: str) -> str:
     if path.startswith(("http://", "https://")):
         return path
     return f"{API_BASE}{path}"
-
-
-def default_activation_at(time_slot: str, now: datetime) -> datetime:
-    if now.tzinfo is None or now.utcoffset() is None:
-        kst_now = now.replace(tzinfo=KST)
-    else:
-        kst_now = now.astimezone(KST)
-    target_time = time(8, 0) if time_slot == "commute_am" else time(18, 0)
-    candidate = datetime.combine(kst_now.date(), target_time, tzinfo=KST)
-    if candidate < kst_now + timedelta(minutes=10):
-        candidate += timedelta(days=1)
-    return candidate
 
 
 def _youtube_status() -> dict:
@@ -56,7 +49,7 @@ def _create_video(result_id: str) -> str | None:
 
 
 def render_video_workflow(result: dict) -> None:
-    if result.get("time_slot") not in RUSH_HOUR_SLOTS:
+    if not can_create_rush_hour_short(result):
         return
 
     result_id = result.get("result_id")
@@ -64,11 +57,11 @@ def render_video_workflow(result: dict) -> None:
         st.error("영상 생성을 위한 result_id가 없습니다.")
         return
 
-    st.markdown("#### 러시아워 쇼츠 검수")
+    st.markdown("#### 러시아워 무표정 AI 코믹 쇼츠")
     session_key = f"video_job_{result_id}"
     video_job_id = result.get("video_job_id") or st.session_state.get(session_key)
     if not video_job_id:
-        if st.button("🎬 러시아워 쇼츠 만들기", key=f"shorts_{result_id}"):
+        if st.button("🎬 코믹 쇼츠 만들기", key=f"shorts_{result_id}"):
             created_id = _create_video(result_id)
             if created_id:
                 st.session_state[session_key] = created_id
@@ -88,12 +81,13 @@ def render_video_workflow(result: dict) -> None:
         return
 
     render_status = job["render_status"]
-    if render_status in {"queued", "processing"}:
+    view_state = build_video_view_state(job)
+    if view_state.kind is VideoViewKind.CREATING:
         st.info(f"쇼츠 생성 중입니다. 현재 상태: {render_status}")
         if st.button("상태 새로고침", key=f"refresh_{result_id}"):
             st.rerun()
         return
-    if render_status == "failed":
+    if view_state.kind is VideoViewKind.FAILED:
         st.error(job.get("error_message") or "쇼츠 생성에 실패했습니다.")
         if st.button("쇼츠 다시 만들기", key=f"retry_{result_id}"):
             created_id = _create_video(result_id)
@@ -103,17 +97,27 @@ def render_video_workflow(result: dict) -> None:
         return
 
     video_url = job.get("video_url")
-    if video_url:
+    if view_state.show_video and video_url:
         st.video(api_url(video_url))
 
-    music_warning = job.get("music_warning")
-    if music_warning:
-        st.warning("검증된 상업용 음악이 없어 현재 미리보기는 무음입니다.")
+    script_lines = job.get("script_lines") or []
+    if script_lines:
+        with st.expander("쇼츠 대본 확인", expanded=True):
+            for index, line in enumerate(script_lines, start=1):
+                st.markdown(f"{index}. {line}")
+            st.caption(
+                f"음성: {job.get('tts_engine') or '확인 중'} · "
+                f"프리셋: {job.get('tts_voice_preset') or '확인 중'}"
+            )
 
-    approval_status = job["approval_status"]
-    publish_status = job["publish_status"]
-    if approval_status == "approved":
+    if view_state.kind is VideoViewKind.PRONUNCIATION_REVIEW:
+        st.error(
+            "상품명 또는 영문·숫자 발음 표기가 확인되지 않았습니다. "
+            "상품의 한글 발음 표기를 보완한 뒤 쇼츠를 다시 생성해주세요."
+        )
+    if view_state.kind in {VideoViewKind.APPROVED, VideoViewKind.PUBLISHING, VideoViewKind.PUBLISH_WARNING}:
         st.success(f"내부 노출 승인 완료 · 활성 시각: {job.get('activation_at')}")
+        publish_status = job["publish_status"]
         if publish_status == "scheduled":
             st.success(f"YouTube 예약 완료 · 영상 ID: {job.get('youtube_video_id')}")
         elif publish_status == "pending":
@@ -124,7 +128,7 @@ def render_video_workflow(result: dict) -> None:
                 f"YouTube 상태: {publish_status} · {job.get('youtube_error') or ''}"
             )
         return
-    if approval_status == "rejected":
+    if view_state.kind is VideoViewKind.REJECTED:
         st.warning("이 쇼츠는 운영자 검수에서 거절되었습니다.")
         return
 
@@ -152,24 +156,19 @@ def render_video_workflow(result: dict) -> None:
         st.caption("YouTube 연결 전: 내부 러시아워 노출만 승인할 수 있습니다.")
         publish_to_youtube = False
 
-    allow_silent = False
-    if music_warning:
-        allow_silent = st.checkbox(
-            "무음 미리보기를 확인했으며 이 상태로 승인",
-            key=f"allow_silent_{result_id}",
-        )
-
-    st.info("승인 전에는 게시되지 않습니다. 내부 노출과 YouTube 모두 검수 승인이 필요합니다.")
+    st.info(
+        "승인 전에는 게시되지 않습니다. 음성 발음·자막·제품 보존을 직접 확인한 뒤 "
+        "내부 노출과 YouTube 게시를 승인해주세요."
+    )
     approve_col, reject_col = st.columns(2)
     with approve_col:
-        if st.button("검수 승인", key=f"approve_{result_id}"):
+        if view_state.can_approve and st.button("검수 승인", key=f"approve_{result_id}"):
             try:
                 approval = requests.post(
                     api_url(f"/api/v1/videos/{video_job_id}/approve"),
                     json={
                         "activation_at": activation_at.isoformat(),
                         "publish_to_youtube": publish_to_youtube,
-                        "allow_silent": allow_silent,
                     },
                     timeout=10,
                 )
@@ -186,7 +185,7 @@ def render_video_workflow(result: dict) -> None:
         if st.button(
             "검수 거절",
             key=f"reject_{result_id}",
-            disabled=not reject_confirmed,
+            disabled=not reject_confirmed or not view_state.can_reject,
         ):
             try:
                 rejection = requests.post(

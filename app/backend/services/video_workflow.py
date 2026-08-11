@@ -9,14 +9,9 @@ from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from app.backend.schemas.video import (
-    ApprovalStatus,
-    PublishStatus,
-    RenderStatus,
-    VideoJob,
-)
+from app.backend.schemas.video import ApprovalStatus, PublishStatus, RenderStatus, VideoJob
 from app.backend.services import store
-from app.backend.services.music_catalog import MusicCatalog
+from app.backend.services.scene_images import SceneImageProvider
 from app.backend.services.storyboard import (
     Storyboard,
     StoryboardNotFound,
@@ -24,6 +19,7 @@ from app.backend.services.storyboard import (
     current_source_fingerprint,
     find_tone_result,
 )
+from app.backend.services.tts_provider import MeloTTSProvider, TTSProvider
 from app.backend.services.video_renderer import RushHourVideoRenderer
 from app.backend.services.youtube_publisher import (
     AuthenticationRequired,
@@ -63,10 +59,20 @@ class WorkflowValidation(WorkflowError):
 
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
-    with path.open("rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+    with path.open("rb") as source_file:
+        for chunk in iter(lambda: source_file.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _stored_product_image_url(product_id: str) -> str:
+    product = store.PRODUCTS.get(product_id)
+    if not isinstance(product, dict):
+        raise WorkflowValidation("영상용 원본 상품을 찾을 수 없습니다")
+    image_url = product.get("image_url")
+    if not isinstance(image_url, str) or not image_url.strip():
+        raise WorkflowValidation("영상용 원본 상품 이미지가 없습니다")
+    return image_url
 
 
 class VideoWorkflowService:
@@ -74,20 +80,26 @@ class VideoWorkflowService:
         self,
         *,
         renderer: RushHourVideoRenderer,
-        music_catalog: MusicCatalog | None,
+        scene_image_provider: SceneImageProvider,
+        tts_provider: TTSProvider,
         publisher: Publisher,
         now: Callable[[], datetime],
         video_dir: Path = Path("data/videos"),
+        work_dir: Path = Path("var/video-work"),
         storyboard_builder: Callable[[str], Storyboard] = build_storyboard,
         fingerprint_builder: Callable[[str], str] = current_source_fingerprint,
+        product_image_url_builder: Callable[[str], str] = _stored_product_image_url,
     ) -> None:
         self._renderer = renderer
-        self._music_catalog = music_catalog
+        self._scene_image_provider = scene_image_provider
+        self._tts_provider = tts_provider
         self._publisher = publisher
         self._now = now
         self._video_dir = video_dir
+        self._work_dir = work_dir
         self._storyboard_builder = storyboard_builder
         self._fingerprint_builder = fingerprint_builder
+        self._product_image_url_builder = product_image_url_builder
         self._state_lock = threading.Lock()
         self._render_lock = threading.Lock()
         self._publish_lock = threading.Lock()
@@ -135,7 +147,6 @@ class VideoWorkflowService:
                     and candidate.render_status is not RenderStatus.FAILED
                 ):
                     raise WorkflowConflict("이 결과에는 이미 활성 영상 작업이 있습니다")
-
             job = VideoJob(
                 video_job_id=f"video_{uuid.uuid4().hex[:12]}",
                 result_id=result_id,
@@ -143,6 +154,9 @@ class VideoWorkflowService:
                 tone=storyboard.tone,
                 time_slot=storyboard.time_slot,
                 source_fingerprint=storyboard.source_fingerprint,
+                script_version=storyboard.script_version,
+                script_lines=tuple(scene.display_text for scene in storyboard.scenes),
+                pronunciation_review_required=storyboard.pronunciation_review_required,
                 created_at=now,
                 updated_at=now,
             )
@@ -151,9 +165,16 @@ class VideoWorkflowService:
                 tone_result["video_job_id"] = job.video_job_id
             return self._persist_locked(job)
 
+    def _job_work_dir(self, video_job_id: str) -> Path:
+        root = self._work_dir.expanduser().resolve()
+        job_dir = (root / video_job_id).resolve()
+        if not job_dir.is_relative_to(root):
+            raise WorkflowValidation("영상 작업 디렉터리가 올바르지 않습니다")
+        job_dir.mkdir(parents=True, exist_ok=True)
+        return job_dir
+
     def run_render(self, video_job_id: str) -> None:
-        self._render_lock.acquire()
-        try:
+        with self._render_lock:
             with self._state_lock:
                 job = self._get_locked(video_job_id)
                 if job.render_status is not RenderStatus.QUEUED:
@@ -171,19 +192,29 @@ class VideoWorkflowService:
                 storyboard = self._storyboard_builder(processing.result_id)
                 if storyboard.source_fingerprint != processing.source_fingerprint:
                     raise WorkflowConflict("원본 광고가 변경되어 다시 생성해야 합니다")
-
-                music_path = None
-                music_key = None
-                if self._music_catalog is not None:
-                    track = self._music_catalog.select_for_tone(processing.tone)
-                    music_path = track.path
-                    music_key = track.key
-
-                output_path = self._video_dir / f"{video_job_id}.mp4"
+                job_dir = self._job_work_dir(video_job_id)
+                product_image_url = self._product_image_url_builder(processing.product_id)
+                scene_images = self._scene_image_provider.build(
+                    storyboard=storyboard,
+                    product_image_url=product_image_url,
+                    output_dir=job_dir / "images",
+                )
+                speech_audio = tuple(
+                    self._tts_provider.synthesize(
+                        scene.spoken_text,
+                        job_dir / "audio" / f"line-{index:02d}.wav",
+                    )
+                    for index, scene in enumerate(storyboard.scenes)
+                )
+                if len({audio.engine for audio in speech_audio}) != 1:
+                    raise WorkflowConflict("TTS 엔진이 장면별로 일치하지 않습니다")
+                if len({audio.voice_preset for audio in speech_audio}) != 1:
+                    raise WorkflowConflict("TTS 음성 프리셋이 장면별로 일치하지 않습니다")
                 rendered = self._renderer.render(
                     storyboard,
-                    output_path=output_path,
-                    music_path=music_path,
+                    scene_images=scene_images,
+                    speech_audio=speech_audio,
+                    output_path=self._video_dir / f"{video_job_id}.mp4",
                 )
             except Exception:
                 with self._state_lock:
@@ -206,8 +237,14 @@ class VideoWorkflowService:
                         "render_status": RenderStatus.COMPLETED,
                         "video_url": f"/files/videos/{rendered.output_path.name}",
                         "video_sha256": rendered.sha256,
-                        "music_key": music_key,
-                        "music_warning": rendered.music_warning,
+                        "script_version": storyboard.script_version,
+                        "script_lines": tuple(scene.display_text for scene in storyboard.scenes),
+                        "tts_engine": speech_audio[0].engine,
+                        "tts_voice_preset": speech_audio[0].voice_preset,
+                        "tts_audio_sha256": rendered.tts_audio_sha256,
+                        "pronunciation_review_required": storyboard.pronunciation_review_required,
+                        "scene_image_sha256s": rendered.scene_image_sha256s,
+                        "caption_layout_version": rendered.caption_layout_version,
                         "error_message": None,
                         "updated_at": self._clock(),
                     }
@@ -216,8 +253,6 @@ class VideoWorkflowService:
                 if tone_result is not None:
                     tone_result["video_url"] = completed.video_url
                 self._persist_locked(completed)
-        finally:
-            self._render_lock.release()
 
     def _video_path(self, job: VideoJob) -> Path:
         if not job.video_url or not job.video_url.startswith("/files/videos/"):
@@ -233,7 +268,6 @@ class VideoWorkflowService:
             raise WorkflowValidation("노출 시각에는 시간대 정보가 필요합니다")
         if activation_at < self._clock() + MINIMUM_LEAD_TIME:
             raise WorkflowValidation("노출 시각은 최소 10분 이후여야 합니다")
-
         local_time = activation_at.astimezone(KST).time().replace(tzinfo=None)
         window_start, window_end = SLOT_WINDOWS[job.time_slot]
         if not window_start <= local_time < window_end:
@@ -246,11 +280,21 @@ class VideoWorkflowService:
             raise WorkflowConflict("원본 광고를 다시 확인할 수 없습니다") from exc
         if source_fingerprint != job.source_fingerprint:
             raise WorkflowConflict("원본 광고가 변경되어 다시 생성해야 합니다")
-
         video_path = self._video_path(job)
         if not job.video_sha256 or _sha256(video_path) != job.video_sha256:
             raise WorkflowConflict("완성 영상이 변경되어 다시 생성해야 합니다")
         return video_path
+
+    @staticmethod
+    def _validate_render_metadata(job: VideoJob) -> None:
+        if job.pronunciation_review_required:
+            raise WorkflowConflict("상품명 발음 검토가 끝나지 않았습니다")
+        if not job.tts_audio_sha256 or len(job.tts_audio_sha256) != 64:
+            raise WorkflowConflict("TTS 음성 무결성을 확인할 수 없습니다")
+        if len(job.scene_image_sha256s) != 3 or len(set(job.scene_image_sha256s)) != 3:
+            raise WorkflowConflict("서로 다른 장면 이미지 3장을 확인할 수 없습니다")
+        if not job.caption_layout_version:
+            raise WorkflowConflict("자막 레이아웃을 확인할 수 없습니다")
 
     def approve(
         self,
@@ -258,7 +302,6 @@ class VideoWorkflowService:
         *,
         activation_at: datetime,
         publish_to_youtube: bool,
-        allow_silent: bool,
     ) -> VideoJob:
         with self._state_lock:
             snapshot = self._get_locked(video_job_id)
@@ -266,23 +309,13 @@ class VideoWorkflowService:
             raise WorkflowConflict("렌더링 완료 후 승인할 수 있습니다")
         if snapshot.approval_status is ApprovalStatus.REJECTED:
             raise WorkflowConflict("거절된 영상은 승인할 수 없습니다")
-
         self._validate_schedule(snapshot, activation_at)
+        self._validate_render_metadata(snapshot)
         self._validate_integrity(snapshot)
-        if snapshot.music_warning and not allow_silent:
-            raise WorkflowConflict("음악이 없는 무음 영상을 별도로 확인해야 합니다")
 
-        requested_publish = (
-            snapshot.publish_status is not PublishStatus.NOT_REQUESTED
-        )
+        requested_publish = snapshot.publish_status is not PublishStatus.NOT_REQUESTED
         if snapshot.approval_status is ApprovalStatus.APPROVED:
-            if (
-                snapshot.activation_at == activation_at
-                and requested_publish == publish_to_youtube
-                and snapshot.silent_publish_confirmed == bool(
-                    snapshot.music_warning and allow_silent
-                )
-            ):
+            if snapshot.activation_at == activation_at and requested_publish == publish_to_youtube:
                 return snapshot
             raise WorkflowConflict("승인 후 예약 조건은 변경할 수 없습니다")
 
@@ -293,16 +326,9 @@ class VideoWorkflowService:
             approved = current.model_copy(
                 update={
                     "approval_status": ApprovalStatus.APPROVED,
-                    "publish_status": (
-                        PublishStatus.PENDING
-                        if publish_to_youtube
-                        else PublishStatus.NOT_REQUESTED
-                    ),
+                    "publish_status": PublishStatus.PENDING if publish_to_youtube else PublishStatus.NOT_REQUESTED,
                     "activation_at": activation_at,
                     "approved_at": self._clock(),
-                    "silent_publish_confirmed": bool(
-                        current.music_warning and allow_silent
-                    ),
                     "youtube_error": None,
                     "updated_at": self._clock(),
                 }
@@ -311,22 +337,19 @@ class VideoWorkflowService:
 
     def _publish_request(self, job: VideoJob, video_path: Path) -> PublishRequest:
         storyboard = self._storyboard_builder(job.result_id)
-        headline = storyboard.scenes[0].text if storyboard.scenes else storyboard.product_name
+        headline = storyboard.scenes[0].display_text if storyboard.scenes else storyboard.product_name
         title = f"{storyboard.product_name} | {headline}"[:100]
-        facts = [scene.text for scene in storyboard.scenes]
-        description = "\n\n".join(facts + ["#Shorts"])
+        facts = [scene.display_text for scene in storyboard.scenes]
         return PublishRequest(
             video_path=video_path,
             title=title,
-            description=description,
+            description="\n\n".join(facts + ["#Shorts"]),
             tags=("Shorts", "제품광고", storyboard.tone),
             publish_at=job.activation_at,
         )
 
     def run_publish(self, video_job_id: str) -> None:
-        if not self._publish_lock.acquire(blocking=False):
-            raise WorkflowConflict("다른 YouTube 게시 작업이 진행 중입니다")
-        try:
+        with self._publish_lock:
             with self._state_lock:
                 snapshot = self._get_locked(video_job_id)
             if snapshot.approval_status is not ApprovalStatus.APPROVED:
@@ -335,67 +358,52 @@ class VideoWorkflowService:
                 raise WorkflowConflict("게시 대기 중인 영상만 업로드할 수 있습니다")
             if snapshot.activation_at is None:
                 raise WorkflowConflict("게시 예약 시각이 없습니다")
-
             try:
                 video_path = self._validate_integrity(snapshot)
                 request = self._publish_request(snapshot, video_path)
                 video_id = self._publisher.publish(request)
             except AuthenticationRequired:
-                status = PublishStatus.AUTH_REQUIRED
-                error = "YouTube 인증이 필요합니다"
-                video_id = None
+                status, error, video_id = PublishStatus.AUTH_REQUIRED, "YouTube 인증이 필요합니다", None
             except ScheduleExpired:
-                status = PublishStatus.SCHEDULE_EXPIRED
-                error = "YouTube 예약 시각이 지났습니다"
-                video_id = None
+                status, error, video_id = PublishStatus.SCHEDULE_EXPIRED, "YouTube 예약 시각이 지났습니다", None
             except PublishUncertain:
-                status = PublishStatus.NEEDS_REVIEW
-                error = "YouTube 게시 결과를 수동으로 확인해야 합니다"
-                video_id = None
+                status, error, video_id = PublishStatus.NEEDS_REVIEW, "YouTube 게시 결과를 수동으로 확인해야 합니다", None
             except WorkflowConflict:
-                status = PublishStatus.NEEDS_REVIEW
-                error = "게시 전 영상 무결성을 다시 확인해야 합니다"
-                video_id = None
+                status, error, video_id = PublishStatus.NEEDS_REVIEW, "게시 전 영상 무결성을 다시 확인해야 합니다", None
             except PublishRejected:
-                status = PublishStatus.FAILED
-                error = "YouTube 게시에 실패했습니다"
-                video_id = None
+                status, error, video_id = PublishStatus.FAILED, "YouTube 게시에 실패했습니다", None
             except Exception:
-                status = PublishStatus.FAILED
-                error = "YouTube 게시에 실패했습니다"
-                video_id = None
+                status, error, video_id = PublishStatus.FAILED, "YouTube 게시에 실패했습니다", None
             else:
-                status = PublishStatus.SCHEDULED
-                error = None
-
+                status, error = PublishStatus.SCHEDULED, None
             with self._state_lock:
                 current = self._get_locked(video_job_id)
                 if current.updated_at != snapshot.updated_at:
                     raise WorkflowConflict("게시 중 영상 작업 상태가 변경되었습니다")
-                updated = current.model_copy(
-                    update={
-                        "publish_status": status,
-                        "youtube_video_id": video_id,
-                        "youtube_error": error,
-                        "updated_at": self._clock(),
-                    }
+                self._persist_locked(
+                    current.model_copy(
+                        update={
+                            "publish_status": status,
+                            "youtube_video_id": video_id,
+                            "youtube_error": error,
+                            "updated_at": self._clock(),
+                        }
+                    )
                 )
-                self._persist_locked(updated)
-        finally:
-            self._publish_lock.release()
 
     def reject(self, video_job_id: str) -> VideoJob:
         with self._state_lock:
             job = self._get_locked(video_job_id)
             if job.approval_status is not ApprovalStatus.PENDING:
                 raise WorkflowConflict("검토 대기 중인 영상만 거절할 수 있습니다")
-            rejected = job.model_copy(
-                update={
-                    "approval_status": ApprovalStatus.REJECTED,
-                    "updated_at": self._clock(),
-                }
+            return self._persist_locked(
+                job.model_copy(
+                    update={
+                        "approval_status": ApprovalStatus.REJECTED,
+                        "updated_at": self._clock(),
+                    }
+                )
             )
-            return self._persist_locked(rejected)
 
     def youtube_status(self) -> dict[str, str | bool]:
         status = self._publisher.status()
@@ -424,33 +432,17 @@ def _youtube_service_factory(token_path: Path) -> Callable[[], object]:
             str(token_path),
             scopes=["https://www.googleapis.com/auth/youtube.upload"],
         )
-        return build(
-            "youtube",
-            "v3",
-            credentials=credentials,
-            cache_discovery=False,
-        )
+        return build("youtube", "v3", credentials=credentials, cache_discovery=False)
 
     return create_service
 
 
 def build_default_video_workflow() -> VideoWorkflowService:
     repo_root = Path(__file__).resolve().parents[3]
-    connection_id = os.getenv(
-        "YOUTUBE_CONNECTION_ID",
-        "demo_merchant_channel",
-    )
-    upload_enabled = (
-        os.getenv("YOUTUBE_UPLOAD_ENABLED", "false").strip().lower() == "true"
-    )
-    token_path = _external_file(
-        os.getenv("YOUTUBE_TOKEN_FILE", ""),
-        repo_root=repo_root,
-    )
-    client_path = _external_file(
-        os.getenv("YOUTUBE_CLIENT_SECRETS_FILE", ""),
-        repo_root=repo_root,
-    )
+    connection_id = os.getenv("YOUTUBE_CONNECTION_ID", "demo_merchant_channel")
+    upload_enabled = os.getenv("YOUTUBE_UPLOAD_ENABLED", "false").strip().lower() == "true"
+    token_path = _external_file(os.getenv("YOUTUBE_TOKEN_FILE", ""), repo_root=repo_root)
+    client_path = _external_file(os.getenv("YOUTUBE_CLIENT_SECRETS_FILE", ""), repo_root=repo_root)
     if upload_enabled and token_path is not None and client_path is not None:
         publisher: Publisher = GoogleYouTubePublisher(
             service_factory=_youtube_service_factory(token_path),
@@ -460,38 +452,19 @@ def build_default_video_workflow() -> VideoWorkflowService:
     else:
         publisher = DisabledPublisher(connection_id)
 
-    asset_root = Path(os.getenv("MUSIC_ASSET_DIR", "assets/music/private"))
-    manifest_path = Path(
-        os.getenv(
-            "MUSIC_MANIFEST_PATH",
-            "assets/music/private/manifest.json",
-        )
-    )
-    music_catalog = None
-    if manifest_path.is_file():
-        try:
-            music_catalog = MusicCatalog.load(
-                manifest_path,
-                asset_root=asset_root,
-            )
-        except (OSError, ValueError):
-            music_catalog = None
-
+    work_dir = Path(os.getenv("VIDEO_WORK_DIR", "var/video-work"))
     renderer = RushHourVideoRenderer(
-        font_path=Path(
-            os.getenv(
-                "VIDEO_FONT_PATH",
-                "assets/fonts/NanumGothic-Regular.ttf",
-            )
-        ),
+        font_path=Path(os.getenv("VIDEO_FONT_PATH", "assets/fonts/NanumGothic-Regular.ttf")),
         ffmpeg_bin=os.getenv("FFMPEG_BIN", "ffmpeg"),
         ffprobe_bin=os.getenv("FFPROBE_BIN", "ffprobe"),
         preset=os.getenv("VIDEO_FFMPEG_PRESET", "veryfast"),
     )
     return VideoWorkflowService(
         renderer=renderer,
-        music_catalog=music_catalog,
+        scene_image_provider=SceneImageProvider(),
+        tts_provider=MeloTTSProvider(output_root=work_dir),
         publisher=publisher,
         now=lambda: datetime.now(timezone.utc),
         video_dir=Path(os.getenv("VIDEO_DIR", "data/videos")),
+        work_dir=work_dir,
     )

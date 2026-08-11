@@ -1,38 +1,81 @@
-from pathlib import Path
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from app.frontend.video_view_state import (
+    VideoViewKind,
+    build_video_view_state,
+    can_create_rush_hour_short,
+    default_activation_at,
+)
 
 
-HISTORY_PAGE = Path("app/frontend/pages/3_History.py")
+KST = ZoneInfo("Asia/Seoul")
 
 
-def test_history_page_contains_video_approval_contract():
-    source = HISTORY_PAGE.read_text(encoding="utf-8")
-
-    assert "def default_activation_at" in source
-    assert "def render_video_workflow" in source
-    assert "/approve" in source
-    assert "/reject" in source
-    assert "publish_to_youtube" in source
-    assert "allow_silent" in source
-    assert "activation_at" in source
-    assert "승인 전에는 게시되지 않습니다" in source
+def test_only_rush_hour_results_can_create_comic_short():
+    assert can_create_rush_hour_short({"result_id": "res_1", "time_slot": "commute_am"}) is True
+    assert can_create_rush_hour_short({"result_id": "res_2", "time_slot": "commute_pm"}) is True
+    assert can_create_rush_hour_short({"result_id": "res_3", "time_slot": "afternoon"}) is False
+    assert can_create_rush_hour_short({"time_slot": "commute_am"}) is False
 
 
-def test_history_page_uses_separate_render_approval_and_publish_states():
-    source = HISTORY_PAGE.read_text(encoding="utf-8")
+def test_view_state_blocks_approval_until_pronunciation_is_reviewed():
+    state = build_video_view_state(
+        {
+            "render_status": "completed",
+            "approval_status": "pending",
+            "publish_status": "not_requested",
+            "video_url": "/files/videos/video_1.mp4",
+            "pronunciation_review_required": True,
+        }
+    )
 
-    assert "render_status" in source
-    assert "approval_status" in source
-    assert "publish_status" in source
-    assert "music_warning" in source
-    assert "/api/v1/youtube/status" in source
-    assert "connection_id" in source
-    assert "token_file" not in source
-    assert "client_secret" not in source
+    assert state.kind is VideoViewKind.PRONUNCIATION_REVIEW
+    assert state.show_video is True
+    assert state.can_approve is False
 
 
-def test_history_page_limits_video_creation_to_rush_hour_results():
-    source = HISTORY_PAGE.read_text(encoding="utf-8")
+def test_completed_video_exposes_explicit_approve_and_reject_actions():
+    state = build_video_view_state(
+        {
+            "render_status": "completed",
+            "approval_status": "pending",
+            "publish_status": "not_requested",
+            "video_url": "/files/videos/video_1.mp4",
+            "pronunciation_review_required": False,
+        }
+    )
 
-    assert 'RUSH_HOUR_SLOTS = {"commute_am", "commute_pm"}' in source
-    assert 'result.get("time_slot") not in RUSH_HOUR_SLOTS' in source
-    assert "st.video" in source
+    assert state.kind is VideoViewKind.REVIEW
+    assert state.can_approve is True
+    assert state.can_reject is True
+
+
+def test_approved_and_publishing_states_are_distinct():
+    approved = build_video_view_state(
+        {
+            "render_status": "completed",
+            "approval_status": "approved",
+            "publish_status": "not_requested",
+            "video_url": "/files/videos/video_1.mp4",
+        }
+    )
+    publishing = build_video_view_state(
+        {
+            "render_status": "completed",
+            "approval_status": "approved",
+            "publish_status": "pending",
+            "video_url": "/files/videos/video_1.mp4",
+        }
+    )
+
+    assert approved.kind is VideoViewKind.APPROVED
+    assert publishing.kind is VideoViewKind.PUBLISHING
+
+
+def test_default_activation_uses_next_valid_rush_hour():
+    now = datetime(2026, 8, 11, 8, 55, tzinfo=KST)
+
+    activation = default_activation_at("commute_am", now)
+
+    assert activation == datetime(2026, 8, 12, 8, 0, tzinfo=KST)

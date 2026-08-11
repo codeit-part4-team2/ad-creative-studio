@@ -99,6 +99,27 @@ def test_interrupted_video_jobs_are_recovered_without_duplicate_work():
     assert "확인" in (recovered_upload.youtube_error or "")
 
 
+def test_legacy_music_fields_are_removed_during_store_migration():
+    legacy = _job().model_dump(mode="json")
+    legacy.update(
+        {
+            "music_key": "legacy-track",
+            "music_warning": "music_unavailable",
+            "silent_publish_confirmed": True,
+        }
+    )
+    store.VIDEO_JOBS["video_1"] = legacy
+    store.save()
+    store.VIDEO_JOBS.clear()
+
+    store.load()
+
+    restored = store.VIDEO_JOBS["video_1"]
+    assert "music_key" not in restored
+    assert "music_warning" not in restored
+    assert "silent_publish_confirmed" not in restored
+
+
 def test_reset_for_tests_clears_video_jobs():
     job = _job()
     store.VIDEO_JOBS[job.video_job_id] = job.model_dump(mode="json")

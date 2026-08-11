@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class RenderStatus(str, Enum):
@@ -40,9 +40,14 @@ class VideoJob(BaseModel):
     video_url: str | None = None
     video_sha256: str | None = None
     source_fingerprint: str
-    music_key: str | None = None
-    music_warning: str | None = None
-    silent_publish_confirmed: bool = False
+    script_version: str = "legacy"
+    script_lines: tuple[str, ...] = ()
+    tts_engine: str | None = None
+    tts_voice_preset: str | None = None
+    tts_audio_sha256: str | None = None
+    pronunciation_review_required: bool = False
+    scene_image_sha256s: tuple[str, ...] = ()
+    caption_layout_version: str | None = None
     activation_at: datetime | None = None
     approved_at: datetime | None = None
     youtube_video_id: str | None = None
@@ -62,9 +67,10 @@ class VideoCreateResponse(BaseModel):
 
 
 class VideoApprovalRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     activation_at: datetime
     publish_to_youtube: bool = False
-    allow_silent: bool = False
 
 
 class YouTubeStatusResponse(BaseModel):
