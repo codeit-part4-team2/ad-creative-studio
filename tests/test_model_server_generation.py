@@ -87,6 +87,7 @@ def test_model_server_generation_success(monkeypatch):
 
     monkeypatch.setattr(model_server_client, "request_generation", fake_request_generation)
     monkeypatch.setattr(model_server_client, "httpx", type("M", (), {"AsyncClient": _FakeAsyncClient}))
+    monkeypatch.setattr(model_server_client, "MODEL_SERVER_URL", "http://fake-model-server")
 
     req, product = _setup_job_and_product(time_slots=("morning",))
     service = gs.ModelServerGenerationService()
@@ -116,9 +117,21 @@ def test_model_server_generation_raises_on_failed_status(monkeypatch):
 
 def test_fetch_generated_image_returns_pil_image(monkeypatch):
     monkeypatch.setattr(model_server_client, "httpx", type("M", (), {"AsyncClient": _FakeAsyncClient}))
+    monkeypatch.setattr(model_server_client, "MODEL_SERVER_URL", "http://fake")
     image = asyncio.run(model_server_client.fetch_generated_image("http://fake/bg.png"))
     assert isinstance(image, Image.Image)
     assert image.mode == "RGB"
+
+
+def test_fetch_generated_image_rejects_another_origin(monkeypatch):
+    monkeypatch.setattr(model_server_client, "MODEL_SERVER_URL", "http://model.internal:8001")
+
+    with pytest.raises(ValueError, match="MODEL_SERVER_URL origin"):
+        asyncio.run(
+            model_server_client.fetch_generated_image(
+                "http://169.254.169.254/latest/meta-data/"
+            )
+        )
 
 
 def test_fetch_generated_image_joins_relative_url_with_model_server_base(monkeypatch):
