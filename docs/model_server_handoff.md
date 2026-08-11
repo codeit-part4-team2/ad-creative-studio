@@ -1,12 +1,23 @@
 # Model Server Handoff
 
+## 확정된 운영 설정 (2026-08-11, 서빙 담당자 실측 완료)
+
+- 프로필: `fast_composite` / 배경 768 / 4-step / FP16-safe VAE (`madebyollin/sdxl-vae-fp16-fix`)
+- 실행 명령:
+```bash
+uvicorn model_server.main:app --host 0.0.0.0 --port 8001 --workers 1 --env-file .env
+```
+- `.env` 파일은 `load_dotenv()` 코드가 없어 코드에서 자동 로드되지 않으므로, 반드시 `--env-file .env` 옵션으로 명시 전달해야 함 (export 없이 이 옵션만으로 반영 확인됨)
+- L4 실측: P50 1.72s / P95 1.77s (quality_regenerate 30-step 대비 약 10배 빠름)
+- VAE 비교(stock vs FP16-safe, seed=42): PSNR 51.37dB, 속도 약 10% 우위로 FP16-safe 유지 확정
+
 ## 로컬 통합 상태
 
 - 최신 확인 원격: `main@0d07c0b` (PR #16 병합 상태)
 - 작업 브랜치: `codex/model-server-optimization`
 - 원격 브랜치: `Adam-1228/ad-creative-studio:codex/model-server-optimization`
 - 팀 저장소 Draft PR: `codeit-part4-team2/ad-creative-studio#15`
-- merge: PM 승인 및 L4 실측 전까지 수행하지 않음
+- merge: PM 승인 전까지 수행하지 않음 (L4 실측은 2026-08-11 완료, 아래 확정 설정 섹션 참고)
 - 모델 가중치 다운로드 및 NVIDIA L4 실제 추론: 수행하지 않음
 
 2026-08-10 서빙 담당자 실험 A 보고에서 `quality_regenerate`, 1024×1024, 30-step은
@@ -69,9 +80,8 @@ Python 3.12 인터프리터의 구문 컴파일은 통과했지만 해당 인터
 
 ## 아직 검증되지 않은 항목
 
-- fast 보고값의 원본 JSON, 정확한 실행 commit, `background_size=768`, `output_size=1024`
-- 1024/4-step B0와 768/4-step B의 동일 조건 비교
-- FP16-safe VAE 적용 후 NVIDIA L4 cold/warm latency, P50/P95, peak VRAM, OOM
+- fast 보고값의 원본 JSON, 정확한 실행 commit (`background_size=768`, `output_size=1024`는 2026-08-11 실험 B 응답으로 확인 완료)
+- FP16-safe VAE의 NVIDIA L4 **cold-start** latency 및 대량 반복 요청 시 OOM 여부 (warm P50/P95·peak VRAM은 2026-08-11 실측 완료, 아래 확정 설정 섹션 참고)
 - SDXL·LCM-LoRA·ControlNet·IP-Adapter 가중치 다운로드와 라이선스 승인 상태
 - 상품 20개 이상에 대한 rembg 치명 마스크 오류율
 - 4-step 이미지의 시간대·톤 반영 및 6/8-step 대비 블라인드 선호도
