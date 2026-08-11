@@ -194,6 +194,29 @@ def test_removed_allow_silent_field_is_rejected(api):
     assert response.status_code == 422
 
 
+def test_pronunciation_review_requires_explicit_listening_confirmation(api):
+    client, workflow, _ = api
+    job_id = _create_completed(api)
+    store.VIDEO_JOBS[job_id]["pronunciation_review_required"] = True
+
+    blocked = client.post(
+        f"/api/v1/videos/{job_id}/approve",
+        json={"activation_at": ACTIVATION, "publish_to_youtube": False},
+    )
+    assert blocked.status_code == 409
+
+    approved = client.post(
+        f"/api/v1/videos/{job_id}/approve",
+        json={
+            "activation_at": ACTIVATION,
+            "publish_to_youtube": False,
+            "pronunciation_confirmed": True,
+        },
+    )
+    assert approved.status_code == 202
+    assert workflow.get(job_id).pronunciation_reviewed_at is not None
+
+
 def test_invalid_lead_time_returns_422(api):
     client, _, _ = api
     job_id = _create_completed(api)

@@ -5,7 +5,6 @@ import streamlit as st
 
 from app.frontend.video_view_state import (
     KST,
-    RUSH_HOUR_SLOTS,
     VideoViewKind,
     build_video_view_state,
     can_create_rush_hour_short,
@@ -110,10 +109,15 @@ def render_video_workflow(result: dict) -> None:
                 f"프리셋: {job.get('tts_voice_preset') or '확인 중'}"
             )
 
+    pronunciation_confirmed = False
     if view_state.kind is VideoViewKind.PRONUNCIATION_REVIEW:
-        st.error(
-            "상품명 또는 영문·숫자 발음 표기가 확인되지 않았습니다. "
-            "상품의 한글 발음 표기를 보완한 뒤 쇼츠를 다시 생성해주세요."
+        st.warning(
+            "상품명 또는 영문·숫자 발음을 사람이 확인해야 합니다. 영상 전체를 듣고 "
+            "모든 발음이 정확할 때만 아래 항목을 선택해주세요."
+        )
+        pronunciation_confirmed = st.checkbox(
+            "상품명·숫자·단위·영문 발음을 직접 듣고 정확함을 확인했습니다.",
+            key=f"pronunciation_confirmed_{result_id}",
         )
     if view_state.kind in {VideoViewKind.APPROVED, VideoViewKind.PUBLISHING, VideoViewKind.PUBLISH_WARNING}:
         st.success(f"내부 노출 승인 완료 · 활성 시각: {job.get('activation_at')}")
@@ -162,13 +166,21 @@ def render_video_workflow(result: dict) -> None:
     )
     approve_col, reject_col = st.columns(2)
     with approve_col:
-        if view_state.can_approve and st.button("검수 승인", key=f"approve_{result_id}"):
+        can_approve = view_state.can_approve or (
+            view_state.can_confirm_pronunciation and pronunciation_confirmed
+        )
+        if st.button(
+            "검수 승인",
+            key=f"approve_{result_id}",
+            disabled=not can_approve,
+        ):
             try:
                 approval = requests.post(
                     api_url(f"/api/v1/videos/{video_job_id}/approve"),
                     json={
                         "activation_at": activation_at.isoformat(),
                         "publish_to_youtube": publish_to_youtube,
+                        "pronunciation_confirmed": pronunciation_confirmed,
                     },
                     timeout=10,
                 )

@@ -46,6 +46,7 @@ class VideoJob(BaseModel):
     tts_voice_preset: str | None = None
     tts_audio_sha256: str | None = None
     pronunciation_review_required: bool = False
+    pronunciation_reviewed_at: datetime | None = None
     scene_image_sha256s: tuple[str, ...] = ()
     caption_layout_version: str | None = None
     activation_at: datetime | None = None
@@ -71,6 +72,7 @@ class VideoApprovalRequest(BaseModel):
 
     activation_at: datetime
     publish_to_youtube: bool = False
+    pronunciation_confirmed: bool = False
 
 
 class YouTubeStatusResponse(BaseModel):

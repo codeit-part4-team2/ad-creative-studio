@@ -33,6 +33,7 @@ def test_view_state_blocks_approval_until_pronunciation_is_reviewed():
     assert state.kind is VideoViewKind.PRONUNCIATION_REVIEW
     assert state.show_video is True
     assert state.can_approve is False
+    assert state.can_confirm_pronunciation is True
 
 
 def test_completed_video_exposes_explicit_approve_and_reject_actions():

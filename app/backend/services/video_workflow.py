@@ -286,8 +286,16 @@ class VideoWorkflowService:
         return video_path
 
     @staticmethod
-    def _validate_render_metadata(job: VideoJob) -> None:
-        if job.pronunciation_review_required:
+    def _validate_render_metadata(
+        job: VideoJob,
+        *,
+        pronunciation_confirmed: bool,
+    ) -> None:
+        if (
+            job.pronunciation_review_required
+            and job.pronunciation_reviewed_at is None
+            and not pronunciation_confirmed
+        ):
             raise WorkflowConflict("상품명 발음 검토가 끝나지 않았습니다")
         if not job.tts_audio_sha256 or len(job.tts_audio_sha256) != 64:
             raise WorkflowConflict("TTS 음성 무결성을 확인할 수 없습니다")
@@ -302,6 +310,7 @@ class VideoWorkflowService:
         *,
         activation_at: datetime,
         publish_to_youtube: bool,
+        pronunciation_confirmed: bool = False,
     ) -> VideoJob:
         with self._state_lock:
             snapshot = self._get_locked(video_job_id)
@@ -310,7 +319,10 @@ class VideoWorkflowService:
         if snapshot.approval_status is ApprovalStatus.REJECTED:
             raise WorkflowConflict("거절된 영상은 승인할 수 없습니다")
         self._validate_schedule(snapshot, activation_at)
-        self._validate_render_metadata(snapshot)
+        self._validate_render_metadata(
+            snapshot,
+            pronunciation_confirmed=pronunciation_confirmed,
+        )
         self._validate_integrity(snapshot)
 
         requested_publish = snapshot.publish_status is not PublishStatus.NOT_REQUESTED
@@ -329,6 +341,15 @@ class VideoWorkflowService:
                     "publish_status": PublishStatus.PENDING if publish_to_youtube else PublishStatus.NOT_REQUESTED,
                     "activation_at": activation_at,
                     "approved_at": self._clock(),
+                    "pronunciation_reviewed_at": (
+                        current.pronunciation_reviewed_at
+                        or (
+                            self._clock()
+                            if current.pronunciation_review_required
+                            and pronunciation_confirmed
+                            else None
+                        )
+                    ),
                     "youtube_error": None,
                     "updated_at": self._clock(),
                 }

@@ -12,3 +12,5 @@ google-auth-oauthlib==1.4.0
 google-auth-httplib2==0.4.1
 python-dotenv
 pytest
+
+# CPU 한국어 TTS는 Python 3.12에서 requirements-tts.txt를 별도로 설치합니다.

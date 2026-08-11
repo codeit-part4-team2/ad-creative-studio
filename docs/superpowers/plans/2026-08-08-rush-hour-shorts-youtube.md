@@ -1,5 +1,8 @@
 # Rush-Hour Shorts and YouTube Scheduling Implementation Plan
 
+> **SUPERSEDED:** Replaced on 2026-08-11 by `2026-08-11-rush-hour-comic-tts.md`.
+> Music, silent-preview, and mock-video tasks below are historical and must not guide implementation.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (- [ ]) syntax for tracking.
 
 **Goal:** Generate music-and-caption product Shorts from approved rush-hour ad results, expose approved videos inside the service, and optionally schedule them on one team YouTube test channel.

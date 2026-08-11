@@ -78,6 +78,7 @@ async def approve_video(
             video_job_id,
             activation_at=req.activation_at,
             publish_to_youtube=req.publish_to_youtube,
+            pronunciation_confirmed=req.pronunciation_confirmed,
         )
     except WorkflowNotFound as exc:
         raise HTTPException(404, str(exc)) from exc

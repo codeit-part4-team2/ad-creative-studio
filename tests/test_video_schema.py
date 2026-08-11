@@ -15,6 +15,16 @@ def test_approval_request_rejects_removed_silent_music_field():
         )
 
 
+def test_approval_request_accepts_explicit_pronunciation_confirmation():
+    request = VideoApprovalRequest(
+        activation_at=datetime(2026, 8, 12, 8, 0, tzinfo=timezone.utc),
+        publish_to_youtube=False,
+        pronunciation_confirmed=True,
+    )
+
+    assert request.pronunciation_confirmed is True
+
+
 def test_video_job_exposes_tts_and_scene_integrity_without_music_fields():
     now = datetime(2026, 8, 11, tzinfo=timezone.utc)
     job = VideoJob(

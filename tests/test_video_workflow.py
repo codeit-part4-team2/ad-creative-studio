@@ -335,7 +335,18 @@ def test_approval_requires_complete_integrity_and_pronunciation_review(workflow)
     with pytest.raises(WorkflowConflict, match="발음"):
         workflow.approve(queued.video_job_id, activation_at=_next_commute_am(), publish_to_youtube=False)
 
-    raw["pronunciation_review_required"] = False
+    confirmed = workflow.approve(
+        queued.video_job_id,
+        activation_at=_next_commute_am(),
+        publish_to_youtube=False,
+        pronunciation_confirmed=True,
+    )
+    assert confirmed.pronunciation_reviewed_at is not None
+
+    raw = store.VIDEO_JOBS[queued.video_job_id]
+    raw["approval_status"] = "pending"
+    raw["approved_at"] = None
+    raw["activation_at"] = None
     raw["tts_audio_sha256"] = None
     with pytest.raises(WorkflowConflict, match="TTS"):
         workflow.approve(queued.video_job_id, activation_at=_next_commute_am(), publish_to_youtube=False)

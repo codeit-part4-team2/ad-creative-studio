@@ -27,6 +27,7 @@ class VideoViewState:
     show_video: bool
     can_approve: bool = False
     can_reject: bool = False
+    can_confirm_pronunciation: bool = False
 
 
 def can_create_rush_hour_short(result: dict[str, object]) -> bool:
@@ -67,6 +68,7 @@ def build_video_view_state(job: dict[str, object]) -> VideoViewState:
             VideoViewKind.PRONUNCIATION_REVIEW,
             show_video=show_video,
             can_reject=True,
+            can_confirm_pronunciation=True,
         )
     return VideoViewState(
         VideoViewKind.REVIEW,

@@ -23,6 +23,8 @@ jobs:
         run: |
           ffmpeg -version
           ffprobe -version
+      - name: Compile Python sources
+        run: python -m compileall -q app tools
       - run: pytest -q
       - name: Notebook Sanity Check
         run: |

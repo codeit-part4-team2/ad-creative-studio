@@ -5,6 +5,7 @@ import time
 import uuid
 import zipfile
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,6 +13,8 @@ from fastapi.testclient import TestClient
 from app.backend.main import app
 from app.backend.schemas.video import VideoJob
 from app.backend.services import store, overlay
+from app.backend.services.scene_images import SceneImage, SceneImageSet
+from app.backend.services.tts_provider import TTSAudio
 from app.backend.services.video_renderer import RenderResult
 from app.backend.services.video_workflow import VideoWorkflowService
 from app.backend.services.youtube_publisher import DisabledPublisher
@@ -23,7 +26,7 @@ client = TestClient(app)
 
 
 class _ApiTestRenderer:
-    def render(self, storyboard, *, output_path, music_path):
+    def render(self, storyboard, *, scene_images, speech_audio, output_path):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"test-video")
         return RenderResult(
@@ -34,7 +37,40 @@ class _ApiTestRenderer:
             height=1920,
             video_codec="h264",
             audio_codec="aac",
-            music_warning="music_unavailable",
+            tts_audio_sha256=hashlib.sha256(b"test-tts").hexdigest(),
+            scene_image_sha256s=scene_images.sha256s,
+            caption_layout_version="bright-outline-v1",
+        )
+
+
+class _ApiTestSceneProvider:
+    def build(self, *, storyboard, product_image_url, output_dir):
+        images = []
+        for index, purpose in enumerate(("hero", "self_aware", "benefit")):
+            path = output_dir / f"{purpose}.png"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(f"scene-{index}".encode("ascii"))
+            images.append(
+                SceneImage(
+                    purpose=purpose,
+                    path=path.resolve(),
+                    sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+                    source="api-test",
+                )
+            )
+        return SceneImageSet(images=tuple(images))
+
+
+class _ApiTestTTSProvider:
+    def synthesize(self, spoken_text: str, output_path: Path) -> TTSAudio:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(spoken_text.encode("utf-8"))
+        return TTSAudio(
+            path=output_path.resolve(),
+            duration_sec=1.0,
+            sha256=hashlib.sha256(output_path.read_bytes()).hexdigest(),
+            engine="melotts-korean",
+            voice_preset="deadpan-ai-v1",
         )
 
 
@@ -48,9 +84,8 @@ def _clear_store(tmp_path, monkeypatch):
     - overlay.OUTPUT_DIR: data/outputs/ 자체가 아니라 그 "하위"의 테스트 전용 서브폴더로 리다이렉트.
       정적 파일 서빙(/files/...)은 data/ 디렉터리 마운트에 묶여있어 완전히 밖으로 뺄 수 없기 때문에,
       최소한 기존 데모 파일이 있는 data/outputs/ 최상위는 안 건드리고 서브폴더만 만들고 지운다.
-    - video_generation_service.VIDEO_DIR: 쇼츠 Mock이 만드는 placeholder mp4도 tmp_path로
-      완전히 격리 - 실제 data/videos/에 아무 것도 안 남긴다 (URL 문자열만 검증하므로 정적
-      서빙 경로와 실제 파일 위치가 달라도 테스트엔 영향 없음).
+    - 실제 코믹 쇼츠 워크플로는 테스트 전용 장면·TTS·렌더러를 주입하고, 모든 영상 파일을
+      tmp_path 아래에 생성해 data/videos/를 건드리지 않는다.
     """
     monkeypatch.setattr(store, "STORE_PATH", tmp_path / "store.json")
 
@@ -59,10 +94,12 @@ def _clear_store(tmp_path, monkeypatch):
 
     app.state.video_workflow = VideoWorkflowService(
         renderer=_ApiTestRenderer(),
-        music_catalog=None,
+        scene_image_provider=_ApiTestSceneProvider(),
+        tts_provider=_ApiTestTTSProvider(),
         publisher=DisabledPublisher("test_channel"),
         now=lambda: datetime.now(timezone.utc),
         video_dir=tmp_path / "videos",
+        work_dir=tmp_path / "video-work",
     )
 
     PRODUCTS.clear()
