@@ -5,6 +5,11 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.backend.services.comic_script import (
+    ComicLineKind,
+    PronunciationLexicon,
+    build_comic_script,
+)
 from app.backend.services.store import HISTORY, PRODUCTS
 
 
@@ -17,9 +22,20 @@ class StoryboardNotFound(ValueError):
 
 @dataclass(frozen=True)
 class StoryboardScene:
-    text: str
+    display_text: str
     duration_sec: float
+    spoken_text: str = ""
+    kind: ComicLineKind = ComicLineKind.INTRO
+    image_purpose: str = "hero"
     accent_terms: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.spoken_text:
+            object.__setattr__(self, "spoken_text", self.display_text)
+
+    @property
+    def text(self) -> str:
+        return self.display_text
 
 
 @dataclass(frozen=True)
@@ -32,6 +48,8 @@ class Storyboard:
     image_path: Path
     scenes: tuple[StoryboardScene, ...]
     source_fingerprint: str
+    script_version: str = "legacy"
+    pronunciation_review_required: bool = False
 
 
 def find_tone_result(result_id: str) -> tuple[dict | None, dict | None]:
@@ -85,6 +103,9 @@ def _fingerprint(
     time_slot: str,
     image_url: str,
     image_path: Path,
+    script_version: str,
+    script_lines: tuple[tuple[str, str, str], ...],
+    pronunciation_review_required: bool,
 ) -> str:
     payload = {
         "product_name": product_name,
@@ -95,6 +116,9 @@ def _fingerprint(
         "time_slot": time_slot,
         "image_url": image_url,
         "image_sha256": hashlib.sha256(image_path.read_bytes()).hexdigest(),
+        "script_version": script_version,
+        "script_lines": script_lines,
+        "pronunciation_review_required": pronunciation_review_required,
     }
     encoded = json.dumps(
         payload,
@@ -131,26 +155,40 @@ def build_storyboard(
         static_root=static_root,
     )
 
-    scenes = [
-        StoryboardScene(headline, 2.5),
-        StoryboardScene(subcopy, 3.0),
-    ]
-    if selling_points:
-        scenes.append(
-            StoryboardScene(
-                " · ".join(selling_points[:2]),
-                4.0,
-                selling_points[:2],
-            )
-        )
-        call_to_action_duration = 3.0
-    else:
-        call_to_action_duration = 4.5
-    scenes.append(
+    raw_pronunciations = product.get("pronunciations") or {}
+    pronunciations = (
+        raw_pronunciations if isinstance(raw_pronunciations, dict) else {}
+    )
+    script = build_comic_script(
+        product_name=product_name,
+        selling_points=selling_points,
+        time_slot=time_slot,
+        lexicon=PronunciationLexicon(pronunciations),
+    )
+    purposes = {
+        ComicLineKind.INTRO: "hero",
+        ComicLineKind.SELF_AWARE: "self_aware",
+        ComicLineKind.BENEFIT: "benefit",
+        ComicLineKind.CTA: "cta",
+    }
+    durations = {
+        ComicLineKind.INTRO: 2.5,
+        ComicLineKind.SELF_AWARE: 2.5,
+        ComicLineKind.BENEFIT: 3.0,
+        ComicLineKind.CTA: 3.0,
+    }
+    scenes = tuple(
         StoryboardScene(
-            f"{product_name}\n지금 확인해보세요",
-            call_to_action_duration,
+            display_text=line.display_text,
+            spoken_text=line.spoken_text,
+            kind=line.kind,
+            image_purpose=purposes[line.kind],
+            duration_sec=durations[line.kind],
+            accent_terms=(selling_points[0],)
+            if line.kind is ComicLineKind.BENEFIT and selling_points
+            else (),
         )
+        for line in script.lines
     )
 
     return Storyboard(
@@ -160,7 +198,11 @@ def build_storyboard(
         time_slot=time_slot,
         product_name=product_name,
         image_path=image_path,
-        scenes=tuple(scenes),
+        scenes=scenes,
+        script_version=script.version,
+        pronunciation_review_required=(
+            script.pronunciation_review_required
+        ),
         source_fingerprint=_fingerprint(
             product_name=product_name,
             headline=headline,
@@ -170,6 +212,14 @@ def build_storyboard(
             time_slot=time_slot,
             image_url=image_url,
             image_path=image_path,
+            script_version=script.version,
+            script_lines=tuple(
+                (line.display_text, line.spoken_text, line.kind.value)
+                for line in script.lines
+            ),
+            pronunciation_review_required=(
+                script.pronunciation_review_required
+            ),
         ),
     )
 

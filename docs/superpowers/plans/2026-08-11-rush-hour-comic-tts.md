@@ -384,4 +384,3 @@ Set the title and body to describe the comic TTS replacement, two extra sequenti
 Run: `gh pr checks 17 --repo codeit-part4-team2/ad-creative-studio --watch`
 
 Expected: all required checks pass. If a check fails, inspect the log and fix only the root cause before pushing again.
-
