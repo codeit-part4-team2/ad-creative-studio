@@ -188,9 +188,11 @@ __marimo__/
 data/uploads/*
 data/outputs/*
 data/videos/*
+data/tts/*
 !data/uploads/.gitkeep
 !data/outputs/.gitkeep
 !data/videos/.gitkeep
+!data/tts/.gitkeep
 data/samples/*
 !data/samples/.gitkeep
 

@@ -61,4 +61,3 @@ def test_hangul_only_text_does_not_require_manual_pronunciation():
 
     assert result.spoken_text == "휴대용 선풍기"
     assert result.review_required is False
-
