@@ -19,3 +19,8 @@ npm-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# next dev가 실행할 때마다 자동으로 재작성하는 파일 - 커밋해봐야 diff 노이즈만 생김
+# (PR #19 리뷰에서 팀 논의 후 결정: 커밋 대상에서 제외)
+AGENTS.md
+CLAUDE.md

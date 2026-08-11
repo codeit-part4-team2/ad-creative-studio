@@ -48,6 +48,7 @@ export default function CreatePage() {
   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (imagePreview) URL.revokeObjectURL(imagePreview); // 이전 미리보기 메모리 해제
     setImageFile(file);
     setImagePreview(URL.createObjectURL(file));
   }

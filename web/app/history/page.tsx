@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getHistory, toggleFavorite, downloadAllUrl } from "@/lib/api/history";
-import { createVideo } from "@/lib/api/videos";
 import { resolveAssetUrl } from "@/lib/api/client";
+import { useShortsCreation } from "@/lib/hooks/use-shorts-creation";
 import { ResultReceiptCard } from "@/components/creative/result-card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -24,11 +24,7 @@ export default function HistoryPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["history"] }),
   });
 
-  const shortsMutation = useMutation({
-    mutationFn: createVideo,
-    onSuccess: () =>
-      setTimeout(() => queryClient.invalidateQueries({ queryKey: ["history"] }), 4000),
-  });
+  const { createShorts, isCreatingFor } = useShortsCreation(["history"]);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-8 py-10">
@@ -76,8 +72,8 @@ export default function HistoryPage() {
                   key={r.result_id}
                   result={r}
                   jobId={entry.job_id}
-                  onCreateShorts={(resultId) => shortsMutation.mutate(resultId)}
-                  isCreatingShorts={shortsMutation.isPending}
+                  onCreateShorts={createShorts}
+                  isCreatingShorts={isCreatingFor(r.result_id)}
                 />
               ))}
             </div>

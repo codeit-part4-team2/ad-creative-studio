@@ -2,23 +2,22 @@
 
 import { use } from "react";
 import Link from "next/link";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { getJobStatus, getGenerationResult } from "@/lib/api/generations";
-import { createVideo } from "@/lib/api/videos";
+import { useShortsCreation } from "@/lib/hooks/use-shorts-creation";
 import { GenerationProgress } from "@/components/creative/generation-progress";
 import { ResultReceiptCard } from "@/components/creative/result-card";
 import { Button } from "@/components/ui/button";
 
 export default function ResultPage({ params }: { params: Promise<{ jobId: string }> }) {
   const { jobId } = use(params);
-  const queryClient = useQueryClient();
 
   const jobQuery = useQuery({
     queryKey: ["job", jobId],
     queryFn: () => getJobStatus(jobId),
     refetchInterval: (query) => {
       const status = query.state.data?.status;
-      return status === "completed" || status === "failed" ? false : 500;
+      return status === "completed" || status === "failed" ? false : 2000;
     },
   });
 
@@ -28,13 +27,7 @@ export default function ResultPage({ params }: { params: Promise<{ jobId: string
     enabled: jobQuery.data?.status === "completed",
   });
 
-  const shortsMutation = useMutation({
-    mutationFn: createVideo,
-    onSuccess: () => {
-      // 쇼츠 job은 별도 폴링이 필요하지만, 여기서는 짧게 폴링 후 결과 갱신만 한다.
-      setTimeout(() => queryClient.invalidateQueries({ queryKey: ["generation-result", jobId] }), 4000);
-    },
-  });
+  const { createShorts, isCreatingFor } = useShortsCreation(["generation-result", jobId]);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-8 py-10">
@@ -67,8 +60,8 @@ export default function ResultPage({ params }: { params: Promise<{ jobId: string
                 key={r.result_id}
                 result={r}
                 jobId={jobId}
-                onCreateShorts={(resultId) => shortsMutation.mutate(resultId)}
-                isCreatingShorts={shortsMutation.isPending}
+                onCreateShorts={createShorts}
+                isCreatingShorts={isCreatingFor(r.result_id)}
               />
             ))}
           </div>
