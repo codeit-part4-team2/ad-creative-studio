@@ -4,7 +4,7 @@ set -e
 
 trap 'kill 0' EXIT
 
-uvicorn app.backend.main:app --reload --port 8000 &
+uvicorn app.backend.main:app --reload --port 8000 --env-file .env &
 sleep 1
 streamlit run app/frontend/streamlit_app.py
 
