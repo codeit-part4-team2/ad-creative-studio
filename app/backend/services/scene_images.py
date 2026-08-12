@@ -13,10 +13,13 @@ from app.backend.services.storyboard import Storyboard
 
 MAX_SCENE_PIXELS = 20_000_000
 NEGATIVE_PROMPT = (
-    "text, letters, logo, watermark, duplicate product, extra appliance, "
-    "distorted object, blurry, low resolution, wristwatch, watch face, clock, "
-    "timer, dial, secondary product, duplicate appliance, large circular prop, "
-    "dominant background object, softbox, tripod, studio light, photography equipment"
+    "text, readable text, letters, pseudo-text, gibberish lettering, numbers, "
+    "typography, logo, watermark, signature, price tag, discount badge, menu board, "
+    "signboard, poster, product label, packaging text, screen text, user interface, "
+    "duplicate product, extra appliance, distorted object, blurry, low resolution, "
+    "wristwatch, watch face, clock, timer, dial, secondary product, duplicate appliance, "
+    "large circular prop, dominant background object, softbox, tripod, studio light, "
+    "photography equipment"
 )
 
 
@@ -66,7 +69,8 @@ def _scene_prompt(*, purpose: str, tone: str, time_slot: str) -> str:
         f"{purpose_context}, one unobstructed staging area, "
         "small peripheral props only, all props confined to the far edges, "
         "plain uninterrupted wall behind the staging area, "
-        "background only, no product, no typography"
+        "blank unmarked surfaces, background only, no product, no typography, "
+        "no readable text or symbols anywhere"
     )
 
 

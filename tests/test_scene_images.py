@@ -112,9 +112,20 @@ def test_provider_passes_existing_infer_contract_fields(tmp_path):
         assert "large circular prop" in negative_prompt
         assert "softbox" in negative_prompt
         assert "photography equipment" in negative_prompt
+        assert "readable text" in negative_prompt
+        assert "pseudo-text" in negative_prompt
+        assert "numbers" in negative_prompt
+        assert "price tag" in negative_prompt
+        assert "signboard" in negative_prompt
+        assert "poster" in negative_prompt
+        assert "user interface" in negative_prompt
+        assert "watermark" in negative_prompt
+        assert "signature" in negative_prompt
         image_prompt = str(call["image_prompt"])
         assert "unobstructed staging area" in image_prompt
         assert "small peripheral props only" in image_prompt
+        assert "blank unmarked surfaces" in image_prompt
+        assert "no readable text or symbols anywhere" in image_prompt
 
 
 def test_provider_fails_closed_when_product_is_not_preserved(tmp_path):
