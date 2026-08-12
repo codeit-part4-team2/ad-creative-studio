@@ -26,6 +26,7 @@ export interface ToneResult {
   subcopy: string;
   images: Record<string, string>; // output_format -> url
   video_url: string | null;
+  video_job_id?: string | null;
 }
 
 export type JobStatus = "queued" | "processing" | "completed" | "failed";
@@ -52,11 +53,34 @@ export interface HistoryEntry {
   results: ToneResult[];
 }
 
-export type VideoJobStatus = "queued" | "processing" | "completed" | "failed";
+export type VideoRenderStatus = "queued" | "processing" | "completed" | "failed";
+export type VideoApprovalStatus = "pending" | "approved" | "rejected";
+export type VideoPublishStatus =
+  | "not_requested"
+  | "pending"
+  | "scheduled"
+  | "failed"
+  | "auth_required"
+  | "needs_review"
+  | "schedule_expired";
 
 export interface VideoJobResponse {
   video_job_id: string;
-  status: VideoJobStatus;
+  result_id: string;
+  product_id: string;
+  tone: Tone;
+  time_slot: "commute_am" | "commute_pm";
+  render_status: VideoRenderStatus;
+  approval_status: VideoApprovalStatus;
+  publish_status: VideoPublishStatus;
   video_url: string | null;
+  script_version: string;
+  script_lines: string[];
+  tts_engine: string | null;
+  tts_voice_preset: string | null;
+  pronunciation_review_required: boolean;
+  pronunciation_reviewed_at: string | null;
+  scene_image_sha256s: string[];
+  caption_layout_version: string | null;
   error_message: string | null;
 }

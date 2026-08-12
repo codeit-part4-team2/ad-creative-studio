@@ -1,58 +1,276 @@
+from datetime import datetime
+
 import requests
 import streamlit as st
 
-# 원래는 app.backend.services.video_generation_service의 RUSH_HOUR_SLOTS를 import해서
-# 백엔드와 상수를 공유하려 했으나, Streamlit이 페이지를 실행하는 방식/환경에 따라
-# `app` 패키지가 sys.path에 안 잡혀서 ModuleNotFoundError로 History 페이지 전체가
-# 죽는 문제가 실제로 발생했다 (pytest는 pyproject.toml의 pythonpath 설정 덕에
-# 항상 잡히지만, streamlit run으로 띄울 땐 그 설정이 적용 안 됨).
-# 프론트↔백엔드 프로세스 경계를 넘는 import는 이런 환경 의존성 위험이 있어서,
-# 값을 다시 로컬 상수로 되돌린다 - 실제 판정은 어차피 백엔드가 하므로(400 반환),
-# 이 상수는 "버튼을 보여줄지 말지"만 결정하는 UX용이라 중복이어도 위험은 낮다.
-RUSH_HOUR_SLOTS = {"commute_am", "commute_pm"}
+from app.frontend.video_view_state import (
+    KST,
+    VideoViewKind,
+    build_video_view_state,
+    can_create_rush_hour_short,
+    default_activation_at,
+)
 
 API_BASE = "http://localhost:8000"
 
-st.title("3 · 생성 이력")
 
+def api_url(path: str) -> str:
+    if path.startswith(("http://", "https://")):
+        return path
+    return f"{API_BASE}{path}"
+
+
+def _youtube_status() -> dict:
+    try:
+        response = requests.get(api_url("/api/v1/youtube/status"), timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException:
+        return {
+            "configured": False,
+            "connection_id": "unavailable",
+            "token_available": False,
+        }
+
+
+def _create_video(result_id: str) -> str | None:
+    try:
+        response = requests.post(
+            api_url("/api/v1/videos"),
+            json={"result_id": result_id},
+            timeout=10,
+        )
+        response.raise_for_status()
+        return response.json()["video_job_id"]
+    except requests.exceptions.RequestException as exc:
+        st.error(f"쇼츠 생성 요청 실패: {exc}")
+        return None
+
+
+def render_video_workflow(result: dict) -> None:
+    if not can_create_rush_hour_short(result):
+        return
+
+    result_id = result.get("result_id")
+    if not result_id:
+        st.error("영상 생성을 위한 result_id가 없습니다.")
+        return
+
+    st.markdown("#### 러시아워 무표정 AI 코믹 쇼츠")
+    session_key = f"video_job_{result_id}"
+    video_job_id = result.get("video_job_id") or st.session_state.get(session_key)
+    if not video_job_id:
+        if st.button("🎬 코믹 쇼츠 만들기", key=f"shorts_{result_id}"):
+            created_id = _create_video(result_id)
+            if created_id:
+                st.session_state[session_key] = created_id
+                st.rerun()
+        return
+
+    st.session_state[session_key] = video_job_id
+    try:
+        response = requests.get(
+            api_url(f"/api/v1/videos/{video_job_id}"),
+            timeout=10,
+        )
+        response.raise_for_status()
+        job = response.json()
+    except requests.exceptions.RequestException as exc:
+        st.error(f"쇼츠 상태 조회 실패: {exc}")
+        return
+
+    render_status = job["render_status"]
+    view_state = build_video_view_state(job)
+    if view_state.kind is VideoViewKind.CREATING:
+        st.info(f"쇼츠 생성 중입니다. 현재 상태: {render_status}")
+        if st.button("상태 새로고침", key=f"refresh_{result_id}"):
+            st.rerun()
+        return
+    if view_state.kind is VideoViewKind.FAILED:
+        st.error(job.get("error_message") or "쇼츠 생성에 실패했습니다.")
+        if st.button("쇼츠 다시 만들기", key=f"retry_{result_id}"):
+            created_id = _create_video(result_id)
+            if created_id:
+                st.session_state[session_key] = created_id
+                st.rerun()
+        return
+
+    video_url = job.get("video_url")
+    if view_state.show_video and video_url:
+        st.video(api_url(video_url))
+
+    script_lines = job.get("script_lines") or []
+    if script_lines:
+        with st.expander("쇼츠 대본 확인", expanded=True):
+            for index, line in enumerate(script_lines, start=1):
+                st.markdown(f"{index}. {line}")
+            st.caption(
+                f"음성: {job.get('tts_engine') or '확인 중'} · "
+                f"프리셋: {job.get('tts_voice_preset') or '확인 중'}"
+            )
+
+    pronunciation_confirmed = False
+    if view_state.kind is VideoViewKind.PRONUNCIATION_REVIEW:
+        st.warning(
+            "상품명 또는 영문·숫자 발음을 사람이 확인해야 합니다. 영상 전체를 듣고 "
+            "모든 발음이 정확할 때만 아래 항목을 선택해주세요."
+        )
+        pronunciation_confirmed = st.checkbox(
+            "상품명·숫자·단위·영문 발음을 직접 듣고 정확함을 확인했습니다.",
+            key=f"pronunciation_confirmed_{result_id}",
+        )
+    if view_state.kind in {VideoViewKind.APPROVED, VideoViewKind.PUBLISHING, VideoViewKind.PUBLISH_WARNING}:
+        st.success(f"내부 노출 승인 완료 · 활성 시각: {job.get('activation_at')}")
+        publish_status = job["publish_status"]
+        if publish_status == "scheduled":
+            st.success(f"YouTube 예약 완료 · 영상 ID: {job.get('youtube_video_id')}")
+        elif publish_status == "pending":
+            st.info("YouTube 예약 업로드를 처리 중입니다.")
+        elif publish_status != "not_requested":
+            st.warning(
+                "내부 노출 승인은 유지됩니다. "
+                f"YouTube 상태: {publish_status} · {job.get('youtube_error') or ''}"
+            )
+        return
+    if view_state.kind is VideoViewKind.REJECTED:
+        st.warning("이 쇼츠는 운영자 검수에서 거절되었습니다.")
+        return
+
+    default_at = default_activation_at(job["time_slot"], datetime.now(KST))
+    activation_date = st.date_input(
+        "내부 노출 시작일",
+        value=default_at.date(),
+        key=f"activation_date_{result_id}",
+    )
+    activation_time = st.time_input(
+        "내부 노출 시작 시각 (KST)",
+        value=default_at.time().replace(tzinfo=None),
+        key=f"activation_time_{result_id}",
+    )
+    activation_at = datetime.combine(activation_date, activation_time, tzinfo=KST)
+
+    youtube = _youtube_status()
+    if youtube.get("configured"):
+        st.caption(f"연결된 YouTube 채널: {youtube['connection_id']}")
+        publish_to_youtube = st.checkbox(
+            "같은 시각에 YouTube Shorts 예약 게시",
+            key=f"publish_to_youtube_{result_id}",
+        )
+    else:
+        st.caption("YouTube 연결 전: 내부 러시아워 노출만 승인할 수 있습니다.")
+        publish_to_youtube = False
+
+    st.info(
+        "승인 전에는 게시되지 않습니다. 음성 발음·자막·제품 보존을 직접 확인한 뒤 "
+        "내부 노출과 YouTube 게시를 승인해주세요."
+    )
+    approve_col, reject_col = st.columns(2)
+    with approve_col:
+        can_approve = view_state.can_approve or (
+            view_state.can_confirm_pronunciation and pronunciation_confirmed
+        )
+        if st.button(
+            "검수 승인",
+            key=f"approve_{result_id}",
+            disabled=not can_approve,
+        ):
+            try:
+                approval = requests.post(
+                    api_url(f"/api/v1/videos/{video_job_id}/approve"),
+                    json={
+                        "activation_at": activation_at.isoformat(),
+                        "publish_to_youtube": publish_to_youtube,
+                        "pronunciation_confirmed": pronunciation_confirmed,
+                    },
+                    timeout=10,
+                )
+                approval.raise_for_status()
+                st.rerun()
+            except requests.exceptions.RequestException as exc:
+                st.error(f"쇼츠 승인 실패: {exc}")
+
+    with reject_col:
+        reject_confirmed = st.checkbox(
+            "거절 확인",
+            key=f"reject_confirmed_{result_id}",
+        )
+        if st.button(
+            "검수 거절",
+            key=f"reject_{result_id}",
+            disabled=not reject_confirmed or not view_state.can_reject,
+        ):
+            try:
+                rejection = requests.post(
+                    api_url(f"/api/v1/videos/{video_job_id}/reject"),
+                    timeout=10,
+                )
+                rejection.raise_for_status()
+                st.rerun()
+            except requests.exceptions.RequestException as exc:
+                st.error(f"쇼츠 거절 실패: {exc}")
+
+
+st.title("3 · 생성 이력")
 favorite_only = st.checkbox("⭐ 즐겨찾기만 보기")
 
 try:
-    resp = requests.get(f"{API_BASE}/api/v1/history",
-                         params={"favorite_only": favorite_only}, timeout=10)
-    resp.raise_for_status()
-    history = resp.json()
+    response = requests.get(
+        api_url("/api/v1/history"),
+        params={"favorite_only": favorite_only},
+        timeout=10,
+    )
+    response.raise_for_status()
+    history = response.json()
 except requests.exceptions.ConnectionError:
     st.error(f"백엔드({API_BASE})에 연결할 수 없습니다.")
     st.stop()
+except requests.exceptions.RequestException as exc:
+    st.error(f"생성 이력을 불러오지 못했습니다: {exc}")
+    st.stop()
 
 if not history:
-    msg = "즐겨찾기한 광고가 없습니다." if favorite_only else "아직 생성한 광고가 없습니다. **광고 만들기**에서 첫 광고를 만들어보세요."
-    st.info(msg)
+    message = (
+        "즐겨찾기한 광고가 없습니다."
+        if favorite_only
+        else "아직 생성된 광고가 없습니다. 광고 만들기에서 첫 광고를 만들어보세요."
+    )
+    st.info(message)
 else:
-    tone_label_map = {"emotional": "감성", "modern": "모던", "practical": "실용", "premium": "프리미엄"}
+    tone_labels = {
+        "emotional": "감성",
+        "modern": "모던",
+        "practical": "실용",
+        "premium": "프리미엄",
+    }
     for item in reversed(history):
         star = "⭐" if item.get("favorite") else "☆"
         with st.expander(f"{star} {item['job_id']} · {len(item['results'])}개 결과"):
-            col_fav, col_dl = st.columns(2)
-
-            with col_fav:
-                if st.button(f"{'즐겨찾기 해제' if item.get('favorite') else '⭐ 즐겨찾기 추가'}",
-                             key=f"fav_{item['job_id']}"):
+            favorite_col, download_col = st.columns(2)
+            with favorite_col:
+                favorite_label = (
+                    "즐겨찾기 해제" if item.get("favorite") else "⭐ 즐겨찾기 추가"
+                )
+                if st.button(favorite_label, key=f"fav_{item['job_id']}"):
                     try:
-                        r = requests.patch(f"{API_BASE}/api/v1/history/{item['job_id']}/favorite", timeout=10)
-                        r.raise_for_status()
+                        favorite_response = requests.patch(
+                            api_url(f"/api/v1/history/{item['job_id']}/favorite"),
+                            timeout=10,
+                        )
+                        favorite_response.raise_for_status()
                         st.rerun()
-                    except requests.exceptions.RequestException as e:
-                        st.error(f"즐겨찾기 변경 실패: {e}")
+                    except requests.exceptions.RequestException as exc:
+                        st.error(f"즐겨찾기 변경 실패: {exc}")
 
-            with col_dl:
+            with download_col:
                 try:
-                    zip_resp = requests.get(f"{API_BASE}/api/v1/download/{item['job_id']}/all", timeout=10)
-                    if zip_resp.status_code == 200:
+                    zip_response = requests.get(
+                        api_url(f"/api/v1/download/{item['job_id']}/all"),
+                        timeout=10,
+                    )
+                    if zip_response.status_code == 200:
                         st.download_button(
-                            "📦 전체 다운로드 (ZIP)",
-                            data=zip_resp.content,
+                            "⬇ 전체 다운로드 (ZIP)",
+                            data=zip_response.content,
                             file_name=f"{item['job_id']}_all.zip",
                             mime="application/zip",
                             key=f"dl_all_{item['job_id']}",
@@ -62,65 +280,41 @@ else:
                 except requests.exceptions.RequestException:
                     st.caption("다운로드 서버 연결 실패")
 
-            for r in item["results"]:
-                st.markdown(f"**{tone_label_map.get(r['tone'], r['tone'])} · {r.get('time_slot', '')}**")
-                cols = st.columns(len(r["images"]) or 1)
-                for col, (fmt, url) in zip(cols, r["images"].items()):
-                    with col:
-                        st.caption(fmt)
-                        image_url = f"{API_BASE}{url}" if url.startswith("/") else url
+            for result in item["results"]:
+                st.markdown(
+                    f"**{tone_labels.get(result['tone'], result['tone'])} · "
+                    f"{result.get('time_slot', '')}**"
+                )
+                columns = st.columns(len(result["images"]) or 1)
+                for column, (image_format, url) in zip(
+                    columns,
+                    result["images"].items(),
+                ):
+                    with column:
+                        st.caption(image_format)
+                        image_url = api_url(url)
                         st.image(image_url, width=150)
-                        # 개별 이미지 다운로드 (톤×시간대×규격 단위)
                         try:
-                            img_resp = requests.get(image_url, timeout=10)
-                            img_resp.raise_for_status()  # 4xx/5xx도 실패로 처리 (안 하면 빈/에러 바이트가 "성공"으로 넘어감)
-                            img_bytes = img_resp.content
+                            image_response = requests.get(image_url, timeout=10)
+                            image_response.raise_for_status()
+                            image_bytes = image_response.content
                         except requests.exceptions.RequestException:
-                            img_bytes = None
-                        if img_bytes is not None:
+                            image_bytes = None
+                        if image_bytes is not None:
                             st.download_button(
                                 "⬇",
-                                data=img_bytes,
-                                file_name=f"{item['job_id']}_{r.get('time_slot', '')}_{r['tone']}_{fmt}.png",
+                                data=image_bytes,
+                                file_name=(
+                                    f"{item['job_id']}_{result.get('time_slot', '')}_"
+                                    f"{result['tone']}_{image_format}.png"
+                                ),
                                 mime="image/png",
-                                key=f"dl_{item['job_id']}_{r['tone']}_{r.get('time_slot','')}_{fmt}",
+                                key=(
+                                    f"dl_{item['job_id']}_{result['tone']}_"
+                                    f"{result.get('time_slot', '')}_{image_format}"
+                                ),
                             )
                         else:
                             st.caption("다운로드 불가")
-                st.caption(f"{r['headline']} · {r['subcopy']}")
-
-                # 러시아워(출근/퇴근) 결과만 쇼츠 생성 가능
-                if r.get("time_slot") in RUSH_HOUR_SLOTS:
-                    result_id = r.get("result_id")
-                    video_key = f"video_job_{result_id}"
-
-                    if r.get("video_url"):
-                        st.video(f"{API_BASE}{r['video_url']}")
-                    elif st.session_state.get(video_key):
-                        # 요청은 이미 보냈고 조회 중
-                        try:
-                            status_resp = requests.get(
-                                f"{API_BASE}/api/v1/videos/{st.session_state[video_key]}", timeout=10)
-                            status = status_resp.json()
-                            if status["status"] == "completed":
-                                st.rerun()  # History 다시 불러와서 video_url 반영된 걸 보여줌
-                            elif status["status"] == "failed":
-                                st.error(f"쇼츠 생성 실패: {status.get('error_message')}")
-                                del st.session_state[video_key]
-                            else:
-                                st.info(f"쇼츠 생성 중... ({status['status']})")
-                        except requests.exceptions.RequestException as e:
-                            st.error(f"쇼츠 상태 조회 실패: {e}")
-                    else:
-                        if st.button("🎬 러시아워 쇼츠 만들기", key=f"shorts_{result_id}"):
-                            try:
-                                create_resp = requests.post(
-                                    f"{API_BASE}/api/v1/videos",
-                                    json={"result_id": result_id},
-                                    timeout=10,
-                                )
-                                create_resp.raise_for_status()
-                                st.session_state[video_key] = create_resp.json()["video_job_id"]
-                                st.rerun()
-                            except requests.exceptions.RequestException as e:
-                                st.error(f"쇼츠 생성 요청 실패: {e}")
+                st.caption(f"{result['headline']} · {result['subcopy']}")
+                render_video_workflow(result)

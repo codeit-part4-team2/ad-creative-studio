@@ -91,13 +91,13 @@ export function ResultReceiptCard({
             지금은 러시아워 쇼츠(기술 검증 완료, 디자인 고도화 대기)만 실제로 연결돼 있고,
             나머지는 자리만 잡아둔 상태다. */}
         <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
-          콘텐츠 확장
+          러시아워 코믹 콘텐츠
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {result.video_url ? (
             <Button asChild variant="secondary" size="sm">
               <a href={resolveAssetUrl(result.video_url)} target="_blank" rel="noreferrer">
-                <Play /> 쇼츠 보기
+                <Play /> 코믹 쇼츠 보기
               </a>
             </Button>
           ) : isRushHour && onCreateShorts ? (
@@ -107,11 +107,11 @@ export function ResultReceiptCard({
               onClick={() => onCreateShorts(result.result_id)}
               disabled={isCreatingShorts}
             >
-              <Film /> {isCreatingShorts ? "쇼츠 만드는 중..." : "쇼츠 만들기"}
+              <Film /> {isCreatingShorts ? "코믹 쇼츠 만드는 중..." : "코믹 쇼츠 만들기"}
             </Button>
           ) : (
             <Button size="sm" variant="outline" disabled>
-              <Film /> 쇼츠 만들기 (출근/퇴근 광고만)
+              <Film /> 코믹 쇼츠 (출근/퇴근 광고만)
             </Button>
           )}
           <Button size="sm" variant="outline" disabled title="준비 중">

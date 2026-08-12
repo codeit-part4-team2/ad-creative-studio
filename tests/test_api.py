@@ -1,19 +1,77 @@
 import io
+import hashlib
 import shutil
 import time
 import uuid
 import zipfile
+from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.backend.main import app
-from app.backend.services import store, overlay, video_generation_service
+from app.backend.schemas.video import VideoJob
+from app.backend.services import store, overlay
+from app.backend.services.scene_images import SceneImage, SceneImageSet
+from app.backend.services.tts_provider import TTSAudio
+from app.backend.services.video_renderer import RenderResult
+from app.backend.services.video_workflow import VideoWorkflowService
+from app.backend.services.youtube_publisher import DisabledPublisher
 from app.backend.services.store import PRODUCTS, JOBS, HISTORY
 from app.backend.schemas.generation import GenerationRequest
 from app.backend.api.generations import build_generation_plan
 
 client = TestClient(app)
+
+
+class _ApiTestRenderer:
+    def render(self, storyboard, *, scene_images, speech_audio, output_path):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"test-video")
+        return RenderResult(
+            output_path=output_path,
+            sha256=hashlib.sha256(output_path.read_bytes()).hexdigest(),
+            duration_sec=12.5,
+            width=1080,
+            height=1920,
+            video_codec="h264",
+            audio_codec="aac",
+            tts_audio_sha256=hashlib.sha256(b"test-tts").hexdigest(),
+            scene_image_sha256s=scene_images.sha256s,
+            caption_layout_version="bright-outline-v1",
+        )
+
+
+class _ApiTestSceneProvider:
+    def build(self, *, storyboard, product_image_url, output_dir):
+        images = []
+        for index, purpose in enumerate(("hero", "self_aware", "benefit")):
+            path = output_dir / f"{purpose}.png"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(f"scene-{index}".encode("ascii"))
+            images.append(
+                SceneImage(
+                    purpose=purpose,
+                    path=path.resolve(),
+                    sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+                    source="api-test",
+                )
+            )
+        return SceneImageSet(images=tuple(images))
+
+
+class _ApiTestTTSProvider:
+    def synthesize(self, spoken_text: str, output_path: Path) -> TTSAudio:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(spoken_text.encode("utf-8"))
+        return TTSAudio(
+            path=output_path.resolve(),
+            duration_sec=1.0,
+            sha256=hashlib.sha256(output_path.read_bytes()).hexdigest(),
+            engine="melotts-korean",
+            voice_preset="deadpan-ai-v1",
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -26,26 +84,35 @@ def _clear_store(tmp_path, monkeypatch):
     - overlay.OUTPUT_DIR: data/outputs/ 자체가 아니라 그 "하위"의 테스트 전용 서브폴더로 리다이렉트.
       정적 파일 서빙(/files/...)은 data/ 디렉터리 마운트에 묶여있어 완전히 밖으로 뺄 수 없기 때문에,
       최소한 기존 데모 파일이 있는 data/outputs/ 최상위는 안 건드리고 서브폴더만 만들고 지운다.
-    - video_generation_service.VIDEO_DIR: 쇼츠 Mock이 만드는 placeholder mp4도 tmp_path로
-      완전히 격리 - 실제 data/videos/에 아무 것도 안 남긴다 (URL 문자열만 검증하므로 정적
-      서빙 경로와 실제 파일 위치가 달라도 테스트엔 영향 없음).
+    - 실제 코믹 쇼츠 워크플로는 테스트 전용 장면·TTS·렌더러를 주입하고, 모든 영상 파일을
+      tmp_path 아래에 생성해 data/videos/를 건드리지 않는다.
     """
     monkeypatch.setattr(store, "STORE_PATH", tmp_path / "store.json")
 
     test_output_dir = overlay.OUTPUT_DIR / f"_pytest_{uuid.uuid4().hex[:8]}"
     monkeypatch.setattr(overlay, "OUTPUT_DIR", test_output_dir)
 
-    monkeypatch.setattr(video_generation_service, "VIDEO_DIR", tmp_path / "videos")
+    app.state.video_workflow = VideoWorkflowService(
+        renderer=_ApiTestRenderer(),
+        scene_image_provider=_ApiTestSceneProvider(),
+        tts_provider=_ApiTestTTSProvider(),
+        publisher=DisabledPublisher("test_channel"),
+        now=lambda: datetime.now(timezone.utc),
+        video_dir=tmp_path / "videos",
+        work_dir=tmp_path / "video-work",
+    )
 
     PRODUCTS.clear()
     JOBS.clear()
     HISTORY.clear()
+    store.VIDEO_JOBS.clear()
     yield
     if test_output_dir.exists():
         shutil.rmtree(test_output_dir)  # 테스트가 만든 서브폴더만 삭제 - 형제 파일은 안 건드림
     PRODUCTS.clear()
     JOBS.clear()
     HISTORY.clear()
+    store.VIDEO_JOBS.clear()
 
 
 def _upload_product(name="스팀 에어프라이어 5L"):
@@ -377,19 +444,19 @@ def test_video_creation_flow_for_rush_hour_slot():
     assert result_id.startswith("res_")
 
     video_resp = client.post("/api/v1/videos", json={"result_id": result_id})
-    assert video_resp.status_code == 200
+    assert video_resp.status_code == 202
     video_job_id = video_resp.json()["video_job_id"]
-    assert video_resp.json()["status"] == "queued"
+    assert video_resp.json()["render_status"] == "queued"
 
     status_resp = client.get(f"/api/v1/videos/{video_job_id}")
     assert status_resp.status_code == 200
-    assert status_resp.json()["status"] == "completed"
-    assert status_resp.json()["video_url"] == "/files/videos/mock_short.mp4"
+    assert status_resp.json()["render_status"] == "completed"
+    assert status_resp.json()["video_url"] == f"/files/videos/{video_job_id}.mp4"
 
     # History의 결과에도 video_url이 반영돼야 함 (새로고침해도 다시 보이도록)
     updated_history = client.get("/api/v1/history").json()
     updated_result = updated_history[0]["results"][0]
-    assert updated_result["video_url"] == "/files/videos/mock_short.mp4"
+    assert updated_result["video_url"] == f"/files/videos/{video_job_id}.mp4"
 
 
 def test_video_creation_rejects_non_rush_hour_slot():
@@ -433,7 +500,9 @@ def test_video_completion_persists_video_url_across_restart():
     PRODUCTS.clear()
     JOBS.clear()
     HISTORY.clear()
+    store.VIDEO_JOBS.clear()
     store.load()
 
-    restored = next(h for h in HISTORY if h["job_id"] == job_id)
-    assert restored["results"][0]["video_url"] == "/files/videos/mock_short.mp4"
+    restored = VideoJob.model_validate(store.VIDEO_JOBS[video_job_id])
+    assert restored.video_url == f"/files/videos/{video_job_id}.mp4"
+    assert restored.render_status == "completed"

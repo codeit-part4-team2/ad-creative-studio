@@ -6,6 +6,11 @@ httpx
 openai
 requests
 streamlit>=1.27  # st.switch_page 사용 (이 버전부터 지원)
-pillow
+pillow==12.2.0
+google-api-python-client==2.198.0
+google-auth-oauthlib==1.4.0
+google-auth-httplib2==0.4.1
 python-dotenv
 pytest
+
+# CPU 한국어 TTS는 Python 3.12에서 requirements-tts.txt를 별도로 설치합니다.

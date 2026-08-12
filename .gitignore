@@ -190,9 +190,11 @@ __marimo__/
 data/uploads/*
 data/outputs/*
 data/videos/*
+data/tts/*
 !data/uploads/.gitkeep
 !data/outputs/.gitkeep
 !data/videos/.gitkeep
+!data/tts/.gitkeep
 data/samples/*
 !data/samples/.gitkeep
 
@@ -220,3 +222,8 @@ eval/golden_dataset/*
 # 저작권 있는 테스트용 원본 제품 이미지 (김재헌님 PR #4)
 model_server/experiments/product_sample.jpeg
 model_server/experiments/microwave.webp
+
+# YouTube OAuth material must never enter source control
+client_secrets*.json
+youtube_token*.json
+token.pickle

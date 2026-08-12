@@ -14,9 +14,9 @@ export default function PublishingPage() {
         <CardHeader>
           <CardTitle>준비 중입니다</CardTitle>
           <CardDescription>
-            YouTube 예약 게시는 이미지·쇼츠 E2E 검증이 끝난 뒤 착수하기로
-            결정된 기능입니다. 백엔드 API(POST /videos/{"{"}video_id{"}"}/publish)와
-            OAuth 연동이 아직 준비되지 않았습니다.
+            백엔드의 사람 승인·YouTube 예약 경계는 준비됐습니다. 이 화면의 발음 확인,
+            예약 시각 입력, 승인·거절 제어와 실제 팀 채널 OAuth 검증은 아직 남아 있습니다.
+            그 전까지 업로드는 기본 비활성 상태입니다.
           </CardDescription>
         </CardHeader>
       </Card>

@@ -25,7 +25,7 @@ export function useShortsCreation(invalidateKey: QueryKey) {
         for (let i = 0; i < MAX_POLLS; i++) {
           await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
           const status = await getVideoStatus(video_job_id);
-          if (status.status === "completed" || status.status === "failed") break;
+          if (status.render_status === "completed" || status.render_status === "failed") break;
         }
       } finally {
         setPendingResultId(null);

@@ -15,6 +15,16 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
+      - name: Install FFmpeg runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends ffmpeg
+      - name: Verify FFmpeg runtime
+        run: |
+          ffmpeg -version
+          ffprobe -version
+      - name: Compile Python sources
+        run: python -m compileall -q app tools
       - run: pytest -q
       - name: Notebook Sanity Check
         run: |

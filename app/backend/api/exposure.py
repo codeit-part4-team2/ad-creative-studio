@@ -3,7 +3,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.backend.services.store import PRODUCTS, HISTORY
+from app.backend.services.store import HISTORY, PRODUCTS, VIDEO_JOBS
 from app.backend.services.exposure import pick_exposure
 
 router = APIRouter(prefix="/api/v1/exposure", tags=["exposure"])
@@ -24,4 +24,9 @@ async def get_current_exposure(
     """
     if product_id not in PRODUCTS:
         raise HTTPException(404, "product not found")
-    return pick_exposure(product_id, HISTORY, now=at)
+    return pick_exposure(
+        product_id,
+        HISTORY,
+        now=at,
+        video_jobs=VIDEO_JOBS,
+    )
