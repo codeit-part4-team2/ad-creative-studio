@@ -70,19 +70,48 @@ def _wrap_text(
     font: ImageFont.FreeTypeFont,
     max_width: int,
 ) -> list[str]:
-    lines: list[str] = []
-    for paragraph in text.splitlines() or [""]:
+    def fits(value: str) -> bool:
+        bbox = draw.textbbox((0, 0), value, font=font)
+        return bbox[2] - bbox[0] <= max_width
+
+    def split_oversized_word(word: str) -> list[str]:
+        chunks: list[str] = []
         current = ""
-        for character in paragraph:
+        for character in word:
             candidate = current + character
-            bbox = draw.textbbox((0, 0), candidate, font=font)
-            if current and bbox[2] - bbox[0] > max_width:
-                lines.append(current.rstrip())
-                current = character.lstrip()
+            if current and not fits(candidate):
+                chunks.append(current)
+                current = character
             else:
                 current = candidate
-        lines.append(current.rstrip())
-    return [line for line in lines if line]
+        if current:
+            chunks.append(current)
+        return chunks
+
+    lines: list[str] = []
+    for paragraph in text.splitlines() or [""]:
+        words = paragraph.split()
+        if not words:
+            continue
+        current = ""
+        for word in words:
+            candidate = f"{current} {word}" if current else word
+            if fits(candidate):
+                current = candidate
+                continue
+
+            if current:
+                lines.append(current)
+
+            if fits(word):
+                current = word
+            else:
+                chunks = split_oversized_word(word)
+                lines.extend(chunks[:-1])
+                current = chunks[-1]
+        if current:
+            lines.append(current)
+    return lines
 
 
 def _font_and_lines(

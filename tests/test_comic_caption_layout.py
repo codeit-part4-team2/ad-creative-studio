@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from PIL import Image, ImageDraw
 
 from app.backend.services.comic_script import ComicLineKind
@@ -28,6 +29,34 @@ def test_caption_layout_is_at_most_two_lines():
     )
 
     assert 1 <= len(lines) <= 2
+
+
+@pytest.mark.parametrize(
+    ("text", "expected_lines"),
+    (
+        (
+            "휴대용 선풍기, 출근길에 짧게 소개할게요.",
+            ["휴대용 선풍기, 출근길에", "짧게 소개할게요."],
+        ),
+        (
+            "주요 특징을 말씀드리면, USB-C 충전입니다.",
+            ["주요 특징을 말씀드리면,", "USB-C 충전입니다."],
+        ),
+    ),
+)
+def test_caption_wraps_at_spaces_without_splitting_words(text, expected_lines):
+    canvas = Image.new("RGB", (1080, 1920), "white")
+    draw = ImageDraw.Draw(canvas)
+
+    _font, lines, _spacing = _font_and_lines(
+        draw,
+        text=text,
+        font_path=FONT_PATH,
+        max_width=900,
+        max_height=210,
+    )
+
+    assert lines == expected_lines
 
 
 def test_caption_has_no_black_panel_behind_text():
