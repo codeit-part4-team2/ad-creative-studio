@@ -83,6 +83,9 @@ Path("data/outputs").mkdir(parents=True, exist_ok=True)
 Path("data/videos").mkdir(parents=True, exist_ok=True)
 app.mount("/files", StaticFiles(directory="data"), name="files")
 
+@app.get("/")
+async def root():
+    return {"message": "소형가전 광고 생성 서비스 API"}
 
 @app.get("/health")
 async def health():
