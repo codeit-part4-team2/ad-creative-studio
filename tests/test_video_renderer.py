@@ -17,6 +17,7 @@ from app.backend.services.video_renderer import (
     CAPTION_LAYOUT_VERSION,
     DEADPAN_SILENCE_SEC,
     RushHourVideoRenderer,
+    _draw_caption,
     fit_inside,
 )
 
@@ -103,6 +104,46 @@ def test_fit_inside_preserves_entire_source_aspect_ratio():
 
     assert (width, height) == (980, 1225)
     assert width / height == 1080 / 1350
+
+
+@pytest.mark.parametrize("background", ("white", "#E8E8E8", "#0B1020"))
+def test_caption_is_plain_and_readable_without_shadow_or_accent(
+    monkeypatch,
+    background,
+):
+    canvas = Image.new("RGBA", (1080, 1920), background)
+    scene = StoryboardScene(
+        "주요 특징은 빠른 조리입니다.",
+        2.0,
+        kind=ComicLineKind.BENEFIT,
+        image_purpose="benefit",
+        accent_terms=("빠른 조리",),
+    )
+
+    def reject_blur(*_args, **_kwargs):
+        raise AssertionError("caption shadow blur must not be used")
+
+    def reject_box(*_args, **_kwargs):
+        raise AssertionError("caption box must not be used")
+
+    monkeypatch.setattr(
+        "app.backend.services.video_renderer.ImageFilter.GaussianBlur",
+        reject_blur,
+    )
+    monkeypatch.setattr("PIL.ImageDraw.ImageDraw.rectangle", reject_box)
+    monkeypatch.setattr("PIL.ImageDraw.ImageDraw.rounded_rectangle", reject_box)
+
+    _draw_caption(
+        canvas,
+        scene=scene,
+        font_path=Path("assets/fonts/NanumGothic-Regular.ttf"),
+    )
+
+    pixels = set(canvas.crop((0, 1500, 1080, 1920)).get_flattened_data())
+    assert (248, 250, 252, 255) in pixels
+    assert (18, 24, 38, 255) in pixels
+    assert (231, 213, 165, 255) not in pixels
+    assert CAPTION_LAYOUT_VERSION == "plain-outline-v2"
 
 
 def test_renderer_outputs_verified_vertical_mp4_with_voiced_aac(tmp_path):

@@ -18,19 +18,11 @@ from app.backend.services.tts_provider import TTSAudio
 VIDEO_WIDTH = 1080
 VIDEO_HEIGHT = 1920
 VIDEO_FPS = 30
-CAPTION_LAYOUT_VERSION = "bright-outline-v1"
+CAPTION_LAYOUT_VERSION = "plain-outline-v2"
 BASE_SILENCE_SEC = 0.1
 DEADPAN_SILENCE_SEC = 0.5
 MIN_VIDEO_DURATION_SEC = 9.95
 MAX_VIDEO_DURATION_SEC = 15.05
-
-TONE_ACCENTS = {
-    "emotional": "#FFD2C2",
-    "modern": "#A8E6FF",
-    "practical": "#FFF08A",
-    "premium": "#E7D5A5",
-}
-
 
 @dataclass(frozen=True, slots=True)
 class RenderResult:
@@ -111,7 +103,7 @@ def _font_and_lines(
             font=font,
             spacing=spacing,
             align="center",
-            stroke_width=3,
+            stroke_width=2,
         )
         if bbox[3] - bbox[1] <= max_height and 1 <= len(lines) <= 2:
             return font, lines, spacing
@@ -122,7 +114,6 @@ def _draw_caption(
     canvas: Image.Image,
     *,
     scene: StoryboardScene,
-    tone: str,
     font_path: Path,
 ) -> None:
     base_draw = ImageDraw.Draw(canvas, "RGBA")
@@ -133,7 +124,7 @@ def _draw_caption(
         max_width=900,
         max_height=210,
     )
-    line_boxes = [base_draw.textbbox((0, 0), line, font=font, stroke_width=3) for line in lines]
+    line_boxes = [base_draw.textbbox((0, 0), line, font=font, stroke_width=2) for line in lines]
     line_heights = [box[3] - box[1] for box in line_boxes]
     block_height = sum(line_heights) + spacing * (len(lines) - 1)
     if scene.kind in {ComicLineKind.INTRO, ComicLineKind.SELF_AWARE}:
@@ -141,54 +132,29 @@ def _draw_caption(
     else:
         current_y = VIDEO_HEIGHT - 145 - block_height
 
-    shadow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    shadow_draw = ImageDraw.Draw(shadow, "RGBA")
     positions: list[tuple[float, float]] = []
     for line, line_height in zip(lines, line_heights, strict=True):
         line_width = base_draw.textlength(line, font=font)
         line_x = (VIDEO_WIDTH - line_width) / 2
         positions.append((line_x, current_y))
-        shadow_draw.text(
-            (line_x + 5, current_y + 7),
-            line,
-            font=font,
-            fill=(0, 0, 0, 210),
-            stroke_width=5,
-            stroke_fill=(0, 0, 0, 210),
-        )
         current_y += line_height + spacing
-    canvas.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(radius=7)))
 
     draw = ImageDraw.Draw(canvas, "RGBA")
-    accent_term = scene.accent_terms[0] if scene.accent_terms else ""
-    accent_color = TONE_ACCENTS.get(tone, "#FFFFFF")
     for line, (line_x, line_y) in zip(lines, positions, strict=True):
         draw.text(
             (line_x, line_y),
             line,
             font=font,
             fill="#F8FAFC",
-            stroke_width=3,
-            stroke_fill=(18, 24, 38, 245),
+            stroke_width=2,
+            stroke_fill="#121826",
         )
-        if accent_term and accent_term in line:
-            prefix, _separator, _suffix = line.partition(accent_term)
-            accent_x = line_x + draw.textlength(prefix, font=font)
-            draw.text(
-                (accent_x, line_y),
-                accent_term,
-                font=font,
-                fill=accent_color,
-                stroke_width=3,
-                stroke_fill=(18, 24, 38, 245),
-            )
 
 
 def _make_scene_frame(
     *,
     source: Image.Image,
     scene: StoryboardScene,
-    tone: str,
     font_path: Path,
     crop_variant: str,
 ) -> Image.Image:
@@ -218,7 +184,7 @@ def _make_scene_frame(
         foreground_y = 350 + (1220 - foreground.height) // 2
     foreground_x = (VIDEO_WIDTH - foreground.width) // 2
     canvas.alpha_composite(foreground, (foreground_x, foreground_y))
-    _draw_caption(canvas, scene=scene, tone=tone, font_path=font_path)
+    _draw_caption(canvas, scene=scene, font_path=font_path)
     return canvas.convert("RGB")
 
 
@@ -480,7 +446,6 @@ class RushHourVideoRenderer:
                     frame = _make_scene_frame(
                         source=source_image.copy(),
                         scene=scene,
-                        tone=storyboard.tone,
                         font_path=self._font_path,
                         crop_variant="cta" if index == 3 else "intro",
                     )

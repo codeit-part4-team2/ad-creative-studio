@@ -4,12 +4,12 @@
 
 ### 자동 및 로컬 검증 완료
 
-- [x] 저장된 상품명·소구점만 사용하는 4문장 `deadpan-ai-v1` 대본
+- [x] 저장된 상품명·첫 소구점만 사용하는 자연스러운 4문장 `deadpan-ai-v2` 대본
 - [x] 기존 대표 이미지 1장 재사용 + 기존 `/infer` 계약으로 추가 이미지 2장 순차 생성
 - [x] 세 이미지의 고유 SHA-256과 `product_preserved=true` 검증
 - [x] 고정 MeloTTS 소스·모델 리비전과 config/checkpoint SHA-256 검증
 - [x] 실제 한국어 7문장 합성, WAV/ffprobe/SHA-256 및 자동 ASR 의미 일치 7/7 확인
-- [x] 음악 없이 TTS 4개와 밝은 외곽선 자막만 사용
+- [x] 음악 없이 TTS 4개와 그림자·박스·강조색 없는 흰색/2px 진회색 윤곽 자막만 사용
 - [x] FFmpeg/ffprobe로 1080x1920, H.264/AAC 및 10~15초 길이 검증
 - [x] 렌더/승인/게시 상태 분리 및 `var/store.json` 영속화
 - [x] 원본 지문, MP4/TTS/장면 이미지 SHA-256을 승인 직전 재검증
