@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from app.backend.main import app
 from app.backend.schemas.video import VideoJob
-from app.backend.services import store, overlay
+from app.backend.services import store, overlay, auth
 from app.backend.services.scene_images import SceneImage, SceneImageSet
 from app.backend.services.tts_provider import TTSAudio
 from app.backend.services.video_renderer import RenderResult
@@ -106,6 +106,11 @@ def _clear_store(tmp_path, monkeypatch):
     JOBS.clear()
     HISTORY.clear()
     store.VIDEO_JOBS.clear()
+    auth.CUSTOMERS.clear()
+    auth.SESSIONS.clear()
+    auth.create_customer("CUS-TEST", "테스트상사", "000000")
+    token = auth.verify_login("CUS-TEST", "000000")
+    client.headers["Authorization"] = f"Bearer {token}"
     yield
     if test_output_dir.exists():
         shutil.rmtree(test_output_dir)  # 테스트가 만든 서브폴더만 삭제 - 형제 파일은 안 건드림
@@ -113,6 +118,8 @@ def _clear_store(tmp_path, monkeypatch):
     JOBS.clear()
     HISTORY.clear()
     store.VIDEO_JOBS.clear()
+    auth.CUSTOMERS.clear()
+    auth.SESSIONS.clear()
 
 
 def _upload_product(name="스팀 에어프라이어 5L"):

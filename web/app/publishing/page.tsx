@@ -1,6 +1,10 @@
+"use client";
+
+import { RequireAuth } from "@/components/auth/require-auth";
+
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
-export default function PublishingPage() {
+function PublishingContent() {
   return (
     <div className="mx-auto max-w-2xl space-y-6 px-8 py-10">
       <div>
@@ -21,5 +25,13 @@ export default function PublishingPage() {
         </CardHeader>
       </Card>
     </div>
+  );
+}
+
+export default function PublishingPage() {
+  return (
+    <RequireAuth>
+      <PublishingContent />
+    </RequireAuth>
   );
 }

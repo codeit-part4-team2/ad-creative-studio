@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.backend.api import (
+    auth,
     download,
     exposure,
     generations,
@@ -77,6 +78,8 @@ app.include_router(exposure.router)
 app.include_router(download.router)
 app.include_router(videos.router)
 app.include_router(youtube.router)
+app.include_router(auth.router)
+app.include_router(auth.admin_router)
 
 Path("data/uploads").mkdir(parents=True, exist_ok=True)
 Path("data/outputs").mkdir(parents=True, exist_ok=True)

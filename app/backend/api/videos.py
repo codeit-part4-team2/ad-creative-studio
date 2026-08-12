@@ -1,4 +1,6 @@
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+
+from app.backend.api.deps import get_current_customer
 
 from app.backend.schemas.video import (
     PublishStatus,
@@ -30,6 +32,7 @@ async def create_video(
     req: VideoCreateRequest,
     request: Request,
     background_tasks: BackgroundTasks,
+    customer: dict = Depends(get_current_customer),
 ) -> VideoCreateResponse:
     workflow = _workflow(request)
     try:
@@ -51,7 +54,7 @@ async def create_video(
 
 
 @router.get("/{video_job_id}", response_model=VideoJob)
-async def get_video(video_job_id: str, request: Request) -> VideoJob:
+async def get_video(video_job_id: str, request: Request, customer: dict = Depends(get_current_customer)) -> VideoJob:
     workflow = _workflow(request)
     try:
         return workflow.get(video_job_id)
@@ -66,12 +69,7 @@ async def get_video(video_job_id: str, request: Request) -> VideoJob:
     response_model=VideoJob,
     status_code=202,
 )
-async def approve_video(
-    video_job_id: str,
-    req: VideoApprovalRequest,
-    request: Request,
-    background_tasks: BackgroundTasks,
-) -> VideoJob:
+async def approve_video(video_job_id: str, req: VideoApprovalRequest, request: Request, background_tasks: BackgroundTasks, customer: dict = Depends(get_current_customer)) -> VideoJob:
     workflow = _workflow(request)
     try:
         job = workflow.approve(
@@ -95,7 +93,7 @@ async def approve_video(
 
 
 @router.post("/{video_job_id}/reject", response_model=VideoJob)
-async def reject_video(video_job_id: str, request: Request) -> VideoJob:
+async def reject_video(video_job_id: str, request: Request, customer: dict = Depends(get_current_customer)) -> VideoJob:
     workflow = _workflow(request)
     try:
         return workflow.reject(video_job_id)

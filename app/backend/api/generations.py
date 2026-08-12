@@ -1,6 +1,6 @@
 import time
 import uuid
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 
 from app.backend.schemas.generation import (
     GenerationRequest,
@@ -11,6 +11,7 @@ from app.backend.schemas.generation import (
 from app.backend.services import store
 from app.backend.services.store import PRODUCTS, JOBS, HISTORY
 from app.backend.services.generation_service import generation_service
+from app.backend.api.deps import get_current_customer
 from app.prompt.templates import MAX_TIME_SLOTS_PER_REQUEST, estimate_seconds
 from app.prompt.schemas import PromptRequest
 
@@ -36,8 +37,12 @@ def build_generation_plan(req: GenerationRequest, product: dict) -> list[PromptR
 
 
 @router.post("", response_model=GenerationCreateResponse, status_code=202)
-async def create_generation(req: GenerationRequest, background_tasks: BackgroundTasks):
-    if req.product_id not in PRODUCTS:
+async def create_generation(req: GenerationRequest, background_tasks: BackgroundTasks, customer: dict = Depends(get_current_customer)):
+    product = PRODUCTS.get(req.product_id)
+    if not product:
+        raise HTTPException(404, "product not found")
+    # 다른 고객사 상품 ID를 넣어도 "없는 것"과 똑같이 404 - 존재 여부 자체를 노출하지 않는다
+    if product.get("customer_id") != customer["customer_id"]:
         raise HTTPException(404, "product not found")
     if not req.time_slots:
         raise HTTPException(400, "select at least one time slot")
@@ -65,6 +70,7 @@ async def create_generation(req: GenerationRequest, background_tasks: Background
     total = len(req.tones) * len(req.time_slots)  # 시간대 x 톤만 (규격 곱하지 않음)
     est = estimate_seconds(len(req.tones), len(req.time_slots))
     JOBS[job_id] = {
+        "customer_id": customer["customer_id"],  # multi-tenant 데이터 격리
         "status": "queued",
         "progress": 0,
         "current_step": None,
@@ -101,6 +107,7 @@ async def run_generation(job_id: str) -> None:
         job["current_step"] = None
 
         HISTORY.append({
+            "customer_id": job["customer_id"],  # multi-tenant 데이터 격리
             "job_id": job_id,
             "product_id": job["product_id"],
             "created_at": time.time(),
@@ -116,9 +123,9 @@ async def run_generation(job_id: str) -> None:
 
 
 @router.get("/{job_id}", response_model=GenerationResultResponse)
-async def get_generation_result(job_id: str):
+async def get_generation_result(job_id: str, customer: dict = Depends(get_current_customer)):
     job = JOBS.get(job_id)
-    if not job:
+    if not job or job.get("customer_id") != customer["customer_id"]:
         raise HTTPException(404, "job not found")
     if job["status"] != "completed":
         raise HTTPException(409, "job not finished yet")

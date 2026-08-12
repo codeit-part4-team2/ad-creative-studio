@@ -13,6 +13,8 @@ import json
 import uuid
 from pathlib import Path
 
+from app.backend.services.auth import CUSTOMERS
+
 STORE_PATH = Path("var/store.json")
 # ⚠️ 중요: "data/" 하위에 두면 안 된다 - main.py가 app.mount("/files", StaticFiles(directory="data"))로
 # data/ 전체를 정적 서빙하기 때문에, data/store.json으로 두면 GET /files/store.json 한 번으로
@@ -34,6 +36,7 @@ def save() -> None:
                 "jobs": JOBS,
                 "history": HISTORY,
                 "video_jobs": VIDEO_JOBS,
+                "customers": CUSTOMERS,
             },
             ensure_ascii=False,
         ),
@@ -59,6 +62,8 @@ def load() -> None:
     HISTORY.extend(data.get("history", []))
     VIDEO_JOBS.clear()
     VIDEO_JOBS.update(data.get("video_jobs", {}))
+    CUSTOMERS.clear()
+    CUSTOMERS.update(data.get("customers", {}))
 
     # 좀비 job 정리: 서버가 죽기 전 queued/processing 상태였던 job은, 그걸 돌리던
     # BackgroundTask가 재시작으로 같이 사라졌으므로 다시는 완료되지 않는다.
@@ -119,5 +124,6 @@ def reset_for_tests() -> None:
     JOBS.clear()
     HISTORY.clear()
     VIDEO_JOBS.clear()
+    CUSTOMERS.clear()
     if STORE_PATH.exists():
         STORE_PATH.unlink()

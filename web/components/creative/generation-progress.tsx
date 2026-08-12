@@ -19,9 +19,9 @@ export function GenerationProgress({ job }: { job: JobStatusResponse | undefined
   });
 
   return (
-    <div className="receipt-card p-6">
+    <div className="creative-card p-6">
       <p className="font-medium">광고를 만들고 있어요 ✨</p>
-      <div className="receipt-divider" />
+      <div className="border-t border-border my-3" />
       <ul className="space-y-2 text-sm">
         {LOADING_STAGES.map((s, i) => (
           <li key={s.label}>
@@ -37,7 +37,7 @@ export function GenerationProgress({ job }: { job: JobStatusResponse | undefined
       </ul>
       {job && (
         <>
-          <div className="receipt-divider" />
+          <div className="border-t border-border my-3" />
           <p className="font-mono text-xs text-muted-foreground">
             현재 {job.completed_count} / {job.total_count}개 생성 완료
           </p>
