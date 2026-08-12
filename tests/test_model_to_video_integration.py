@@ -21,6 +21,9 @@ class _RecordingTTSProvider:
     def __init__(self) -> None:
         self.texts: list[str] = []
 
+    def validate_runtime(self) -> None:
+        return None
+
     def synthesize(self, spoken_text: str, output_path: Path) -> TTSAudio:
         self.texts.append(spoken_text)
         output_path.parent.mkdir(parents=True, exist_ok=True)

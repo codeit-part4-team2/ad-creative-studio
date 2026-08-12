@@ -16,6 +16,7 @@ from app.backend.services.storyboard import Storyboard, StoryboardNotFound, Stor
 from app.backend.services.tts_provider import TTSAudio, TTSRuntimeUnavailable
 from app.backend.services.video_renderer import RenderResult
 from app.backend.services.video_workflow import (
+    DEFAULT_FAILED_WORK_TTL_SECONDS,
     VideoWorkflowService,
     WorkflowConflict,
     WorkflowNotFound,
@@ -58,9 +59,17 @@ class FakeSceneProvider:
 
 
 class FakeTTSProvider:
-    def __init__(self, *, runtime_error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        runtime_error: Exception | None = None,
+        engines: tuple[str, ...] = ("melotts-korean",),
+        voice_presets: tuple[str, ...] = ("deadpan-ai-v1",),
+    ) -> None:
         self.texts: list[str] = []
         self.runtime_error = runtime_error
+        self.engines = engines
+        self.voice_presets = voice_presets
         self.validate_count = 0
 
     def validate_runtime(self) -> None:
@@ -69,6 +78,7 @@ class FakeTTSProvider:
             raise self.runtime_error
 
     def synthesize(self, spoken_text, output_path):
+        call_index = len(self.texts)
         self.texts.append(spoken_text)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with wave.open(str(output_path), "wb") as wav_file:
@@ -80,8 +90,10 @@ class FakeTTSProvider:
             path=output_path.resolve(),
             duration_sec=0.1,
             sha256=_sha256(output_path),
-            engine="melotts-korean",
-            voice_preset="deadpan-ai-v1",
+            engine=self.engines[min(call_index, len(self.engines) - 1)],
+            voice_preset=self.voice_presets[
+                min(call_index, len(self.voice_presets) - 1)
+            ],
         )
 
 
@@ -198,6 +210,7 @@ def _service(
     scene_provider=None,
     tts_provider=None,
     failed_work_ttl_seconds=None,
+    failed_work_cleanup_interval_seconds=None,
 ):
     renderer = renderer or FakeRenderer()
     publisher = publisher or FakePublisher()
@@ -206,6 +219,10 @@ def _service(
     optional_config = {}
     if failed_work_ttl_seconds is not None:
         optional_config["failed_work_ttl_seconds"] = failed_work_ttl_seconds
+    if failed_work_cleanup_interval_seconds is not None:
+        optional_config["failed_work_cleanup_interval_seconds"] = (
+            failed_work_cleanup_interval_seconds
+        )
     service = VideoWorkflowService(
         renderer=renderer,
         scene_image_provider=scene_provider,
@@ -342,6 +359,48 @@ def test_run_render_records_sanitized_failure(tmp_path, board):
     failed = service.get(job.video_job_id)
     assert failed.render_status is RenderStatus.FAILED
     assert "renderer detail" not in (failed.error_message or "")
+    assert service.create("res_1").render_status is RenderStatus.QUEUED
+
+
+def test_run_render_records_source_conflict_reason(tmp_path, board):
+    service = _service(tmp_path, board)
+    job = service.create("res_1")
+    store.VIDEO_JOBS[job.video_job_id]["source_fingerprint"] = "b" * 64
+
+    service.run_render(job.video_job_id)
+
+    failed = service.get(job.video_job_id)
+    assert failed.render_status is RenderStatus.FAILED
+    assert failed.error_message == "원본 광고가 변경되어 다시 생성해야 합니다"
+
+
+@pytest.mark.parametrize(
+    ("tts_provider", "expected_message"),
+    [
+        (
+            FakeTTSProvider(engines=("melotts-korean", "unexpected-engine")),
+            "TTS 엔진이 장면별로 일치하지 않습니다",
+        ),
+        (
+            FakeTTSProvider(voice_presets=("deadpan-ai-v1", "unexpected-voice")),
+            "TTS 음성 프리셋이 장면별로 일치하지 않습니다",
+        ),
+    ],
+)
+def test_run_render_records_tts_consistency_conflict_reason(
+    tmp_path,
+    board,
+    tts_provider,
+    expected_message,
+):
+    service = _service(tmp_path, board, tts_provider=tts_provider)
+    job = service.create("res_1")
+
+    service.run_render(job.video_job_id)
+
+    failed = service.get(job.video_job_id)
+    assert failed.render_status is RenderStatus.FAILED
+    assert failed.error_message == expected_message
 
 
 def test_tts_runtime_failure_stops_before_l4_scene_generation(tmp_path, board):
@@ -368,6 +427,31 @@ def test_tts_runtime_failure_stops_before_l4_scene_generation(tmp_path, board):
     assert service.renderer.calls == []
 
 
+def test_missing_tts_runtime_validator_fails_before_l4_scene_generation(
+    tmp_path,
+    board,
+):
+    class MissingRuntimeValidator:
+        def synthesize(self, _spoken_text, _output_path):
+            raise AssertionError("synthesis must not run without runtime validation")
+
+    scene_provider = FakeSceneProvider()
+    service = _service(
+        tmp_path,
+        board,
+        scene_provider=scene_provider,
+        tts_provider=MissingRuntimeValidator(),
+    )
+    job = service.create("res_1")
+
+    service.run_render(job.video_job_id)
+
+    failed = service.get(job.video_job_id)
+    assert failed.render_status is RenderStatus.FAILED
+    assert scene_provider.calls == []
+    assert service.renderer.calls == []
+
+
 def test_duplicate_render_call_keeps_completed_job_unchanged(workflow):
     completed = _rendered_job(workflow)
     renderer_call_count = len(workflow.renderer.calls)
@@ -382,15 +466,15 @@ def test_duplicate_render_call_keeps_completed_job_unchanged(workflow):
 
 
 def test_create_removes_only_expired_failed_work_directories(tmp_path, board):
-    service = _service(
+    setup_service = _service(
         tmp_path,
         board,
-        failed_work_ttl_seconds=7 * 24 * 60 * 60,
+        failed_work_ttl_seconds=0,
     )
-    old_failed = service.create("res_old_failed")
-    recent_failed = service.create("res_recent_failed")
-    completed = service.create("res_completed")
-    active = service.create("res_active")
+    old_failed = setup_service.create("res_old_failed")
+    recent_failed = setup_service.create("res_recent_failed")
+    completed = setup_service.create("res_completed")
+    active = setup_service.create("res_active")
 
     store.VIDEO_JOBS[old_failed.video_job_id].update(
         render_status="failed",
@@ -417,6 +501,12 @@ def test_create_removes_only_expired_failed_work_directories(tmp_path, board):
         path.mkdir(parents=True)
         (path / "evidence.txt").write_text("keep unless expired failed", encoding="utf-8")
 
+    service = _service(
+        tmp_path,
+        board,
+        failed_work_ttl_seconds=7 * 24 * 60 * 60,
+        failed_work_cleanup_interval_seconds=0,
+    )
     service.create("res_cleanup_trigger")
 
     assert not paths["old_failed"].exists()
@@ -424,6 +514,31 @@ def test_create_removes_only_expired_failed_work_directories(tmp_path, board):
     assert paths["completed"].is_dir()
     assert paths["active"].is_dir()
     assert paths["untracked"].is_dir()
+
+
+def test_create_uses_active_result_index_instead_of_rescanning_all_jobs(
+    tmp_path,
+    board,
+    monkeypatch,
+):
+    class CountingVideoJobs(dict):
+        def __init__(self):
+            super().__init__()
+            self.values_call_count = 0
+
+        def values(self):
+            self.values_call_count += 1
+            return super().values()
+
+    jobs = CountingVideoJobs()
+    monkeypatch.setattr(store, "VIDEO_JOBS", jobs)
+    service = _service(tmp_path, board, failed_work_ttl_seconds=0)
+    calls_after_service_start = jobs.values_call_count
+
+    service.create("res_1")
+    service.create("res_2")
+
+    assert jobs.values_call_count == calls_after_service_start
 
 
 def test_approval_requires_complete_integrity_and_pronunciation_review(workflow):
@@ -555,6 +670,7 @@ def test_reject_only_works_while_approval_is_pending(workflow):
     job = workflow.create("res_1")
     rejected = workflow.reject(job.video_job_id)
     assert rejected.approval_status is ApprovalStatus.REJECTED
+    assert workflow.create("res_1").render_status is RenderStatus.QUEUED
     with pytest.raises(WorkflowConflict):
         workflow.reject(job.video_job_id)
 
@@ -572,3 +688,17 @@ def test_default_workflow_is_safe_without_external_credentials(tmp_path, monkeyp
         "connection_id": "demo_merchant_channel",
         "token_available": False,
     }
+
+
+@pytest.mark.parametrize("invalid_ttl", ["", "seven-days", "-1"])
+def test_default_workflow_uses_safe_ttl_when_environment_is_invalid(
+    tmp_path,
+    monkeypatch,
+    invalid_ttl,
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("VIDEO_FAILED_WORK_TTL_SECONDS", invalid_ttl)
+
+    service = build_default_video_workflow()
+
+    assert service._failed_work_ttl_seconds == DEFAULT_FAILED_WORK_TTL_SECONDS

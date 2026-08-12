@@ -54,6 +54,12 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _scene_silence_sec(scene: StoryboardScene) -> float:
+    if scene.kind is ComicLineKind.SELF_AWARE:
+        return DEADPAN_SILENCE_SEC
+    return BASE_SILENCE_SEC
+
+
 def fit_inside(
     source_size: tuple[int, int],
     bounds: tuple[int, int],
@@ -429,15 +435,13 @@ class RushHourVideoRenderer:
         storyboard: Storyboard,
         speech_audio: tuple[TTSAudio, ...],
     ) -> None:
-        estimated_duration = sum(audio.duration_sec for audio in speech_audio)
-        estimated_duration += sum(
-            2
-            * (
-                DEADPAN_SILENCE_SEC
-                if scene.kind is ComicLineKind.SELF_AWARE
-                else BASE_SILENCE_SEC
+        estimated_duration = sum(
+            audio.duration_sec + 2 * _scene_silence_sec(scene)
+            for scene, audio in zip(
+                storyboard.scenes,
+                speech_audio,
+                strict=True,
             )
-            for scene in storyboard.scenes
         )
         if not MIN_VIDEO_DURATION_SEC <= estimated_duration <= MAX_VIDEO_DURATION_SEC:
             raise RuntimeError("완성 영상 길이가 10~15초 범위를 벗어났습니다")
@@ -481,17 +485,12 @@ class RushHourVideoRenderer:
                         crop_variant="cta" if index == 3 else "intro",
                     )
                 frame.save(frame_path)
-                silence_sec = (
-                    DEADPAN_SILENCE_SEC
-                    if scene.kind is ComicLineKind.SELF_AWARE
-                    else BASE_SILENCE_SEC
-                )
                 self._write_segment(
                     frame_path=frame_path,
                     speech_path=audio.path,
                     segment_path=segment_path,
                     speech_duration_sec=audio.duration_sec,
-                    silence_sec=silence_sec,
+                    silence_sec=_scene_silence_sec(scene),
                 )
                 segment_paths.append(segment_path)
             self._concat_segments(

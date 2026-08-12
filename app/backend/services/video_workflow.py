@@ -46,6 +46,7 @@ SLOT_WINDOWS = {
     "commute_pm": (time(18, 0), time(19, 30)),
 }
 DEFAULT_FAILED_WORK_TTL_SECONDS = 7 * 24 * 60 * 60
+DEFAULT_FAILED_WORK_CLEANUP_INTERVAL_SECONDS = 60 * 60
 LOGGER = logging.getLogger(__name__)
 
 
@@ -98,9 +99,14 @@ class VideoWorkflowService:
         fingerprint_builder: Callable[[str], str] = current_source_fingerprint,
         product_image_url_builder: Callable[[str], str] = _stored_product_image_url,
         failed_work_ttl_seconds: int = DEFAULT_FAILED_WORK_TTL_SECONDS,
+        failed_work_cleanup_interval_seconds: int = (
+            DEFAULT_FAILED_WORK_CLEANUP_INTERVAL_SECONDS
+        ),
     ) -> None:
         if failed_work_ttl_seconds < 0:
             raise ValueError("failed work TTL must not be negative")
+        if failed_work_cleanup_interval_seconds < 0:
+            raise ValueError("failed work cleanup interval must not be negative")
         self._renderer = renderer
         self._scene_image_provider = scene_image_provider
         self._tts_provider = tts_provider
@@ -112,9 +118,16 @@ class VideoWorkflowService:
         self._fingerprint_builder = fingerprint_builder
         self._product_image_url_builder = product_image_url_builder
         self._failed_work_ttl_seconds = failed_work_ttl_seconds
+        self._failed_work_cleanup_interval_seconds = (
+            failed_work_cleanup_interval_seconds
+        )
         self._state_lock = threading.Lock()
         self._render_lock = threading.Lock()
         self._publish_lock = threading.Lock()
+        self._active_job_ids_by_result: dict[str, set[str]] = {}
+        self._failed_job_updated_at: dict[str, datetime] = {}
+        self._next_failed_work_cleanup_at: datetime | None = None
+        self._initialize_job_indexes()
 
     def _clock(self) -> datetime:
         value = self._now()
@@ -126,9 +139,46 @@ class VideoWorkflowService:
     def _stored(job: VideoJob) -> dict:
         return job.model_dump(mode="json")
 
+    @staticmethod
+    def _is_active(job: VideoJob) -> bool:
+        return (
+            job.approval_status is not ApprovalStatus.REJECTED
+            and job.render_status is not RenderStatus.FAILED
+        )
+
+    def _initialize_job_indexes(self) -> None:
+        for raw_job in store.VIDEO_JOBS.values():
+            try:
+                job = VideoJob.model_validate(raw_job)
+            except ValueError:
+                continue
+            self._update_job_indexes_locked(job)
+
+    def _update_job_indexes_locked(self, job: VideoJob) -> None:
+        if self._is_active(job):
+            self._active_job_ids_by_result.setdefault(job.result_id, set()).add(
+                job.video_job_id
+            )
+        else:
+            active_job_ids = self._active_job_ids_by_result.get(job.result_id)
+            if active_job_ids is not None:
+                active_job_ids.discard(job.video_job_id)
+                if not active_job_ids:
+                    self._active_job_ids_by_result.pop(job.result_id, None)
+
+        if (
+            job.render_status is RenderStatus.FAILED
+            and job.updated_at.tzinfo is not None
+            and job.updated_at.utcoffset() is not None
+        ):
+            self._failed_job_updated_at[job.video_job_id] = job.updated_at
+        else:
+            self._failed_job_updated_at.pop(job.video_job_id, None)
+
     def _persist_locked(self, job: VideoJob) -> VideoJob:
         store.VIDEO_JOBS[job.video_job_id] = self._stored(job)
         store.save()
+        self._update_job_indexes_locked(job)
         return job
 
     def _get_locked(self, video_job_id: str) -> VideoJob:
@@ -152,14 +202,8 @@ class VideoWorkflowService:
         now = self._clock()
         self._cleanup_stale_failed_work_dirs(now=now)
         with self._state_lock:
-            for raw_job in store.VIDEO_JOBS.values():
-                candidate = VideoJob.model_validate(raw_job)
-                if (
-                    candidate.result_id == result_id
-                    and candidate.approval_status is not ApprovalStatus.REJECTED
-                    and candidate.render_status is not RenderStatus.FAILED
-                ):
-                    raise WorkflowConflict("이 결과에는 이미 활성 영상 작업이 있습니다")
+            if result_id in self._active_job_ids_by_result:
+                raise WorkflowConflict("이 결과에는 이미 활성 영상 작업이 있습니다")
             job = VideoJob(
                 video_job_id=f"video_{uuid.uuid4().hex[:12]}",
                 result_id=result_id,
@@ -181,46 +225,55 @@ class VideoWorkflowService:
     def _cleanup_stale_failed_work_dirs(self, *, now: datetime) -> None:
         if self._failed_work_ttl_seconds == 0:
             return
-        cutoff = now - timedelta(seconds=self._failed_work_ttl_seconds)
         with self._state_lock:
-            failed_job_ids = []
-            for raw_job in store.VIDEO_JOBS.values():
-                try:
-                    job = VideoJob.model_validate(raw_job)
-                except ValueError:
-                    continue
-                if (
-                    job.render_status is RenderStatus.FAILED
-                    and job.updated_at.tzinfo is not None
-                    and job.updated_at.utcoffset() is not None
-                    and job.updated_at < cutoff
-                ):
-                    failed_job_ids.append(job.video_job_id)
+            if (
+                self._next_failed_work_cleanup_at is not None
+                and now < self._next_failed_work_cleanup_at
+            ):
+                return
+            self._next_failed_work_cleanup_at = now + timedelta(
+                seconds=self._failed_work_cleanup_interval_seconds
+            )
+            cutoff = now - timedelta(seconds=self._failed_work_ttl_seconds)
+            failed_job_ids = [
+                video_job_id
+                for video_job_id, updated_at in self._failed_job_updated_at.items()
+                if updated_at < cutoff
+            ]
 
-        root = self._work_dir.expanduser().resolve()
-        if not root.is_dir():
-            return
         for video_job_id in failed_job_ids:
-            candidate = root / video_job_id
-            if candidate.is_symlink() or not candidate.is_dir():
+            try:
+                candidate = self._safe_job_work_path(video_job_id)
+            except WorkflowValidation:
                 continue
-            resolved_candidate = candidate.resolve()
-            if resolved_candidate == root or not resolved_candidate.is_relative_to(root):
+            if not candidate.is_dir():
+                with self._state_lock:
+                    self._failed_job_updated_at.pop(video_job_id, None)
                 continue
             try:
-                shutil.rmtree(resolved_candidate)
+                shutil.rmtree(candidate)
             except OSError:
                 LOGGER.warning(
                     "failed to remove expired video work directory for %s",
                     video_job_id,
                     exc_info=True,
                 )
+            else:
+                with self._state_lock:
+                    self._failed_job_updated_at.pop(video_job_id, None)
+
+    def _safe_job_work_path(self, video_job_id: str) -> Path:
+        root = self._work_dir.expanduser().resolve()
+        candidate = root / video_job_id
+        if candidate.is_symlink():
+            raise WorkflowValidation("영상 작업 디렉터리가 올바르지 않습니다")
+        resolved_candidate = candidate.resolve()
+        if resolved_candidate == root or not resolved_candidate.is_relative_to(root):
+            raise WorkflowValidation("영상 작업 디렉터리가 올바르지 않습니다")
+        return resolved_candidate
 
     def _job_work_dir(self, video_job_id: str) -> Path:
-        root = self._work_dir.expanduser().resolve()
-        job_dir = (root / video_job_id).resolve()
-        if not job_dir.is_relative_to(root):
-            raise WorkflowValidation("영상 작업 디렉터리가 올바르지 않습니다")
+        job_dir = self._safe_job_work_path(video_job_id)
         job_dir.mkdir(parents=True, exist_ok=True)
         return job_dir
 
@@ -243,9 +296,7 @@ class VideoWorkflowService:
                 storyboard = self._storyboard_builder(processing.result_id)
                 if storyboard.source_fingerprint != processing.source_fingerprint:
                     raise WorkflowConflict("원본 광고가 변경되어 다시 생성해야 합니다")
-                runtime_validator = getattr(self._tts_provider, "validate_runtime", None)
-                if runtime_validator is not None:
-                    runtime_validator()
+                self._tts_provider.validate_runtime()
                 job_dir = self._job_work_dir(video_job_id)
                 product_image_url = self._product_image_url_builder(processing.product_id)
                 scene_images = self._scene_image_provider.build(
@@ -271,11 +322,12 @@ class VideoWorkflowService:
                     output_path=self._video_dir / f"{video_job_id}.mp4",
                 )
             except Exception as exc:
-                error_message = (
-                    "TTS 실행 환경이 준비되지 않았습니다"
-                    if isinstance(exc, TTSRuntimeUnavailable)
-                    else "영상 렌더링에 실패했습니다"
-                )
+                if isinstance(exc, TTSRuntimeUnavailable):
+                    error_message = "TTS 실행 환경이 준비되지 않았습니다"
+                elif isinstance(exc, WorkflowConflict):
+                    error_message = str(exc)
+                else:
+                    error_message = "영상 렌더링에 실패했습니다"
                 with self._state_lock:
                     failed = self._get_locked(video_job_id).model_copy(
                         update={
@@ -517,6 +569,25 @@ def _youtube_service_factory(token_path: Path) -> Callable[[], object]:
     return create_service
 
 
+def _nonnegative_int_env(name: str, default: int) -> int:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    try:
+        value = int(raw_value.strip())
+    except ValueError:
+        value = -1
+    if value < 0:
+        LOGGER.warning(
+            "invalid %s value %r; using default %d",
+            name,
+            raw_value,
+            default,
+        )
+        return default
+    return value
+
+
 def build_default_video_workflow() -> VideoWorkflowService:
     repo_root = Path(__file__).resolve().parents[3]
     connection_id = os.getenv("YOUTUBE_CONNECTION_ID", "demo_merchant_channel")
@@ -547,10 +618,12 @@ def build_default_video_workflow() -> VideoWorkflowService:
         now=lambda: datetime.now(timezone.utc),
         video_dir=Path(os.getenv("VIDEO_DIR", "data/videos")),
         work_dir=work_dir,
-        failed_work_ttl_seconds=int(
-            os.getenv(
-                "VIDEO_FAILED_WORK_TTL_SECONDS",
-                str(DEFAULT_FAILED_WORK_TTL_SECONDS),
-            )
+        failed_work_ttl_seconds=_nonnegative_int_env(
+            "VIDEO_FAILED_WORK_TTL_SECONDS",
+            DEFAULT_FAILED_WORK_TTL_SECONDS,
+        ),
+        failed_work_cleanup_interval_seconds=_nonnegative_int_env(
+            "VIDEO_FAILED_WORK_CLEANUP_INTERVAL_SECONDS",
+            DEFAULT_FAILED_WORK_CLEANUP_INTERVAL_SECONDS,
         ),
     )

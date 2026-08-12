@@ -41,6 +41,9 @@ class ApiSceneProvider:
 
 
 class ApiTTSProvider:
+    def validate_runtime(self) -> None:
+        return None
+
     def synthesize(self, spoken_text, output_path):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with wave.open(str(output_path), "wb") as wav_file:
