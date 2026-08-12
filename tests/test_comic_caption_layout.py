@@ -42,7 +42,6 @@ def test_caption_has_no_black_panel_behind_text():
     frame = _make_scene_frame(
         source=source,
         scene=scene,
-        tone="premium",
         font_path=FONT_PATH,
         crop_variant="intro",
     )
