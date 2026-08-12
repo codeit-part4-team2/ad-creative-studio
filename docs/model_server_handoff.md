@@ -11,6 +11,32 @@ uvicorn model_server.main:app --host 0.0.0.0 --port 8001 --workers 1 --env-file 
 - L4 실측: P50 1.72s / P95 1.77s (quality_regenerate 30-step 대비 약 10배 빠름)
 - VAE 비교(stock vs FP16-safe, seed=42): PSNR 51.37dB, 속도 약 10% 우위로 FP16-safe 유지 확정
 
+## 쇼츠 TTS(MeloTTS) 연동 설정 (2026-08-12, 서빙 담당자 실측 완료)
+
+- backend는 `app/backend/services/tts_provider.py`에서 `melo.api.TTS`를 직접 import하는 구조라, backend 프로세스 자체가 melo 패키지를 가진 인터프리터로 실행되어야 함
+- backend `requirements.txt`에는 torch가 없어(GPU 불필요), model_server(CUDA venv)와 물리적으로 분리된 별도 CPU venv를 사용
+- venv 위치: `~/ad-studio-runtime/backend-venv` (Python 3.11, CPU 전용)
+- 설치 절차:
+```bash
+  python3.11 -m venv ~/ad-studio-runtime/backend-venv
+  ~/ad-studio-runtime/backend-venv/bin/python -m pip install -e ".[video]"
+  ~/ad-studio-runtime/backend-venv/bin/python -m pip install -r requirements-tts.txt
+  ~/ad-studio-runtime/backend-venv/bin/python -m pip install -r requirements.txt
+```
+- MeloTTS 소스: `~/ad-studio-runtime/src/MeloTTS`, 고정 커밋 `209145371cff8fc3bd60d7be902ea69cbdb7965a`
+- 한국어 모델: `~/ad-studio-runtime/models/melotts-korean/{config.json,checkpoint.pth}`
+  - SHA-256은 `tts_provider.py`의 `MELOTTS_CONFIG_SHA256`/`MELOTTS_CHECKPOINT_SHA256`과 반드시 일치해야 함 (코드에서 자동 검증)
+- `.env`에 아래 3개 경로 필수 (각자 로컬 `.env`에 개별 추가해야 함, git에 커밋되지 않음):
+MELOTTS_SOURCE_DIR=<본인 경로>/ad-studio-runtime/src/MeloTTS
+MELOTTS_CONFIG_PATH=<본인 경로>/ad-studio-runtime/models/melotts-korean/config.json
+MELOTTS_CHECKPOINT_PATH=<본인 경로>/ad-studio-runtime/models/melotts-korean/checkpoint.pth
+- backend 실행 명령 (반드시 backend-venv 파이썬으로 실행):
+```bash
+  ~/ad-studio-runtime/backend-venv/bin/python -m uvicorn app.backend.main:app --host 0.0.0.0 --port 8000 --workers 1 --env-file .env
+```
+- model_server는 기존과 동일하게 `venv-pr15`(CUDA) 유지, 변경 없음
+- 검증: `pip check` 충돌 없음, `tools/evaluate_korean_tts.py` 스모크 테스트로 WAV 7개 생성 확인, `nvidia-smi`로 GPU/VRAM 영향 없음(0MiB) 확인
+
 ## 로컬 통합 상태
 
 - 최신 확인 원격: `main@0d07c0b` (PR #16 병합 상태)
