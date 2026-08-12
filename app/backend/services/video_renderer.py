@@ -21,6 +21,8 @@ VIDEO_FPS = 30
 CAPTION_LAYOUT_VERSION = "bright-outline-v1"
 BASE_SILENCE_SEC = 0.1
 DEADPAN_SILENCE_SEC = 0.5
+MIN_VIDEO_DURATION_SEC = 9.95
+MAX_VIDEO_DURATION_SEC = 15.05
 
 TONE_ACCENTS = {
     "emotional": "#FFD2C2",
@@ -399,7 +401,7 @@ class RushHourVideoRenderer:
         if (metadata["width"], metadata["height"]) != (VIDEO_WIDTH, VIDEO_HEIGHT):
             raise RuntimeError("완성 영상 해상도가 1080x1920이 아닙니다")
         duration = float(metadata["duration_sec"])
-        if not 9.95 <= duration <= 15.05:
+        if not MIN_VIDEO_DURATION_SEC <= duration <= MAX_VIDEO_DURATION_SEC:
             raise RuntimeError("완성 영상 길이가 10~15초 범위를 벗어났습니다")
         if metadata["video_codec"] != "h264":
             raise RuntimeError("완성 영상 코덱이 H.264가 아닙니다")
@@ -422,6 +424,24 @@ class RushHourVideoRenderer:
             aggregate.update(audio.sha256.encode("ascii"))
         return aggregate.hexdigest()
 
+    @staticmethod
+    def _validate_estimated_duration(
+        storyboard: Storyboard,
+        speech_audio: tuple[TTSAudio, ...],
+    ) -> None:
+        estimated_duration = sum(audio.duration_sec for audio in speech_audio)
+        estimated_duration += sum(
+            2
+            * (
+                DEADPAN_SILENCE_SEC
+                if scene.kind is ComicLineKind.SELF_AWARE
+                else BASE_SILENCE_SEC
+            )
+            for scene in storyboard.scenes
+        )
+        if not MIN_VIDEO_DURATION_SEC <= estimated_duration <= MAX_VIDEO_DURATION_SEC:
+            raise RuntimeError("완성 영상 길이가 10~15초 범위를 벗어났습니다")
+
     def render(
         self,
         storyboard: Storyboard,
@@ -433,6 +453,7 @@ class RushHourVideoRenderer:
         if not self._font_path.is_file():
             raise ValueError("한글 폰트 파일을 찾을 수 없습니다")
         tts_audio_sha256 = self._validate_speech_audio(storyboard, speech_audio)
+        self._validate_estimated_duration(storyboard, speech_audio)
         image_sequence = _scene_image_sequence(scene_images)
         for scene_image in scene_images.images:
             if not scene_image.path.is_file() or _file_sha256(scene_image.path) != scene_image.sha256:

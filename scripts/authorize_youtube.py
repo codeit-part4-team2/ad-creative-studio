@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 
@@ -17,7 +18,12 @@ def ensure_external_token_path(token_path: Path, repo_root: Path) -> Path:
     return resolved_token
 
 
-def write_credentials_atomically(token_path: Path, credentials_json: str) -> None:
+def write_credentials_atomically(
+    token_path: Path,
+    credentials_json: str,
+    *,
+    permission_setter: Callable[[Path, int], None] | None = None,
+) -> None:
     """Write credentials through a temporary sibling and atomically replace."""
     token_path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path: Path | None = None
@@ -33,6 +39,10 @@ def write_credentials_atomically(token_path: Path, credentials_json: str) -> Non
             temporary_file.write(credentials_json)
             temporary_path = Path(temporary_file.name)
         temporary_path.replace(token_path)
+        if permission_setter is not None:
+            permission_setter(token_path, 0o600)
+        elif os.name == "posix":
+            os.chmod(token_path, 0o600)
     finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)

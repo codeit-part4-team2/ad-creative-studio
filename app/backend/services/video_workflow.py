@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
+import shutil
 import threading
 import uuid
 from collections.abc import Callable
@@ -19,7 +21,11 @@ from app.backend.services.storyboard import (
     current_source_fingerprint,
     find_tone_result,
 )
-from app.backend.services.tts_provider import MeloTTSProvider, TTSProvider
+from app.backend.services.tts_provider import (
+    MeloTTSProvider,
+    TTSProvider,
+    TTSRuntimeUnavailable,
+)
 from app.backend.services.video_renderer import RushHourVideoRenderer
 from app.backend.services.youtube_publisher import (
     AuthenticationRequired,
@@ -39,6 +45,8 @@ SLOT_WINDOWS = {
     "commute_am": (time(8, 0), time(9, 30)),
     "commute_pm": (time(18, 0), time(19, 30)),
 }
+DEFAULT_FAILED_WORK_TTL_SECONDS = 7 * 24 * 60 * 60
+LOGGER = logging.getLogger(__name__)
 
 
 class WorkflowError(RuntimeError):
@@ -89,7 +97,10 @@ class VideoWorkflowService:
         storyboard_builder: Callable[[str], Storyboard] = build_storyboard,
         fingerprint_builder: Callable[[str], str] = current_source_fingerprint,
         product_image_url_builder: Callable[[str], str] = _stored_product_image_url,
+        failed_work_ttl_seconds: int = DEFAULT_FAILED_WORK_TTL_SECONDS,
     ) -> None:
+        if failed_work_ttl_seconds < 0:
+            raise ValueError("failed work TTL must not be negative")
         self._renderer = renderer
         self._scene_image_provider = scene_image_provider
         self._tts_provider = tts_provider
@@ -100,6 +111,7 @@ class VideoWorkflowService:
         self._storyboard_builder = storyboard_builder
         self._fingerprint_builder = fingerprint_builder
         self._product_image_url_builder = product_image_url_builder
+        self._failed_work_ttl_seconds = failed_work_ttl_seconds
         self._state_lock = threading.Lock()
         self._render_lock = threading.Lock()
         self._publish_lock = threading.Lock()
@@ -138,6 +150,7 @@ class VideoWorkflowService:
             raise WorkflowValidation(str(exc)) from exc
 
         now = self._clock()
+        self._cleanup_stale_failed_work_dirs(now=now)
         with self._state_lock:
             for raw_job in store.VIDEO_JOBS.values():
                 candidate = VideoJob.model_validate(raw_job)
@@ -165,6 +178,44 @@ class VideoWorkflowService:
                 tone_result["video_job_id"] = job.video_job_id
             return self._persist_locked(job)
 
+    def _cleanup_stale_failed_work_dirs(self, *, now: datetime) -> None:
+        if self._failed_work_ttl_seconds == 0:
+            return
+        cutoff = now - timedelta(seconds=self._failed_work_ttl_seconds)
+        with self._state_lock:
+            failed_job_ids = []
+            for raw_job in store.VIDEO_JOBS.values():
+                try:
+                    job = VideoJob.model_validate(raw_job)
+                except ValueError:
+                    continue
+                if (
+                    job.render_status is RenderStatus.FAILED
+                    and job.updated_at.tzinfo is not None
+                    and job.updated_at.utcoffset() is not None
+                    and job.updated_at < cutoff
+                ):
+                    failed_job_ids.append(job.video_job_id)
+
+        root = self._work_dir.expanduser().resolve()
+        if not root.is_dir():
+            return
+        for video_job_id in failed_job_ids:
+            candidate = root / video_job_id
+            if candidate.is_symlink() or not candidate.is_dir():
+                continue
+            resolved_candidate = candidate.resolve()
+            if resolved_candidate == root or not resolved_candidate.is_relative_to(root):
+                continue
+            try:
+                shutil.rmtree(resolved_candidate)
+            except OSError:
+                LOGGER.warning(
+                    "failed to remove expired video work directory for %s",
+                    video_job_id,
+                    exc_info=True,
+                )
+
     def _job_work_dir(self, video_job_id: str) -> Path:
         root = self._work_dir.expanduser().resolve()
         job_dir = (root / video_job_id).resolve()
@@ -178,7 +229,7 @@ class VideoWorkflowService:
             with self._state_lock:
                 job = self._get_locked(video_job_id)
                 if job.render_status is not RenderStatus.QUEUED:
-                    raise WorkflowConflict("대기 중인 영상만 렌더링할 수 있습니다")
+                    return
                 processing = job.model_copy(
                     update={
                         "render_status": RenderStatus.PROCESSING,
@@ -192,6 +243,9 @@ class VideoWorkflowService:
                 storyboard = self._storyboard_builder(processing.result_id)
                 if storyboard.source_fingerprint != processing.source_fingerprint:
                     raise WorkflowConflict("원본 광고가 변경되어 다시 생성해야 합니다")
+                runtime_validator = getattr(self._tts_provider, "validate_runtime", None)
+                if runtime_validator is not None:
+                    runtime_validator()
                 job_dir = self._job_work_dir(video_job_id)
                 product_image_url = self._product_image_url_builder(processing.product_id)
                 scene_images = self._scene_image_provider.build(
@@ -216,12 +270,17 @@ class VideoWorkflowService:
                     speech_audio=speech_audio,
                     output_path=self._video_dir / f"{video_job_id}.mp4",
                 )
-            except Exception:
+            except Exception as exc:
+                error_message = (
+                    "TTS 실행 환경이 준비되지 않았습니다"
+                    if isinstance(exc, TTSRuntimeUnavailable)
+                    else "영상 렌더링에 실패했습니다"
+                )
                 with self._state_lock:
                     failed = self._get_locked(video_job_id).model_copy(
                         update={
                             "render_status": RenderStatus.FAILED,
-                            "error_message": "영상 렌더링에 실패했습니다",
+                            "error_message": error_message,
                             "updated_at": self._clock(),
                         }
                     )
@@ -488,4 +547,10 @@ def build_default_video_workflow() -> VideoWorkflowService:
         now=lambda: datetime.now(timezone.utc),
         video_dir=Path(os.getenv("VIDEO_DIR", "data/videos")),
         work_dir=work_dir,
+        failed_work_ttl_seconds=int(
+            os.getenv(
+                "VIDEO_FAILED_WORK_TTL_SECONDS",
+                str(DEFAULT_FAILED_WORK_TTL_SECONDS),
+            )
+        ),
     )

@@ -6,6 +6,7 @@ import wave
 from array import array
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from app.backend.services.comic_script import ComicLineKind
@@ -155,3 +156,31 @@ def test_renderer_outputs_verified_vertical_mp4_with_voiced_aac(tmp_path):
     assert streams["video"]["height"] == 1920
     assert streams["audio"]["codec_name"] == "aac"
     assert DEADPAN_SILENCE_SEC == 0.5
+
+
+def test_renderer_rejects_invalid_estimated_duration_before_ffmpeg(tmp_path):
+    class NoFfmpegRenderer(RushHourVideoRenderer):
+        def __init__(self) -> None:
+            super().__init__(font_path=Path("assets/fonts/NanumGothic-Regular.ttf"))
+            self.run_count = 0
+
+        def _run(self, args: list[str]) -> None:
+            self.run_count += 1
+            raise AssertionError(f"FFmpeg must not run for invalid duration: {args}")
+
+    renderer = NoFfmpegRenderer()
+    speech_audio = tuple(
+        _write_voice_wav(tmp_path / f"short-{index}.wav", duration_sec=0.1)
+        for index in range(4)
+    )
+
+    with pytest.raises(RuntimeError, match="10~15"):
+        renderer.render(
+            _storyboard(tmp_path),
+            scene_images=_scene_images(tmp_path),
+            speech_audio=speech_audio,
+            output_path=tmp_path / "must-not-exist.mp4",
+        )
+
+    assert renderer.run_count == 0
+    assert not (tmp_path / "must-not-exist.mp4").exists()

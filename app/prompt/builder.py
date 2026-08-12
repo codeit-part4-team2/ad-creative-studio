@@ -17,7 +17,12 @@ PRODUCT_PRESERVATION_INSTRUCTION = (
     "(do not alter product shape, color, or logo)."
 )
 
-DEFAULT_NEGATIVE_PROMPT = "blurry, distorted product, extra logo, watermark, fake text"
+DEFAULT_NEGATIVE_PROMPT = (
+    "blurry, distorted product, extra logo, watermark, fake text, "
+    "wristwatch, watch face, clock, timer, dial, secondary product, "
+    "duplicate appliance, large circular prop, dominant background object, "
+    "softbox, tripod, studio light, photography equipment"
+)
 
 
 def build_image_prompt(req: PromptRequest) -> str:

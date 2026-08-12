@@ -35,6 +35,7 @@ EVALUATION_SENTENCES: tuple[EvaluationSentence, ...] = (
 def run_evaluation(*, provider: TTSProvider, output_dir: Path) -> Path:
     resolved_output = output_dir.expanduser().resolve()
     resolved_output.mkdir(parents=True, exist_ok=True)
+    provider.validate_runtime()
     results: list[dict[str, object]] = []
     for sentence in EVALUATION_SENTENCES:
         wav_path = resolved_output / f"{sentence.key}.wav"

@@ -30,8 +30,11 @@ class GenerationResult:
 def build_background_prompt(prompt: str) -> str:
     return (
         f"{prompt}, empty product photography scene, "
-        "clear lower-center placement area, realistic surface, "
-        "commercial advertising background, no foreground product"
+        "one clear lower-center placement area, "
+        "unobstructed background behind the placement area, "
+        "small peripheral props only, all props confined to the far edges, "
+        "no dominant object behind the product area, plain uninterrupted wall, "
+        "realistic surface, commercial advertising background, no foreground product"
     )
 
 
@@ -213,7 +216,12 @@ class DiffusersGenerationPipeline:
                 item
                 for item in (
                     negative_prompt.strip(),
-                    "foreground product, appliance, cup, package, logo, text, watermark",
+                    (
+                        "foreground product, appliance, cup, package, logo, text, watermark, "
+                        "wristwatch, watch face, clock, timer, dial, secondary product, "
+                        "duplicate appliance, large circular prop, dominant background object, "
+                        "softbox, tripod, studio light, photography equipment"
+                    ),
                 )
                 if item
             )

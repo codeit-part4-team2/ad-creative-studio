@@ -85,6 +85,10 @@ def _migrate_missing_result_ids() -> None:
         for r in (job.get("result") or []):
             if isinstance(r, dict) and not r.get("result_id"):
                 r["result_id"] = f"res_migrated_{uuid.uuid4().hex[:8]}"
+    for entry in HISTORY:
+        for r in entry.get("results", []):
+            if isinstance(r, dict) and not r.get("result_id"):
+                r["result_id"] = f"res_migrated_{uuid.uuid4().hex[:8]}"
 
 
 def _recover_video_jobs() -> None:
@@ -107,10 +111,6 @@ def _recover_video_jobs() -> None:
         ):
             job["publish_status"] = "needs_review"
             job["youtube_error"] = "게시 성공 여부를 확인한 뒤 다시 시도해주세요."
-    for entry in HISTORY:
-        for r in entry.get("results", []):
-            if isinstance(r, dict) and not r.get("result_id"):
-                r["result_id"] = f"res_migrated_{uuid.uuid4().hex[:8]}"
 
 
 def reset_for_tests() -> None:

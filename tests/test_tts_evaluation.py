@@ -9,8 +9,13 @@ from tools.evaluate_korean_tts import EVALUATION_SENTENCES, run_evaluation
 class RecordingProvider:
     def __init__(self) -> None:
         self.texts: list[str] = []
+        self.runtime_validated = False
+
+    def validate_runtime(self) -> None:
+        self.runtime_validated = True
 
     def synthesize(self, spoken_text: str, output_path: Path) -> TTSAudio:
+        assert self.runtime_validated
         self.texts.append(spoken_text)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with wave.open(str(output_path), "wb") as wav_file:
@@ -33,6 +38,7 @@ def test_evaluation_writes_review_manifest_for_every_sentence(tmp_path):
     manifest_path = run_evaluation(provider=provider, output_dir=tmp_path)
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert provider.runtime_validated is True
     assert provider.texts == [sentence.text for sentence in EVALUATION_SENTENCES]
     assert manifest["source_revision"] == "209145371cff8fc3bd60d7be902ea69cbdb7965a"
     assert manifest["model_revision"] == "0207e5adfc90129a51b6b03d89be6d84360ed323"

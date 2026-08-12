@@ -106,6 +106,15 @@ def test_provider_passes_existing_infer_contract_fields(tmp_path):
     )
     assert all(call["product_id"] == "prd_1" for call in calls)
     assert all(call["time_slot"] == "commute_pm" for call in calls)
+    for call in calls:
+        negative_prompt = str(call["negative_prompt"])
+        assert "wristwatch" in negative_prompt
+        assert "large circular prop" in negative_prompt
+        assert "softbox" in negative_prompt
+        assert "photography equipment" in negative_prompt
+        image_prompt = str(call["image_prompt"])
+        assert "unobstructed staging area" in image_prompt
+        assert "small peripheral props only" in image_prompt
 
 
 def test_provider_fails_closed_when_product_is_not_preserved(tmp_path):

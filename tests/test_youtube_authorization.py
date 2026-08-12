@@ -30,3 +30,17 @@ def test_credentials_are_written_atomically_without_temp_residue(tmp_path):
 
     assert token_path.read_text(encoding="utf-8") == '{"token": "secret"}'
     assert list(token_path.parent.glob(f".{token_path.name}.*.tmp")) == []
+
+
+def test_credentials_request_owner_only_permissions_after_atomic_replace(tmp_path):
+    token_path = tmp_path / "operator-secrets" / "youtube_token.json"
+    permission_changes: list[tuple[object, int]] = []
+
+    write_credentials_atomically(
+        token_path,
+        '{"token": "secret"}',
+        permission_setter=lambda path, mode: permission_changes.append((path, mode)),
+    )
+
+    assert permission_changes == [(token_path, 0o600)]
+    assert token_path.read_text(encoding="utf-8") == '{"token": "secret"}'

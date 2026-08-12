@@ -47,6 +47,9 @@ def test_background_prompt_requests_an_empty_lower_center_product_area() -> None
     assert "warm morning cafe, natural light" in prompt
     assert "empty product photography scene" in prompt
     assert "clear lower-center placement area" in prompt
+    assert "unobstructed background behind the placement area" in prompt
+    assert "small peripheral props only" in prompt
+    assert "no dominant object behind the product area" in prompt
 
 
 def test_fast_pipeline_is_lazy_and_uses_four_step_lcm_parameters() -> None:
@@ -85,6 +88,11 @@ def test_fast_pipeline_is_lazy_and_uses_four_step_lcm_parameters() -> None:
     assert result.image.size == (16, 16)
     assert "image" not in fake.calls[0]
     assert "ip_adapter_image" not in fake.calls[0]
+    background_negative = str(fake.calls[0]["negative_prompt"])
+    assert "wristwatch" in background_negative
+    assert "large circular prop" in background_negative
+    assert "softbox" in background_negative
+    assert "photography equipment" in background_negative
 
 
 def test_explicit_load_is_idempotent() -> None:

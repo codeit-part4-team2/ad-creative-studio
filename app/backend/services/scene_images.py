@@ -14,7 +14,9 @@ from app.backend.services.storyboard import Storyboard
 MAX_SCENE_PIXELS = 20_000_000
 NEGATIVE_PROMPT = (
     "text, letters, logo, watermark, duplicate product, extra appliance, "
-    "distorted object, blurry, low resolution"
+    "distorted object, blurry, low resolution, wristwatch, watch face, clock, "
+    "timer, dial, secondary product, duplicate appliance, large circular prop, "
+    "dominant background object, softbox, tripod, studio light, photography equipment"
 )
 
 
@@ -61,7 +63,10 @@ def _scene_prompt(*, purpose: str, tone: str, time_slot: str) -> str:
     }[purpose]
     return (
         f"9:16 vertical {tone} commercial background for {time_context}, "
-        f"{purpose_context}, background only, no product, no typography"
+        f"{purpose_context}, one unobstructed staging area, "
+        "small peripheral props only, all props confined to the far edges, "
+        "plain uninterrupted wall behind the staging area, "
+        "background only, no product, no typography"
     )
 
 

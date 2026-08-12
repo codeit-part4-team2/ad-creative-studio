@@ -13,7 +13,7 @@ from app.backend.services import store
 from app.backend.services.comic_script import ComicLineKind
 from app.backend.services.scene_images import SceneImage, SceneImageSet
 from app.backend.services.storyboard import Storyboard, StoryboardNotFound, StoryboardScene
-from app.backend.services.tts_provider import TTSAudio
+from app.backend.services.tts_provider import TTSAudio, TTSRuntimeUnavailable
 from app.backend.services.video_renderer import RenderResult
 from app.backend.services.video_workflow import (
     VideoWorkflowService,
@@ -58,8 +58,15 @@ class FakeSceneProvider:
 
 
 class FakeTTSProvider:
-    def __init__(self) -> None:
+    def __init__(self, *, runtime_error: Exception | None = None) -> None:
         self.texts: list[str] = []
+        self.runtime_error = runtime_error
+        self.validate_count = 0
+
+    def validate_runtime(self) -> None:
+        self.validate_count += 1
+        if self.runtime_error is not None:
+            raise self.runtime_error
 
     def synthesize(self, spoken_text, output_path):
         self.texts.append(spoken_text)
@@ -182,11 +189,23 @@ def _board_for_result(board: Storyboard, result_id: str) -> Storyboard:
     )
 
 
-def _service(tmp_path, board, *, renderer=None, publisher=None, scene_provider=None):
+def _service(
+    tmp_path,
+    board,
+    *,
+    renderer=None,
+    publisher=None,
+    scene_provider=None,
+    tts_provider=None,
+    failed_work_ttl_seconds=None,
+):
     renderer = renderer or FakeRenderer()
     publisher = publisher or FakePublisher()
     scene_provider = scene_provider or FakeSceneProvider()
-    tts_provider = FakeTTSProvider()
+    tts_provider = tts_provider or FakeTTSProvider()
+    optional_config = {}
+    if failed_work_ttl_seconds is not None:
+        optional_config["failed_work_ttl_seconds"] = failed_work_ttl_seconds
     service = VideoWorkflowService(
         renderer=renderer,
         scene_image_provider=scene_provider,
@@ -198,6 +217,7 @@ def _service(tmp_path, board, *, renderer=None, publisher=None, scene_provider=N
         storyboard_builder=lambda result_id: _board_for_result(board, result_id),
         fingerprint_builder=lambda _result_id: board.source_fingerprint,
         product_image_url_builder=lambda _product_id: "/files/uploads/prd_1.png",
+        **optional_config,
     )
     service.renderer = renderer
     service.publisher = publisher
@@ -322,6 +342,88 @@ def test_run_render_records_sanitized_failure(tmp_path, board):
     failed = service.get(job.video_job_id)
     assert failed.render_status is RenderStatus.FAILED
     assert "renderer detail" not in (failed.error_message or "")
+
+
+def test_tts_runtime_failure_stops_before_l4_scene_generation(tmp_path, board):
+    scene_provider = FakeSceneProvider()
+    tts_provider = FakeTTSProvider(
+        runtime_error=TTSRuntimeUnavailable("private VM model path"),
+    )
+    service = _service(
+        tmp_path,
+        board,
+        scene_provider=scene_provider,
+        tts_provider=tts_provider,
+    )
+    job = service.create("res_1")
+
+    service.run_render(job.video_job_id)
+
+    failed = service.get(job.video_job_id)
+    assert failed.render_status is RenderStatus.FAILED
+    assert failed.error_message == "TTS 실행 환경이 준비되지 않았습니다"
+    assert "private VM model path" not in (failed.error_message or "")
+    assert tts_provider.validate_count == 1
+    assert scene_provider.calls == []
+    assert service.renderer.calls == []
+
+
+def test_duplicate_render_call_keeps_completed_job_unchanged(workflow):
+    completed = _rendered_job(workflow)
+    renderer_call_count = len(workflow.renderer.calls)
+    tts_call_count = len(workflow.tts_provider.texts)
+
+    workflow.run_render(completed.video_job_id)
+
+    unchanged = workflow.get(completed.video_job_id)
+    assert unchanged == completed
+    assert len(workflow.renderer.calls) == renderer_call_count
+    assert len(workflow.tts_provider.texts) == tts_call_count
+
+
+def test_create_removes_only_expired_failed_work_directories(tmp_path, board):
+    service = _service(
+        tmp_path,
+        board,
+        failed_work_ttl_seconds=7 * 24 * 60 * 60,
+    )
+    old_failed = service.create("res_old_failed")
+    recent_failed = service.create("res_recent_failed")
+    completed = service.create("res_completed")
+    active = service.create("res_active")
+
+    store.VIDEO_JOBS[old_failed.video_job_id].update(
+        render_status="failed",
+        updated_at=(NOW - timedelta(days=8)).isoformat(),
+    )
+    store.VIDEO_JOBS[recent_failed.video_job_id].update(
+        render_status="failed",
+        updated_at=NOW.isoformat(),
+    )
+    store.VIDEO_JOBS[completed.video_job_id].update(
+        render_status="completed",
+        updated_at=(NOW - timedelta(days=8)).isoformat(),
+    )
+
+    work_root = tmp_path / "video-work"
+    paths = {
+        "old_failed": work_root / old_failed.video_job_id,
+        "recent_failed": work_root / recent_failed.video_job_id,
+        "completed": work_root / completed.video_job_id,
+        "active": work_root / active.video_job_id,
+        "untracked": work_root / "operator-notes",
+    }
+    for path in paths.values():
+        path.mkdir(parents=True)
+        (path / "evidence.txt").write_text("keep unless expired failed", encoding="utf-8")
+
+    service.create("res_cleanup_trigger")
+
+    assert not paths["old_failed"].exists()
+    assert paths["recent_failed"].is_dir()
+    assert paths["completed"].is_dir()
+    assert paths["active"].is_dir()
+    assert paths["untracked"].is_dir()
 
 
 def test_approval_requires_complete_integrity_and_pronunciation_review(workflow):

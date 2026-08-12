@@ -13,10 +13,12 @@ def _isolate_and_clear():
     store.PRODUCTS.clear()
     store.JOBS.clear()
     store.HISTORY.clear()
+    store.VIDEO_JOBS.clear()
     yield
     store.PRODUCTS.clear()
     store.JOBS.clear()
     store.HISTORY.clear()
+    store.VIDEO_JOBS.clear()
 
 
 def test_save_then_load_restores_state(tmp_path, monkeypatch):
@@ -135,3 +137,26 @@ def test_load_backfills_missing_result_id_for_old_data(tmp_path, monkeypatch):
 
     assert store.JOBS["job_old"]["result"][0]["result_id"]  # 자동으로 채워짐
     assert store.HISTORY[0]["results"][0]["result_id"]
+
+
+def test_result_id_migration_updates_jobs_and_history_when_called_directly():
+    store.JOBS["job_old"] = {"result": [{"tone": "premium"}]}
+    store.HISTORY.append({"results": [{"tone": "premium"}]})
+
+    store._migrate_missing_result_ids()
+
+    assert store.JOBS["job_old"]["result"][0]["result_id"].startswith("res_migrated_")
+    assert store.HISTORY[0]["results"][0]["result_id"].startswith("res_migrated_")
+
+
+def test_video_job_recovery_does_not_migrate_generation_history():
+    store.VIDEO_JOBS["video_old"] = {
+        "render_status": "processing",
+        "publish_status": "not_requested",
+    }
+    store.HISTORY.append({"results": [{"tone": "premium"}]})
+
+    store._recover_video_jobs()
+
+    assert store.VIDEO_JOBS["video_old"]["render_status"] == "failed"
+    assert "result_id" not in store.HISTORY[0]["results"][0]

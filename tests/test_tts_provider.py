@@ -91,6 +91,24 @@ def test_provider_loads_engine_only_once(tmp_path):
     assert load_count == 1
 
 
+def test_runtime_validation_loads_pinned_engine_once_before_synthesis(tmp_path):
+    engine = FakeMeloEngine()
+    load_count = 0
+
+    def load_engine():
+        nonlocal load_count
+        load_count += 1
+        return engine
+
+    provider = MeloTTSProvider(output_root=tmp_path, engine_factory=load_engine)
+
+    provider.validate_runtime()
+    provider.synthesize("환경 확인 문장입니다.", tmp_path / "validated.wav")
+
+    assert load_count == 1
+    assert (tmp_path / "validated.wav").is_file()
+
+
 def test_provider_rejects_empty_text(tmp_path):
     provider = MeloTTSProvider(
         output_root=tmp_path,
