@@ -14,11 +14,20 @@ PIN은 절대 평문 저장하지 않는다 - pbkdf2_hmac(표준 라이브러리
 import hashlib
 import os
 import secrets
+import time
 
 CUSTOMERS: dict[str, dict] = {}  # customer_id -> {company_name, pin_hash, pin_salt, status, plan, created_at}
 SESSIONS: dict[str, str] = {}  # session_token -> customer_id (인메모리 전용, 서버 재시작 시 초기화)
+FAILED_LOGIN_ATTEMPTS: dict[str, list[float]] = {}  # customer_id -> 최근 실패 타임스탬프들
 
 PBKDF2_ITERATIONS = 260_000  # OWASP 2023 권장 최소치 근사
+RATE_LIMIT_MAX_ATTEMPTS = 5
+RATE_LIMIT_WINDOW_SECONDS = 60
+
+# 존재하지 않는 customer_id로 로그인해도 항상 이 salt로 PBKDF2를 한 번 돌려서,
+# "존재하는 ID는 느리고 존재 안 하는 ID는 빠르다"는 응답시간 차이(timing attack)로
+# 유효한 customer_id를 추측당하지 않게 한다 (PR 리뷰에서 지적됨).
+_DUMMY_SALT = secrets.token_bytes(16)
 
 
 def _hash_pin(pin: str, salt: bytes) -> str:
@@ -40,24 +49,62 @@ def create_customer(customer_id: str, company_name: str, pin: str, plan: str = "
     return CUSTOMERS[customer_id]
 
 
+def is_rate_limited(customer_id: str) -> bool:
+    """
+    같은 customer_id로 짧은 시간에 너무 많이 실패하면 잠깐 막는다. 실제 고객을
+    노린 무차별 대입(brute force) 방지가 목적이다 - 다만 이 방식 자체가 "누군가
+    일부러 틀린 PIN을 계속 넣어서 진짜 고객을 잠깐 못 들어오게 lockout시키는" 부작용도
+    있을 수 있는 절충이라, 프로젝트 규모에 맞는 가벼운 수준으로만 넣는다.
+    """
+    now = time.time()
+    attempts = [t for t in FAILED_LOGIN_ATTEMPTS.get(customer_id, []) if now - t < RATE_LIMIT_WINDOW_SECONDS]
+    FAILED_LOGIN_ATTEMPTS[customer_id] = attempts
+    return len(attempts) >= RATE_LIMIT_MAX_ATTEMPTS
+
+
+def _record_failed_attempt(customer_id: str) -> None:
+    FAILED_LOGIN_ATTEMPTS.setdefault(customer_id, []).append(time.time())
+
+
 def verify_login(customer_id: str, pin: str) -> str | None:
-    """성공하면 세션 토큰 반환, 실패(고객 없음/PIN 불일치/비활성)하면 None."""
+    """
+    성공하면 세션 토큰 반환, 실패(고객 없음/PIN 불일치/비활성)하면 None.
+    CPU를 쓰는 PBKDF2 계산이라 async 라우트에서 직접 호출하지 말고 asyncio.to_thread로
+    돌릴 것 (안 그러면 로그인 동시 요청이 많을 때 이벤트 루프 자체가 막힌다).
+    """
     customer = CUSTOMERS.get(customer_id)
-    if not customer or customer.get("status") != "active":
+    if customer and customer.get("status") == "active":
+        salt = bytes.fromhex(customer["pin_salt"])
+        expected_hash = customer["pin_hash"]
+    else:
+        # 존재하지 않거나 비활성 고객이어도 동일하게 PBKDF2를 한 번 돌린다(timing attack 방지) -
+        # expected_hash를 None으로 둬서 아래 compare_digest가 무조건 실패하게 한다.
+        salt = _DUMMY_SALT
+        expected_hash = None
+
+    computed = _hash_pin(pin, salt)
+    if expected_hash is None or not secrets.compare_digest(computed, expected_hash):
+        _record_failed_attempt(customer_id)
         return None
-    salt = bytes.fromhex(customer["pin_salt"])
-    if not secrets.compare_digest(_hash_pin(pin, salt), customer["pin_hash"]):
-        return None
+
     token = secrets.token_urlsafe(32)
     SESSIONS[token] = customer_id
     return token
 
 
 def resolve_session(token: str) -> dict | None:
+    """
+    세션이 있다고 바로 통과시키지 않고, 매번 고객사 status를 다시 확인한다 -
+    관리자가 나중에 고객사를 정지시켜도 이미 로그인된 세션이 계속 살아있으면
+    정지가 무의미해지기 때문이다 (PR 리뷰에서 지적됨).
+    """
     customer_id = SESSIONS.get(token)
     if not customer_id:
         return None
-    return CUSTOMERS.get(customer_id)
+    customer = CUSTOMERS.get(customer_id)
+    if not customer or customer.get("status") != "active":
+        return None
+    return customer
 
 
 def logout(token: str) -> None:
@@ -72,3 +119,7 @@ def verify_admin_key(provided_key: str | None) -> bool:
     if not expected:
         return False  # 키를 설정 안 했으면 기본적으로 막는다 (열어두는 쪽으로 fail하지 않음)
     return secrets.compare_digest(provided_key or "", expected)
+
+
+def reset_rate_limit_for_tests() -> None:
+    FAILED_LOGIN_ATTEMPTS.clear()

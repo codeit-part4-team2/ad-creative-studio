@@ -46,7 +46,15 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     } catch {
       // 응답이 JSON이 아니면 statusText 그대로 사용
     }
-    if (res.status === 401) setAuthToken(null); // 만료된 토큰을 계속 붙여서 재요청하지 않게 정리
+    if (res.status === 401) {
+      setAuthToken(null); // 만료된 토큰을 계속 붙여서 재요청하지 않게 정리
+      // client.ts는 순수 함수 모음이라 AuthProvider(React 상태)를 직접 못 바꾼다 -
+      // 커스텀 이벤트로 알려서, 토큰만 지워지고 화면은 "로그인된 것처럼" 계속
+      // 보이는 문제(PR 리뷰에서 지적됨)를 막는다. AuthProvider가 이 이벤트를 구독한다.
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("auth:unauthorized"));
+      }
+    }
     throw new ApiError(res.status, detail);
   }
   if (res.status === 204) return undefined as T;

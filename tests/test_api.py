@@ -86,6 +86,10 @@ def _clear_store(tmp_path, monkeypatch):
       최소한 기존 데모 파일이 있는 data/outputs/ 최상위는 안 건드리고 서브폴더만 만들고 지운다.
     - 실제 코믹 쇼츠 워크플로는 테스트 전용 장면·TTS·렌더러를 주입하고, 모든 영상 파일을
       tmp_path 아래에 생성해 data/videos/를 건드리지 않는다.
+    - 인증(customer_id+PIN) 도입 후 모든 상품/생성 endpoint가 로그인을 요구하게 됐다.
+      개별 테스트 수십 개를 전부 고쳐서 헤더를 넣게 하는 대신, 여기서 테스트 전용
+      고객사를 하나 만들어 로그인하고 그 토큰을 공용 client 인스턴스에 기본 헤더로
+      박아둔다 - 그러면 기존 테스트 코드는 단 한 줄도 안 건드려도 된다.
     """
     monkeypatch.setattr(store, "STORE_PATH", tmp_path / "store.json")
 
@@ -267,6 +271,7 @@ def test_generate_rejects_duplicate_while_job_in_progress():
     """중복 생성 요청 방지 — 같은 상품에 진행 중(queued/processing)인 job이 있으면 409."""
     pid = _upload_product()
     JOBS["job_fake_inprogress"] = {
+        "customer_id": "CUS-TEST",
         "status": "processing",
         "progress": 10,
         "current_step": None,
@@ -287,6 +292,7 @@ def test_generate_allows_new_request_after_previous_completed():
     """이전 job이 completed/failed면 중복 방지에 안 걸리고 새로 생성 가능해야 한다."""
     pid = _upload_product()
     JOBS["job_fake_done"] = {
+        "customer_id": "CUS-TEST",
         "status": "completed",
         "progress": 100,
         "current_step": None,

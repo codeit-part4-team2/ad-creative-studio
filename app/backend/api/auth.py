@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, Header, HTTPException
 
 from app.backend.schemas.auth import (
@@ -37,7 +39,10 @@ async def create_customer(req: CustomerCreateRequest, x_admin_key: str | None = 
 
 @router.post("/login", response_model=LoginResponse)
 async def login(req: LoginRequest):
-    token = auth.verify_login(req.customer_id, req.pin)
+    if auth.is_rate_limited(req.customer_id):
+        raise HTTPException(429, "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요")
+    # PBKDF2는 CPU 연산이라 to_thread로 돌려서 이벤트 루프를 막지 않는다
+    token = await asyncio.to_thread(auth.verify_login, req.customer_id, req.pin)
     if not token:
         raise HTTPException(401, "고객 ID 또는 PIN이 올바르지 않습니다")
     customer = auth.CUSTOMERS[req.customer_id]

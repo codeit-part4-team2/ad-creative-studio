@@ -14,9 +14,11 @@ client = TestClient(app)
 def _clear_auth():
     auth.CUSTOMERS.clear()
     auth.SESSIONS.clear()
+    auth.reset_rate_limit_for_tests()
     yield
     auth.CUSTOMERS.clear()
     auth.SESSIONS.clear()
+    auth.reset_rate_limit_for_tests()
 
 
 def _upload_product_as(token: str, name="테스트상품"):
@@ -188,3 +190,50 @@ def test_customer_cannot_toggle_favorite_on_another_customers_entry():
     assert r.status_code == 404
 
     HISTORY.clear()
+
+
+# ── PR 리뷰 반영: 세션 재확인, rate limit, timing-safe login ──────────
+
+def test_session_becomes_invalid_after_customer_suspended():
+    """로그인 당시엔 active였어도, 관리자가 나중에 정지시키면 이미 있던 세션도 즉시 무효화돼야 한다."""
+    auth.create_customer("CUS-0001", "ABC전자", "123456")
+    token = auth.verify_login("CUS-0001", "123456")
+    assert auth.resolve_session(token) is not None  # 정지 전엔 유효
+
+    auth.CUSTOMERS["CUS-0001"]["status"] = "suspended"
+    assert auth.resolve_session(token) is None  # 정지 후 같은 토큰이 즉시 무효
+
+
+def test_login_is_rate_limited_after_repeated_failures():
+    auth.create_customer("CUS-0001", "ABC전자", "123456")
+    for _ in range(5):
+        r = client.post("/api/v1/auth/login", json={"customer_id": "CUS-0001", "pin": "000000"})
+        assert r.status_code == 401
+
+    # 6번째부터는 PIN이 맞아도 rate limit에 걸려야 한다
+    r = client.post("/api/v1/auth/login", json={"customer_id": "CUS-0001", "pin": "123456"})
+    assert r.status_code == 429
+
+
+def test_nonexistent_and_existing_customer_login_take_similar_time():
+    """
+    존재하지 않는 customer_id는 즉시 실패하고 존재하는 ID는 PBKDF2를 다 돌리면,
+    응답시간 차이로 유효한 ID를 추측할 수 있다 - 둘 다 비슷한 시간이 걸려야 한다.
+    절대 시간이 아니라 "존재 여부에 따른 뚜렷한 차이가 없는지"만 느슨하게 확인한다
+    (CI 환경마다 절대 시간이 다르므로 배수 기준으로 비교).
+    """
+    import time as _time
+
+    auth.create_customer("CUS-EXISTS", "ABC전자", "123456")
+
+    start = _time.perf_counter()
+    auth.verify_login("CUS-EXISTS", "wrong-pin")
+    existing_duration = _time.perf_counter() - start
+
+    start = _time.perf_counter()
+    auth.verify_login("CUS-DOES-NOT-EXIST", "wrong-pin")
+    missing_duration = _time.perf_counter() - start
+
+    # PBKDF2 26만회가 압도적으로 오래 걸리는 연산이라, 존재 유무에 따른 분기가
+    # 없다면 둘 다 비슷해야 한다 (5배 이상 차이 나면 timing attack에 다시 취약해진 것).
+    assert missing_duration > existing_duration / 5
