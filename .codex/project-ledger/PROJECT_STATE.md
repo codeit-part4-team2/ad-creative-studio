@@ -24,3 +24,11 @@
 - Branch and implementation: `[VERIFIED] codex/shorts-duration-budget @ 54e5712` plus design commit `1b13cc5`.
 - Root cause: `[VERIFIED]` VM job `video_906b946fcef1` produced four WAV files totalling 22.362 seconds; 1.600 seconds of silence yielded a 23.962-second estimate and the 10~15-second guard rejected it before FFmpeg.
 - Current milestone: `[VERIFIED]` concise `deadpan-ai-v3`, target-duration padding, and numeric overrun evidence are locally implemented and tested; actual MeloTTS duration and video quality on L4 remain `[UNVERIFIED]` until a new E2E job runs.
+
+## 2026-08-13 Shorts TTS-headroom follow-up
+
+- Project root: `[VERIFIED] G:\Codex\projects\상급프로젝트\worktrees\ad-creative-studio-shorts-tts-headroom`.
+- Base: `[VERIFIED] origin/main @ 9304143e1fb6ba3f13d4609a2ea946e358ea7e26`, the merge commit for approved PR #26.
+- Branch and implementation: `[VERIFIED] codex/shorts-tts-headroom @ a41031b` plus design commit `b8131d9`.
+- Second L4 result: `[VERIFIED]` v3 generated 14.365 seconds of speech and 15.965 seconds including silence; the 15.05-second guard rejected it before FFmpeg. The measured self-aware and CTA clips totalled 8.036 seconds.
+- Current milestone: `[VERIFIED]` all four self-aware/CTA variants are shortened under `deadpan-ai-v4`; real MeloTTS duration and final video quality remain `[UNVERIFIED]` until the follow-up PR is deployed and E2E is rerun.
