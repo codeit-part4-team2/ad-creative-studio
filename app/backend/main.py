@@ -1,12 +1,11 @@
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-
 from app.backend.api import (
+    auth,
     download,
     exposure,
     generations,
@@ -17,7 +16,7 @@ from app.backend.api import (
     videos,
     youtube,
 )
-from app.backend.services import store
+from app.backend.services import auth as auth_service, store
 from app.backend.services.video_workflow import build_default_video_workflow
 
 
@@ -49,6 +48,12 @@ _warn_if_env_file_not_actually_loaded()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     store.load()
+    # 인증 도입 전(customer_id 없던 시절) 데이터는 store.load()가 LEGACY로 배정한다 -
+    # 그 데이터를 실제로 볼 수 있는 계정이 있어야 하므로 서버 시작 시 자동 생성한다.
+    if "LEGACY" not in auth_service.CUSTOMERS:
+        auth_service.create_customer(
+            "LEGACY", "레거시 데이터(인증 도입 전)", os.getenv("LEGACY_PIN", "000000")
+        )
     app.state.video_workflow = build_default_video_workflow()
     yield
 
@@ -77,15 +82,19 @@ app.include_router(exposure.router)
 app.include_router(download.router)
 app.include_router(videos.router)
 app.include_router(youtube.router)
+app.include_router(auth.router)
+app.include_router(auth.admin_router)
 
 Path("data/uploads").mkdir(parents=True, exist_ok=True)
 Path("data/outputs").mkdir(parents=True, exist_ok=True)
 Path("data/videos").mkdir(parents=True, exist_ok=True)
 app.mount("/files", StaticFiles(directory="data"), name="files")
 
+
 @app.get("/")
 async def root():
     return {"message": "소형가전 광고 생성 서비스 API"}
+
 
 @app.get("/health")
 async def health():

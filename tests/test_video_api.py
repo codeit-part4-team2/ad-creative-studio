@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from app.backend.api import videos, youtube
-from app.backend.services import store
+from app.backend.services import store, auth
 from app.backend.services.comic_script import ComicLineKind
 from app.backend.services.scene_images import SceneImage, SceneImageSet
 from app.backend.services.storyboard import Storyboard, StoryboardNotFound, StoryboardScene
@@ -135,8 +135,22 @@ def api(tmp_path, monkeypatch):
     app.include_router(videos.router)
     app.include_router(youtube.router)
     client = TestClient(app, raise_server_exceptions=False)
+
+    # 인증(customer_id+PIN) 도입 후 videos.py 4개 endpoint가 전부 로그인+소유권
+    # 확인을 요구한다. 이 파일의 테스트들은 PRODUCTS[product_id].customer_id로
+    # 소유권을 대조하므로, storyboard_builder가 쓰는 product_id="prd_1"을
+    # store.PRODUCTS에도 같은 고객사로 등록해둬야 소유권 확인을 통과한다.
+    auth.CUSTOMERS.clear()
+    auth.SESSIONS.clear()
+    auth.create_customer("CUS-TEST", "테스트상사", "000000")
+    token = auth.verify_login("CUS-TEST", "000000")
+    client.headers["Authorization"] = f"Bearer {token}"
+    store.PRODUCTS["prd_1"] = {"customer_id": "CUS-TEST"}
+
     yield client, workflow, publisher
     store.reset_for_tests()
+    auth.CUSTOMERS.clear()
+    auth.SESSIONS.clear()
 
 
 def _create_completed(api):

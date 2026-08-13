@@ -9,8 +9,9 @@ import { ResultReceiptCard } from "@/components/creative/result-card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Star, Download } from "lucide-react";
+import { RequireAuth } from "@/components/auth/require-auth";
 
-export default function HistoryPage() {
+function HistoryContent() {
   const [favoriteOnly, setFavoriteOnly] = useState(false);
   const queryClient = useQueryClient();
 
@@ -81,5 +82,13 @@ export default function HistoryPage() {
         ))}
       </div>
     </div>
+  );
+}
+
+export default function HistoryPage() {
+  return (
+    <RequireAuth>
+      <HistoryContent />
+    </RequireAuth>
   );
 }

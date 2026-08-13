@@ -1,36 +1,36 @@
 @import "tailwindcss";
 
 /*
-  디자인 토큰 — "공방의 밤" 콘셉트
-  실제 생성 광고 이미지는 톤 4종(감성/모던/실용/프리미엄)이 제각각 화려해서,
-  UI 자체는 차분한 배경 역할을 하고 콘텐츠가 돋보이게 한다.
-  색은 소형가전(발열체 구리, 낮은 채도 세이지)에서, 데이터/라벨은 영수증·주문서
-  질감(모노스페이스)에서 따왔다.
+  디자인 토큰 v2 — "AD STUDIO" (밝은 미니멀, SaaS 톤)
+  실제 생성 광고 이미지(대리석+골드 premium, 각기 다른 4개 톤)가 화면의 주인공이 되도록
+  UI는 화이트/오프화이트 + 블랙 위주로 절제하고, 브랜드 accent(구리색)는 CTA·현재 단계
+  표시 등 정말 필요한 곳에만 쓴다. 어두운 "공방의 밤" 톤에서 전환 - 이전 버전은
+  "AI 모델 테스트용 관리자 도구"처럼 보였는데, 이번 방향은 실제 소상공인이 돈을 내고
+  쓰는 광고 제작 SaaS처럼 보이는 걸 목표로 한다.
 */
 :root {
-  --ink: #14171c;
-  --ink-soft: #1c2028;
-  --porcelain: #efeae2;
-  --porcelain-dim: #e3ddd2;
-  --copper: #b5652d;
-  --copper-soft: #d98a52;
-  --sage: #6b7a63;
-  --sage-soft: #8a9a82;
-  --slate: #5b6472;
+  --paper: #f7f7f5;
+  --card-bg: #ffffff;
+  --ink: #111111;
+  --ink-soft: #777777;
+  --hairline: #e4e4e0;
+  --copper: #c76a28;
+  --copper-soft: #dc8a4e;
+  --success: #4a7c59;
   --danger: #b3462c;
 
-  --background: var(--ink);
-  --foreground: var(--porcelain);
-  --card: var(--ink-soft);
-  --card-foreground: var(--porcelain);
-  --border: #2a2f38;
-  --muted: #262b33;
-  --muted-foreground: #9aa1ac;
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--card-bg);
+  --card-foreground: var(--ink);
+  --border: var(--hairline);
+  --muted: #efefec;
+  --muted-foreground: var(--ink-soft);
   --accent: var(--copper);
-  --accent-foreground: var(--ink);
-  --success: var(--sage);
+  --accent-foreground: #ffffff;
+  --success-foreground: #ffffff;
   --destructive: var(--danger);
-  --radius: 0.625rem;
+  --radius: 0.5rem;
 }
 
 @theme inline {
@@ -45,17 +45,15 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
-  --color-primary: var(--copper);
-  --color-primary-foreground: var(--ink);
+  --color-primary: var(--ink);
+  --color-primary-foreground: #ffffff;
   --color-secondary: var(--muted);
-  --color-secondary-foreground: var(--porcelain);
+  --color-secondary-foreground: var(--ink);
   --color-success: var(--success);
-  --color-success-foreground: var(--ink);
+  --color-success-foreground: var(--success-foreground);
   --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--porcelain);
+  --color-destructive-foreground: #ffffff;
   --color-copper: var(--copper);
-  --color-sage: var(--sage);
-  --color-slate: var(--slate);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -69,21 +67,22 @@ body {
   font-family: var(--font-sans);
 }
 
-/* 시그니처 요소: 영수증형 카드 — 점선 구분선 + 하단 절취선 느낌 */
-.receipt-card {
+/* 결과 카드 - 사진이 주인공, 텍스트는 최소한만 */
+.creative-card {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  position: relative;
+  overflow: hidden;
 }
-.receipt-divider {
-  border-top: 1px dashed var(--border);
-  margin: 0.75rem 0;
+
+/* 상단 스텝 진행바 - 현재 단계만 accent, 완료 단계는 검정 실선, 이후 단계는 회색 */
+.step-line {
+  height: 2px;
+  background: var(--border);
 }
-.receipt-tear {
-  background-image: radial-gradient(circle at 6px 0, transparent 6px, var(--background) 6.5px);
-  background-size: 12px 12px;
-  background-repeat: repeat-x;
-  height: 6px;
-  margin-top: -1px;
+.step-line--done {
+  background: var(--ink);
+}
+.step-line--current {
+  background: var(--copper);
 }
