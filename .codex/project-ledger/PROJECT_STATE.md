@@ -15,3 +15,4 @@
 - Base: `[VERIFIED] origin/main @ 603be34`, the squash merge commit for PR #22.
 - Branch: `[VERIFIED] codex/video-stage-logging`, created from the current remote main.
 - Current milestone: `[VERIFIED]` stage-aware render logs and traceback coverage are implemented locally; the VM failure's actual stage remains `[UNVERIFIED]` until this change is deployed and E2E is rerun.
+- VM process mode: `[VERIFIED]` no `ad-service-api.service`; test operation uses direct Uvicorn terminals (`app.backend.main` on 8000 and `model_server.main` on 8001). Both servers were stopped when reported, so live post-deploy log output remains `[UNVERIFIED]`.

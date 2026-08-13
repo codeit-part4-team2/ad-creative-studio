@@ -24,6 +24,7 @@ from app.backend.services.video_workflow import (
     WorkflowConflict,
     WorkflowNotFound,
     WorkflowValidation,
+    _track_render_stage,
     build_default_video_workflow,
 )
 from app.backend.services.youtube_publisher import PublishRejected, PublisherStatus
@@ -156,10 +157,15 @@ class FakePublisher:
 
 
 @pytest.fixture(autouse=True)
-def isolated_store(tmp_path, monkeypatch):
+def isolated_store(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr(store, "STORE_PATH", tmp_path / "store.json")
     store.reset_for_tests()
+    original_propagate = LOGGER.propagate
+    LOGGER.addHandler(caplog.handler)
+    LOGGER.propagate = False
     yield
+    LOGGER.removeHandler(caplog.handler)
+    LOGGER.propagate = original_propagate
     store.reset_for_tests()
 
 
@@ -451,6 +457,44 @@ def test_run_render_logs_failed_stage_with_traceback_and_safe_job_context(
     _assert_failed_stage_log(caplog, job=job, expected_stage=expected_stage)
 
 
+def test_run_render_logs_storyboard_failure_stage(tmp_path, board, caplog, monkeypatch):
+    service = _service(tmp_path, board)
+    job = service.create("res_1")
+
+    def fail_storyboard(_result_id):
+        raise RuntimeError("private storyboard detail")
+
+    monkeypatch.setattr(service, "_storyboard_builder", fail_storyboard)
+    with caplog.at_level("ERROR", logger=LOGGER.name):
+        service.run_render(job.video_job_id)
+
+    failed = service.get(job.video_job_id)
+    assert failed.render_status is RenderStatus.FAILED
+    assert "private storyboard detail" not in (failed.error_message or "")
+    _assert_failed_stage_log(caplog, job=job, expected_stage="storyboard")
+
+
+def test_run_render_logs_runtime_validation_failure_stage(tmp_path, board, caplog):
+    class UnavailableRenderer(FakeRenderer):
+        def validate_runtime(self) -> None:
+            raise RuntimeError("private runtime detail")
+
+    service = _service(tmp_path, board, renderer=UnavailableRenderer())
+    job = service.create("res_1")
+
+    with caplog.at_level("ERROR", logger=LOGGER.name):
+        service.run_render(job.video_job_id)
+
+    failed = service.get(job.video_job_id)
+    assert failed.render_status is RenderStatus.FAILED
+    assert "private runtime detail" not in (failed.error_message or "")
+    _assert_failed_stage_log(
+        caplog,
+        job=job,
+        expected_stage="runtime_validation",
+    )
+
+
 def test_run_render_logs_major_stage_start_and_completion(workflow, caplog):
     with caplog.at_level(
         "INFO",
@@ -483,14 +527,9 @@ def test_run_render_logs_major_stage_start_and_completion(workflow, caplog):
     assert all(record.video_job_id == job.video_job_id for record in completed_records)
 
 
-def test_render_stage_info_logs_are_visible_with_uvicorn_default_logging():
+def test_render_stage_info_logs_are_visible_without_server_specific_logging():
     probe = """
-import logging.config
-
-from uvicorn.config import LOGGING_CONFIG
-
-logging.config.dictConfig(LOGGING_CONFIG)
-
+import app.backend.main
 from app.backend.services.video_workflow import _track_render_stage
 
 with _track_render_stage(
@@ -512,6 +551,26 @@ with _track_render_stage(
     assert completed.returncode == 0
     assert "video render stage started stage=scene_images" in output
     assert "video render stage completed stage=scene_images" in output
+
+
+def test_track_render_stage_logs_its_own_failure(caplog):
+    with caplog.at_level("ERROR", logger=LOGGER.name):
+        with pytest.raises(RuntimeError, match="stage probe failed"):
+            with _track_render_stage(
+                stage="runtime_validation",
+                video_job_id="video_probe",
+                result_id="res_probe",
+            ):
+                raise RuntimeError("stage probe failed")
+
+    records = [
+        record
+        for record in caplog.records
+        if getattr(record, "render_event", None) == "failed"
+    ]
+    assert len(records) == 1
+    assert records[0].render_stage == "runtime_validation"
+    assert records[0].exc_info is not None
 
 
 def test_run_render_records_source_conflict_reason(tmp_path, board):

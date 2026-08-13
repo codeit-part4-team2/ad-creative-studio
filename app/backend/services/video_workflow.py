@@ -52,9 +52,7 @@ SLOT_WINDOWS = {
 }
 DEFAULT_FAILED_WORK_TTL_SECONDS = 7 * 24 * 60 * 60
 DEFAULT_FAILED_WORK_CLEANUP_INTERVAL_SECONDS = 60 * 60
-# Keep application stage logs on Uvicorn's configured error hierarchy so INFO
-# records are visible in the systemd journal without a separate log config.
-LOGGER = logging.getLogger(f"uvicorn.error.{__name__}")
+LOGGER = logging.getLogger("ad_creative_studio.video_workflow")
 
 
 class WorkflowError(RuntimeError):
@@ -85,6 +83,7 @@ def _track_render_stage(
         "video_job_id": video_job_id,
         "result_id": result_id,
     }
+    started_at = perf_counter()
     LOGGER.info(
         "video render stage started stage=%s video_job_id=%s result_id=%s",
         stage,
@@ -92,24 +91,45 @@ def _track_render_stage(
         result_id,
         extra={**context, "render_event": "started"},
     )
-    started_at = perf_counter()
-    yield
-    duration_ms = round((perf_counter() - started_at) * 1000)
-    LOGGER.info(
-        (
-            "video render stage completed stage=%s video_job_id=%s "
-            "result_id=%s duration_ms=%d"
-        ),
-        stage,
-        video_job_id,
-        result_id,
-        duration_ms,
-        extra={
-            **context,
-            "render_event": "completed",
-            "duration_ms": duration_ms,
-        },
-    )
+    try:
+        yield
+    except Exception as exc:
+        duration_ms = round((perf_counter() - started_at) * 1000)
+        LOGGER.exception(
+            (
+                "video render failed stage=%s video_job_id=%s "
+                "result_id=%s exception_type=%s duration_ms=%d"
+            ),
+            stage,
+            video_job_id,
+            result_id,
+            type(exc).__name__,
+            duration_ms,
+            extra={
+                **context,
+                "render_event": "failed",
+                "exception_type": type(exc).__name__,
+                "duration_ms": duration_ms,
+            },
+        )
+        raise
+    else:
+        duration_ms = round((perf_counter() - started_at) * 1000)
+        LOGGER.info(
+            (
+                "video render stage completed stage=%s video_job_id=%s "
+                "result_id=%s duration_ms=%d"
+            ),
+            stage,
+            video_job_id,
+            result_id,
+            duration_ms,
+            extra={
+                **context,
+                "render_event": "completed",
+                "duration_ms": duration_ms,
+            },
+        )
 
 
 def _sha256(path: Path) -> str:
@@ -368,10 +388,9 @@ class VideoWorkflowService:
                 )
                 self._persist_locked(processing)
 
-            render_stage = "storyboard"
             try:
                 with _track_render_stage(
-                    stage=render_stage,
+                    stage="storyboard",
                     video_job_id=video_job_id,
                     result_id=processing.result_id,
                 ):
@@ -379,18 +398,16 @@ class VideoWorkflowService:
                     if storyboard.source_fingerprint != processing.source_fingerprint:
                         raise WorkflowConflict("원본 광고가 변경되어 다시 생성해야 합니다")
 
-                render_stage = "runtime_validation"
                 with _track_render_stage(
-                    stage=render_stage,
+                    stage="runtime_validation",
                     video_job_id=video_job_id,
                     result_id=processing.result_id,
                 ):
                     self._renderer.validate_runtime()
                     self._tts_provider.validate_runtime()
 
-                render_stage = "scene_images"
                 with _track_render_stage(
-                    stage=render_stage,
+                    stage="scene_images",
                     video_job_id=video_job_id,
                     result_id=processing.result_id,
                 ):
@@ -404,9 +421,8 @@ class VideoWorkflowService:
                         output_dir=job_dir / "images",
                     )
 
-                render_stage = "tts"
                 with _track_render_stage(
-                    stage=render_stage,
+                    stage="tts",
                     video_job_id=video_job_id,
                     result_id=processing.result_id,
                 ):
@@ -424,9 +440,8 @@ class VideoWorkflowService:
                             "TTS 음성 프리셋이 장면별로 일치하지 않습니다"
                         )
 
-                render_stage = "ffmpeg_render"
                 with _track_render_stage(
-                    stage=render_stage,
+                    stage="ffmpeg_render",
                     video_job_id=video_job_id,
                     result_id=processing.result_id,
                 ):
@@ -437,23 +452,6 @@ class VideoWorkflowService:
                         output_path=self._video_dir / f"{video_job_id}.mp4",
                     )
             except Exception as exc:
-                LOGGER.exception(
-                    (
-                        "video render failed stage=%s video_job_id=%s "
-                        "result_id=%s exception_type=%s"
-                    ),
-                    render_stage,
-                    video_job_id,
-                    processing.result_id,
-                    type(exc).__name__,
-                    extra={
-                        "render_stage": render_stage,
-                        "render_event": "failed",
-                        "video_job_id": video_job_id,
-                        "result_id": processing.result_id,
-                        "exception_type": type(exc).__name__,
-                    },
-                )
                 if isinstance(exc, TTSRuntimeUnavailable):
                     error_message = "TTS 실행 환경이 준비되지 않았습니다"
                 elif isinstance(exc, VideoRuntimeUnavailable):

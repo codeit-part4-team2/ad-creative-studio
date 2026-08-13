@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from app.backend.logging_config import configure_application_logging
 from app.backend.api import (
     auth,
     download,
@@ -18,6 +19,9 @@ from app.backend.api import (
 )
 from app.backend.services import auth as auth_service, store
 from app.backend.services.video_workflow import build_default_video_workflow
+
+
+configure_application_logging()
 
 
 # .env 로딩은 코드(load_dotenv())가 아니라 실행 명령(uvicorn --env-file .env)에서

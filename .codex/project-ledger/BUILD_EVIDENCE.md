@@ -24,3 +24,5 @@
 | 2026-08-13 KST | Render observability full suite | `python -m pytest -q` | `[VERIFIED] 308 passed in 40.62s` | Local `codex/video-stage-logging` worktree before commit |
 | 2026-08-13 KST | Render observability static checks | Ruff on changed Python files plus `git diff --check` | `[VERIFIED] exit 0` | Local `codex/video-stage-logging` worktree before commit |
 | 2026-08-13 KST | Uvicorn journal visibility regression and final suite | subprocess probe, `python -m pytest -q`, Ruff, and `git diff --check` | `[VERIFIED] probe failed before logger routing fix; 309 passed in 39.31s after fix; static checks exited 0` | PR #25 follow-up before second push |
+| 2026-08-13 KST | Server-independent logging review fix | subprocess and context-manager RED/GREEN tests | `[VERIFIED] 2 expected failures before implementation; both passed after application logger and self-reporting stage context were added` | PR #25 PM review response |
+| 2026-08-13 KST | PM review final suite | `python -m pytest -q` | `[VERIFIED] 312 passed in 54.55s` | Includes all five failure stages and server-independent stderr visibility |
