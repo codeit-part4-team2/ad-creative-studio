@@ -17,6 +17,10 @@ MELOTTS_CONFIG_SHA256 = "74543376976dfadde45ba34336fa79c7e95509f43a7c2e701b22c0f
 MELOTTS_CHECKPOINT_SHA256 = "48e3ff3fd0b5348e095f0468e60ae727507564100f58142ef3a922ead6e0a4d0"
 
 
+class TTSRuntimeUnavailable(RuntimeError):
+    """The configured TTS runtime cannot be loaded safely."""
+
+
 @dataclass(frozen=True, slots=True)
 class DeadpanVoicePreset:
     key: str = "deadpan-ai-v1"
@@ -36,6 +40,8 @@ class TTSAudio:
 
 
 class TTSProvider(Protocol):
+    def validate_runtime(self) -> None: ...
+
     def synthesize(self, spoken_text: str, output_path: Path) -> TTSAudio: ...
 
 
@@ -143,6 +149,18 @@ class MeloTTSProvider:
                 factory = self._engine_factory or self._load_default_engine
                 self._engine = factory()
         return self._engine
+
+    def validate_runtime(self) -> None:
+        """Load and validate the pinned CPU engine before GPU-backed scene work."""
+        try:
+            engine = self._get_engine()
+            self._speaker_id(engine)
+        except TTSRuntimeUnavailable:
+            raise
+        except Exception as exc:
+            raise TTSRuntimeUnavailable(
+                "MeloTTS runtime validation failed"
+            ) from exc
 
     @staticmethod
     def _speaker_id(engine: Any) -> int:

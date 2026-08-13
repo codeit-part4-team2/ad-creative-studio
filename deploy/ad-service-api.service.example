@@ -1,0 +1,18 @@
+[Unit]
+Description=Ad Creative Studio API and CPU MeloTTS worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=REPLACE_VM_USER
+WorkingDirectory=REPLACE_REPO_ROOT
+EnvironmentFile=REPLACE_RUNTIME_ROOT/backend.env
+ExecStart=REPLACE_RUNTIME_ROOT/backend-venv/bin/uvicorn app.backend.main:app --host 0.0.0.0 --port 8000 --workers 1
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

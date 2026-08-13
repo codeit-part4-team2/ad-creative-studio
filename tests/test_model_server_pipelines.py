@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
+from app.backend.services.scene_images import NEGATIVE_PROMPT
 from model_server.config import InferenceConfig, InferenceProfile
 from model_server.pipelines import (
     DiffusersGenerationPipeline,
@@ -44,9 +45,13 @@ def _artifacts() -> ProductArtifacts:
 def test_background_prompt_requests_an_empty_lower_center_product_area() -> None:
     prompt = build_background_prompt("warm morning cafe, natural light")
 
+    assert prompt.startswith("text-free background, no letters, numbers, signs, or UI")
     assert "warm morning cafe, natural light" in prompt
     assert "empty product photography scene" in prompt
     assert "clear lower-center placement area" in prompt
+    assert "unobstructed background behind the placement area" in prompt
+    assert "small peripheral props only" in prompt
+    assert "no dominant object behind the product area" in prompt
 
 
 def test_fast_pipeline_is_lazy_and_uses_four_step_lcm_parameters() -> None:
@@ -70,7 +75,7 @@ def test_fast_pipeline_is_lazy_and_uses_four_step_lcm_parameters() -> None:
     result = pipeline.generate(
         cache_key="product:1",
         prompt="warm cafe",
-        negative_prompt="blurry",
+        negative_prompt=NEGATIVE_PROMPT,
         artifacts=_artifacts(),
     )
 
@@ -85,6 +90,16 @@ def test_fast_pipeline_is_lazy_and_uses_four_step_lcm_parameters() -> None:
     assert result.image.size == (16, 16)
     assert "image" not in fake.calls[0]
     assert "ip_adapter_image" not in fake.calls[0]
+    background_negative = str(fake.calls[0]["negative_prompt"])
+    terms = [term.strip() for term in background_negative.split(",") if term.strip()]
+    assert len(terms) == len({term.casefold() for term in terms})
+    assert len(terms) <= 28
+    assert "text" in terms
+    assert "signboard" in terms
+    assert "wristwatch" in background_negative
+    assert "large circular prop" in background_negative
+    assert "softbox" in background_negative
+    assert "foreground product" in background_negative
 
 
 def test_explicit_load_is_idempotent() -> None:

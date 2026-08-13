@@ -1,5 +1,6 @@
 import pytest
 
+from app.backend.services.scene_images import NEGATIVE_PROMPT
 from app.prompt.builder import build
 from app.prompt.schemas import PromptRequest, PromotionInfo
 from app.prompt.templates import TIME_SLOT_TEMPLATES, TONE_TEMPLATES
@@ -63,3 +64,38 @@ def test_headline_and_subcopy_respect_length_limits():
     result = build(req)
     assert len(result.headline) <= 14
     assert len(result.subcopy) <= 28
+
+
+def test_premium_prompt_uses_a_restrained_set_without_watch_like_hero_props():
+    result = build(PromptRequest(product_name="air purifier", tone="premium"))
+
+    assert "matte charcoal wall" in result.image_prompt
+    assert "stone plinth" in result.image_prompt
+    assert "thin linear gold light" in result.image_prompt
+    assert "restrained premium studio" in result.image_prompt
+    assert "luxurious" not in result.image_prompt
+
+
+def test_negative_prompt_rejects_competing_objects_and_photography_equipment():
+    result = build(PromptRequest(product_name="air purifier", tone="premium"))
+
+    assert result.negative_prompt == NEGATIVE_PROMPT
+    rejected_objects = (
+        "text",
+        "pseudo-text",
+        "numbers",
+        "price tag",
+        "signboard",
+        "poster",
+        "user interface",
+        "wristwatch",
+        "clock",
+        "timer",
+        "dial",
+        "duplicate product",
+        "large circular prop",
+        "softbox",
+        "tripod",
+        "studio light",
+    )
+    assert all(item in result.negative_prompt for item in rejected_objects)

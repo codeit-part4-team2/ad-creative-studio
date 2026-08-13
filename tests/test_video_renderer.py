@@ -6,6 +6,7 @@ import wave
 from array import array
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from app.backend.services.comic_script import ComicLineKind
@@ -16,6 +17,7 @@ from app.backend.services.video_renderer import (
     CAPTION_LAYOUT_VERSION,
     DEADPAN_SILENCE_SEC,
     RushHourVideoRenderer,
+    _draw_caption,
     fit_inside,
 )
 
@@ -104,6 +106,46 @@ def test_fit_inside_preserves_entire_source_aspect_ratio():
     assert width / height == 1080 / 1350
 
 
+@pytest.mark.parametrize("background", ("white", "#E8E8E8", "#0B1020"))
+def test_caption_is_plain_and_readable_without_shadow_or_accent(
+    monkeypatch,
+    background,
+):
+    canvas = Image.new("RGBA", (1080, 1920), background)
+    scene = StoryboardScene(
+        "주요 특징은 빠른 조리입니다.",
+        2.0,
+        kind=ComicLineKind.BENEFIT,
+        image_purpose="benefit",
+        accent_terms=("빠른 조리",),
+    )
+
+    def reject_blur(*_args, **_kwargs):
+        raise AssertionError("caption shadow blur must not be used")
+
+    def reject_box(*_args, **_kwargs):
+        raise AssertionError("caption box must not be used")
+
+    monkeypatch.setattr(
+        "app.backend.services.video_renderer.ImageFilter.GaussianBlur",
+        reject_blur,
+    )
+    monkeypatch.setattr("PIL.ImageDraw.ImageDraw.rectangle", reject_box)
+    monkeypatch.setattr("PIL.ImageDraw.ImageDraw.rounded_rectangle", reject_box)
+
+    _draw_caption(
+        canvas,
+        scene=scene,
+        font_path=Path("assets/fonts/NanumGothic-Regular.ttf"),
+    )
+
+    pixels = set(canvas.crop((0, 1500, 1080, 1920)).get_flattened_data())
+    assert (248, 250, 252, 255) in pixels
+    assert (18, 24, 38, 255) in pixels
+    assert (231, 213, 165, 255) not in pixels
+    assert CAPTION_LAYOUT_VERSION == "plain-outline-v2"
+
+
 def test_renderer_outputs_verified_vertical_mp4_with_voiced_aac(tmp_path):
     scene_images = _scene_images(tmp_path)
     speech_audio = tuple(
@@ -155,3 +197,42 @@ def test_renderer_outputs_verified_vertical_mp4_with_voiced_aac(tmp_path):
     assert streams["video"]["height"] == 1920
     assert streams["audio"]["codec_name"] == "aac"
     assert DEADPAN_SILENCE_SEC == 0.5
+
+
+def test_renderer_rejects_invalid_estimated_duration_before_ffmpeg(tmp_path):
+    class NoFfmpegRenderer(RushHourVideoRenderer):
+        def __init__(self) -> None:
+            super().__init__(font_path=Path("assets/fonts/NanumGothic-Regular.ttf"))
+            self.run_count = 0
+
+        def _run(self, args: list[str]) -> None:
+            self.run_count += 1
+            raise AssertionError(f"FFmpeg must not run for invalid duration: {args}")
+
+    renderer = NoFfmpegRenderer()
+    speech_audio = tuple(
+        _write_voice_wav(tmp_path / f"short-{index}.wav", duration_sec=0.1)
+        for index in range(4)
+    )
+
+    with pytest.raises(RuntimeError, match="10~15"):
+        renderer.render(
+            _storyboard(tmp_path),
+            scene_images=_scene_images(tmp_path),
+            speech_audio=speech_audio,
+            output_path=tmp_path / "must-not-exist.mp4",
+        )
+
+    assert renderer.run_count == 0
+    assert not (tmp_path / "must-not-exist.mp4").exists()
+
+
+def test_renderer_runtime_validation_rejects_missing_ffmpeg_before_render(tmp_path):
+    renderer = RushHourVideoRenderer(
+        font_path=Path("assets/fonts/NanumGothic-Regular.ttf"),
+        ffmpeg_bin=str(tmp_path / "missing-ffmpeg"),
+        ffprobe_bin=str(tmp_path / "missing-ffprobe"),
+    )
+
+    with pytest.raises(RuntimeError, match="FFmpeg"):
+        renderer.validate_runtime()

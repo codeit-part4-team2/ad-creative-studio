@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from PIL import Image, ImageDraw
 
 from app.backend.services.comic_script import ComicLineKind
@@ -30,6 +31,57 @@ def test_caption_layout_is_at_most_two_lines():
     assert 1 <= len(lines) <= 2
 
 
+@pytest.mark.parametrize(
+    ("text", "expected_lines"),
+    (
+        (
+            "휴대용 선풍기, 출근길에 짧게 소개할게요.",
+            ["휴대용 선풍기, 출근길에", "짧게 소개할게요."],
+        ),
+        (
+            "주요 특징을 말씀드리면, USB-C 충전입니다.",
+            ["주요 특징을 말씀드리면,", "USB-C 충전입니다."],
+        ),
+    ),
+)
+def test_caption_wraps_at_spaces_without_splitting_words(text, expected_lines):
+    canvas = Image.new("RGB", (1080, 1920), "white")
+    draw = ImageDraw.Draw(canvas)
+
+    _font, lines, _spacing = _font_and_lines(
+        draw,
+        text=text,
+        font_path=FONT_PATH,
+        max_width=900,
+        max_height=210,
+    )
+
+    assert lines == expected_lines
+
+
+def test_overlong_product_caption_uses_two_line_ellipsis_instead_of_failing():
+    canvas = Image.new("RGB", (1080, 1920), "white")
+    draw = ImageDraw.Draw(canvas)
+
+    font, lines, _spacing = _font_and_lines(
+        draw,
+        text=(
+            "퇴근 중이시라면 프리미엄 초경량 무선 노이즈캔슬링 스마트 "
+            "블루투스 이어폰 세트만 보고 가세요."
+        ),
+        font_path=FONT_PATH,
+        max_width=900,
+        max_height=210,
+    )
+
+    assert len(lines) == 2
+    assert lines[-1].endswith("…")
+    assert all(
+        draw.textbbox((0, 0), line, font=font)[2] <= 900
+        for line in lines
+    )
+
+
 def test_caption_has_no_black_panel_behind_text():
     source = Image.new("RGB", (768, 768), "white")
     scene = StoryboardScene(
@@ -42,7 +94,6 @@ def test_caption_has_no_black_panel_behind_text():
     frame = _make_scene_frame(
         source=source,
         scene=scene,
-        tone="premium",
         font_path=FONT_PATH,
         crop_variant="intro",
     )

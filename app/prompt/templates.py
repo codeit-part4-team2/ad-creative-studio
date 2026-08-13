@@ -28,9 +28,9 @@ TONE_TEMPLATES = {
     },
     "premium": {
         "label": "프리미엄",
-        "lighting": "dark background, gold rim light",
-        "background": "dark studio, gold highlight",
-        "mood": "premium, luxurious",
+        "lighting": "soft controlled key light, thin linear gold light",
+        "background": "matte charcoal wall, simple stone plinth",
+        "mood": "restrained premium studio, quiet and precise",
     },
 }
 

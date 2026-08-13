@@ -26,6 +26,9 @@ client = TestClient(app)
 
 
 class _ApiTestRenderer:
+    def validate_runtime(self) -> None:
+        return None
+
     def render(self, storyboard, *, scene_images, speech_audio, output_path):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"test-video")
@@ -62,6 +65,9 @@ class _ApiTestSceneProvider:
 
 
 class _ApiTestTTSProvider:
+    def validate_runtime(self) -> None:
+        return None
+
     def synthesize(self, spoken_text: str, output_path: Path) -> TTSAudio:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(spoken_text.encode("utf-8"))

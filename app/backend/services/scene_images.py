@@ -9,13 +9,11 @@ from PIL import Image
 
 from app.backend.services import model_server_client
 from app.backend.services.storyboard import Storyboard
+from app.prompt.safety import DEFAULT_NEGATIVE_PROMPT
 
 
 MAX_SCENE_PIXELS = 20_000_000
-NEGATIVE_PROMPT = (
-    "text, letters, logo, watermark, duplicate product, extra appliance, "
-    "distorted object, blurry, low resolution"
-)
+NEGATIVE_PROMPT = DEFAULT_NEGATIVE_PROMPT
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,7 +59,11 @@ def _scene_prompt(*, purpose: str, tone: str, time_slot: str) -> str:
     }[purpose]
     return (
         f"9:16 vertical {tone} commercial background for {time_context}, "
-        f"{purpose_context}, background only, no product, no typography"
+        f"{purpose_context}, one unobstructed staging area, "
+        "small peripheral props only, all props confined to the far edges, "
+        "plain uninterrupted wall behind the staging area, "
+        "blank unmarked surfaces, background only, no product, no typography, "
+        "no readable text or symbols anywhere"
     )
 
 

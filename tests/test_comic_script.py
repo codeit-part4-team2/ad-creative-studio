@@ -5,23 +5,38 @@ from app.backend.services.comic_script import (
 )
 
 
-def test_script_has_one_self_aware_beat_and_factual_cta():
-    script = build_comic_script(
-        product_name="테스트 전자레인지",
+def test_script_has_one_natural_self_aware_beat_and_factual_cta():
+    first = build_comic_script(
+        product_name="휴대용 선풍기",
+        selling_points=("간편 조리",),
+        time_slot="commute_am",
+        lexicon=PronunciationLexicon({}),
+    )
+    second = build_comic_script(
+        product_name="휴대용 선풍기",
         selling_points=("간편 조리",),
         time_slot="commute_am",
         lexicon=PronunciationLexicon({}),
     )
 
-    assert [line.kind for line in script.lines] == [
+    assert first == second
+    assert first.version == "deadpan-ai-v2"
+    assert [line.kind for line in first.lines] == [
         ComicLineKind.INTRO,
         ComicLineKind.SELF_AWARE,
         ComicLineKind.BENEFIT,
         ComicLineKind.CTA,
     ]
-    assert sum(line.kind is ComicLineKind.SELF_AWARE for line in script.lines) == 1
-    assert script.lines[-1].display_text.endswith("확인해 보세요.")
-    assert all("할인" not in line.display_text for line in script.lines)
+    self_aware = next(
+        line for line in first.lines if line.kind is ComicLineKind.SELF_AWARE
+    )
+    assert self_aware.display_text == (
+        "광고라서 칭찬은 해야 합니다. 과장은 안 하겠습니다."
+    )
+    assert first.lines[-1].display_text == (
+        "필요하셨다면 확인해 보세요. 저는 계속 여기 있겠습니다."
+    )
+    assert all("할인" not in line.display_text for line in first.lines)
 
 
 def test_script_uses_only_one_stored_selling_point():
@@ -35,8 +50,9 @@ def test_script_uses_only_one_stored_selling_point():
     benefit = next(
         line for line in script.lines if line.kind is ComicLineKind.BENEFIT
     )
-    assert benefit.display_text == "주요 특징은 USB-C 충전입니다."
-    assert benefit.spoken_text == "주요 특징은 유에스비 씨 충전입니다."
+    assert benefit.display_text == "주요 특징을 말씀드리면, USB-C 충전입니다."
+    assert benefit.spoken_text == "주요 특징을 말씀드리면, 유에스비 씨 충전입니다."
+    assert all("8시간 사용" not in line.display_text for line in script.lines)
 
 
 def test_unknown_ascii_or_number_pronunciation_requires_review():

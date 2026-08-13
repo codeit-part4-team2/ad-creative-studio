@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -18,17 +19,15 @@ from app.backend.services.tts_provider import TTSAudio
 VIDEO_WIDTH = 1080
 VIDEO_HEIGHT = 1920
 VIDEO_FPS = 30
-CAPTION_LAYOUT_VERSION = "bright-outline-v1"
+CAPTION_LAYOUT_VERSION = "plain-outline-v2"
 BASE_SILENCE_SEC = 0.1
 DEADPAN_SILENCE_SEC = 0.5
+MIN_VIDEO_DURATION_SEC = 9.95
+MAX_VIDEO_DURATION_SEC = 15.05
 
-TONE_ACCENTS = {
-    "emotional": "#FFD2C2",
-    "modern": "#A8E6FF",
-    "practical": "#FFF08A",
-    "premium": "#E7D5A5",
-}
 
+class VideoRuntimeUnavailable(RuntimeError):
+    pass
 
 @dataclass(frozen=True, slots=True)
 class RenderResult:
@@ -52,6 +51,12 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _scene_silence_sec(scene: StoryboardScene) -> float:
+    if scene.kind is ComicLineKind.SELF_AWARE:
+        return DEADPAN_SILENCE_SEC
+    return BASE_SILENCE_SEC
+
+
 def fit_inside(
     source_size: tuple[int, int],
     bounds: tuple[int, int],
@@ -70,19 +75,48 @@ def _wrap_text(
     font: ImageFont.FreeTypeFont,
     max_width: int,
 ) -> list[str]:
-    lines: list[str] = []
-    for paragraph in text.splitlines() or [""]:
+    def fits(value: str) -> bool:
+        bbox = draw.textbbox((0, 0), value, font=font)
+        return bbox[2] - bbox[0] <= max_width
+
+    def split_oversized_word(word: str) -> list[str]:
+        chunks: list[str] = []
         current = ""
-        for character in paragraph:
+        for character in word:
             candidate = current + character
-            bbox = draw.textbbox((0, 0), candidate, font=font)
-            if current and bbox[2] - bbox[0] > max_width:
-                lines.append(current.rstrip())
-                current = character.lstrip()
+            if current and not fits(candidate):
+                chunks.append(current)
+                current = character
             else:
                 current = candidate
-        lines.append(current.rstrip())
-    return [line for line in lines if line]
+        if current:
+            chunks.append(current)
+        return chunks
+
+    lines: list[str] = []
+    for paragraph in text.splitlines() or [""]:
+        words = paragraph.split()
+        if not words:
+            continue
+        current = ""
+        for word in words:
+            candidate = f"{current} {word}" if current else word
+            if fits(candidate):
+                current = candidate
+                continue
+
+            if current:
+                lines.append(current)
+
+            if fits(word):
+                current = word
+            else:
+                chunks = split_oversized_word(word)
+                lines.extend(chunks[:-1])
+                current = chunks[-1]
+        if current:
+            lines.append(current)
+    return lines
 
 
 def _font_and_lines(
@@ -93,20 +127,44 @@ def _font_and_lines(
     max_width: int,
     max_height: int,
 ) -> tuple[ImageFont.FreeTypeFont, list[str], int]:
+    fallback: tuple[ImageFont.FreeTypeFont, list[str], int] | None = None
     for size in range(78, 41, -2):
         font = ImageFont.truetype(str(font_path), size)
         lines = _wrap_text(draw, text, font, max_width)
         spacing = max(10, size // 5)
+        fallback = (font, lines, spacing)
         bbox = draw.multiline_textbbox(
             (0, 0),
             "\n".join(lines),
             font=font,
             spacing=spacing,
             align="center",
-            stroke_width=3,
+            stroke_width=2,
         )
         if bbox[3] - bbox[1] <= max_height and 1 <= len(lines) <= 2:
             return font, lines, spacing
+
+    if fallback is not None:
+        font, lines, spacing = fallback
+        if len(lines) > 2:
+            visible_lines = lines[:2]
+            final_words = visible_lines[-1].split()
+            while final_words:
+                candidate = f"{' '.join(final_words)}…"
+                bbox = draw.textbbox((0, 0), candidate, font=font, stroke_width=2)
+                if bbox[2] - bbox[0] <= max_width:
+                    visible_lines[-1] = candidate
+                    return font, visible_lines, spacing
+                final_words.pop()
+
+            final_line = visible_lines[-1]
+            while final_line:
+                candidate = f"{final_line}…"
+                bbox = draw.textbbox((0, 0), candidate, font=font, stroke_width=2)
+                if bbox[2] - bbox[0] <= max_width:
+                    visible_lines[-1] = candidate
+                    return font, visible_lines, spacing
+                final_line = final_line[:-1]
     raise ValueError("자막이 2줄 안전 영역 안에 들어가지 않습니다")
 
 
@@ -114,7 +172,6 @@ def _draw_caption(
     canvas: Image.Image,
     *,
     scene: StoryboardScene,
-    tone: str,
     font_path: Path,
 ) -> None:
     base_draw = ImageDraw.Draw(canvas, "RGBA")
@@ -125,7 +182,7 @@ def _draw_caption(
         max_width=900,
         max_height=210,
     )
-    line_boxes = [base_draw.textbbox((0, 0), line, font=font, stroke_width=3) for line in lines]
+    line_boxes = [base_draw.textbbox((0, 0), line, font=font, stroke_width=2) for line in lines]
     line_heights = [box[3] - box[1] for box in line_boxes]
     block_height = sum(line_heights) + spacing * (len(lines) - 1)
     if scene.kind in {ComicLineKind.INTRO, ComicLineKind.SELF_AWARE}:
@@ -133,54 +190,29 @@ def _draw_caption(
     else:
         current_y = VIDEO_HEIGHT - 145 - block_height
 
-    shadow = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    shadow_draw = ImageDraw.Draw(shadow, "RGBA")
     positions: list[tuple[float, float]] = []
     for line, line_height in zip(lines, line_heights, strict=True):
         line_width = base_draw.textlength(line, font=font)
         line_x = (VIDEO_WIDTH - line_width) / 2
         positions.append((line_x, current_y))
-        shadow_draw.text(
-            (line_x + 5, current_y + 7),
-            line,
-            font=font,
-            fill=(0, 0, 0, 210),
-            stroke_width=5,
-            stroke_fill=(0, 0, 0, 210),
-        )
         current_y += line_height + spacing
-    canvas.alpha_composite(shadow.filter(ImageFilter.GaussianBlur(radius=7)))
 
     draw = ImageDraw.Draw(canvas, "RGBA")
-    accent_term = scene.accent_terms[0] if scene.accent_terms else ""
-    accent_color = TONE_ACCENTS.get(tone, "#FFFFFF")
     for line, (line_x, line_y) in zip(lines, positions, strict=True):
         draw.text(
             (line_x, line_y),
             line,
             font=font,
             fill="#F8FAFC",
-            stroke_width=3,
-            stroke_fill=(18, 24, 38, 245),
+            stroke_width=2,
+            stroke_fill="#121826",
         )
-        if accent_term and accent_term in line:
-            prefix, _separator, _suffix = line.partition(accent_term)
-            accent_x = line_x + draw.textlength(prefix, font=font)
-            draw.text(
-                (accent_x, line_y),
-                accent_term,
-                font=font,
-                fill=accent_color,
-                stroke_width=3,
-                stroke_fill=(18, 24, 38, 245),
-            )
 
 
 def _make_scene_frame(
     *,
     source: Image.Image,
     scene: StoryboardScene,
-    tone: str,
     font_path: Path,
     crop_variant: str,
 ) -> Image.Image:
@@ -210,7 +242,7 @@ def _make_scene_frame(
         foreground_y = 350 + (1220 - foreground.height) // 2
     foreground_x = (VIDEO_WIDTH - foreground.width) // 2
     canvas.alpha_composite(foreground, (foreground_x, foreground_y))
-    _draw_caption(canvas, scene=scene, tone=tone, font_path=font_path)
+    _draw_caption(canvas, scene=scene, font_path=font_path)
     return canvas.convert("RGB")
 
 
@@ -243,6 +275,22 @@ class RushHourVideoRenderer:
         self._ffmpeg_bin = ffmpeg_bin
         self._ffprobe_bin = ffprobe_bin
         self._preset = preset
+
+    def validate_runtime(self) -> None:
+        if not self._font_path.is_file():
+            raise VideoRuntimeUnavailable("한글 폰트 파일을 찾을 수 없습니다")
+        missing = [
+            label
+            for label, executable in (
+                ("FFmpeg", self._ffmpeg_bin),
+                ("ffprobe", self._ffprobe_bin),
+            )
+            if shutil.which(executable) is None
+        ]
+        if missing:
+            raise VideoRuntimeUnavailable(
+                f"{', '.join(missing)} 실행 파일을 찾을 수 없습니다"
+            )
 
     def _run(self, args: list[str]) -> None:
         completed = subprocess.run(
@@ -399,7 +447,7 @@ class RushHourVideoRenderer:
         if (metadata["width"], metadata["height"]) != (VIDEO_WIDTH, VIDEO_HEIGHT):
             raise RuntimeError("완성 영상 해상도가 1080x1920이 아닙니다")
         duration = float(metadata["duration_sec"])
-        if not 9.95 <= duration <= 15.05:
+        if not MIN_VIDEO_DURATION_SEC <= duration <= MAX_VIDEO_DURATION_SEC:
             raise RuntimeError("완성 영상 길이가 10~15초 범위를 벗어났습니다")
         if metadata["video_codec"] != "h264":
             raise RuntimeError("완성 영상 코덱이 H.264가 아닙니다")
@@ -422,6 +470,22 @@ class RushHourVideoRenderer:
             aggregate.update(audio.sha256.encode("ascii"))
         return aggregate.hexdigest()
 
+    @staticmethod
+    def _validate_estimated_duration(
+        storyboard: Storyboard,
+        speech_audio: tuple[TTSAudio, ...],
+    ) -> None:
+        estimated_duration = sum(
+            audio.duration_sec + 2 * _scene_silence_sec(scene)
+            for scene, audio in zip(
+                storyboard.scenes,
+                speech_audio,
+                strict=True,
+            )
+        )
+        if not MIN_VIDEO_DURATION_SEC <= estimated_duration <= MAX_VIDEO_DURATION_SEC:
+            raise RuntimeError("완성 영상 길이가 10~15초 범위를 벗어났습니다")
+
     def render(
         self,
         storyboard: Storyboard,
@@ -430,9 +494,9 @@ class RushHourVideoRenderer:
         speech_audio: tuple[TTSAudio, ...],
         output_path: Path,
     ) -> RenderResult:
-        if not self._font_path.is_file():
-            raise ValueError("한글 폰트 파일을 찾을 수 없습니다")
+        self.validate_runtime()
         tts_audio_sha256 = self._validate_speech_audio(storyboard, speech_audio)
+        self._validate_estimated_duration(storyboard, speech_audio)
         image_sequence = _scene_image_sequence(scene_images)
         for scene_image in scene_images.images:
             if not scene_image.path.is_file() or _file_sha256(scene_image.path) != scene_image.sha256:
@@ -455,22 +519,16 @@ class RushHourVideoRenderer:
                     frame = _make_scene_frame(
                         source=source_image.copy(),
                         scene=scene,
-                        tone=storyboard.tone,
                         font_path=self._font_path,
                         crop_variant="cta" if index == 3 else "intro",
                     )
                 frame.save(frame_path)
-                silence_sec = (
-                    DEADPAN_SILENCE_SEC
-                    if scene.kind is ComicLineKind.SELF_AWARE
-                    else BASE_SILENCE_SEC
-                )
                 self._write_segment(
                     frame_path=frame_path,
                     speech_path=audio.path,
                     segment_path=segment_path,
                     speech_duration_sec=audio.duration_sec,
-                    silence_sec=silence_sec,
+                    silence_sec=_scene_silence_sec(scene),
                 )
                 segment_paths.append(segment_path)
             self._concat_segments(

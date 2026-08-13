@@ -48,7 +48,7 @@ def _ensure_owns_video_job(job: VideoJob, customer: dict) -> None:
 
 
 @router.post("", response_model=VideoCreateResponse, status_code=202)
-async def create_video(
+def create_video(
     req: VideoCreateRequest,
     request: Request,
     background_tasks: BackgroundTasks,

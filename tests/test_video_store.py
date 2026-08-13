@@ -99,6 +99,24 @@ def test_interrupted_video_jobs_are_recovered_without_duplicate_work():
     assert "확인" in (recovered_upload.youtube_error or "")
 
 
+def test_recovered_render_failure_uses_detection_time_for_cleanup_ttl():
+    old_updated_at = datetime(2026, 7, 1, 9, 0, tzinfo=ZoneInfo("Asia/Seoul"))
+    recovered_at = datetime(2026, 8, 13, 9, 0, tzinfo=ZoneInfo("Asia/Seoul"))
+    rendering = _job(
+        video_job_id="rendering",
+        render_status=RenderStatus.PROCESSING,
+        approval_status=ApprovalStatus.PENDING,
+        updated_at=old_updated_at,
+    )
+    store.VIDEO_JOBS[rendering.video_job_id] = rendering.model_dump(mode="json")
+
+    store._recover_video_jobs(recovered_at=recovered_at)
+
+    recovered = VideoJob.model_validate(store.VIDEO_JOBS[rendering.video_job_id])
+    assert recovered.render_status is RenderStatus.FAILED
+    assert recovered.updated_at == recovered_at
+
+
 def test_legacy_music_fields_are_removed_during_store_migration():
     legacy = _job().model_dump(mode="json")
     legacy.update(

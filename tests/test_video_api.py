@@ -1,7 +1,10 @@
 import hashlib
+import threading
+import time
 import wave
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -41,6 +44,9 @@ class ApiSceneProvider:
 
 
 class ApiTTSProvider:
+    def validate_runtime(self) -> None:
+        return None
+
     def synthesize(self, spoken_text, output_path):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with wave.open(str(output_path), "wb") as wav_file:
@@ -58,6 +64,9 @@ class ApiTTSProvider:
 
 
 class ApiRenderer:
+    def validate_runtime(self) -> None:
+        return None
+
     def render(self, storyboard, *, scene_images, speech_audio, output_path):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"api-video")
@@ -271,3 +280,55 @@ def test_internal_exception_is_sanitized(api, monkeypatch):
     response = client.post("/api/v1/videos", json={"result_id": "res_ok"})
     assert response.status_code == 500
     assert "secret internal detail" not in response.text
+
+
+def test_slow_create_does_not_block_unrelated_async_request():
+    started = threading.Event()
+    release = threading.Event()
+
+    class SlowCreateWorkflow:
+        def create(self, _result_id):
+            started.set()
+            assert release.wait(timeout=2)
+            return SimpleNamespace(
+                video_job_id="video_slow",
+                render_status="queued",
+            )
+
+        def run_render(self, _video_job_id):
+            return None
+
+    app = FastAPI()
+    app.state.video_workflow = SlowCreateWorkflow()
+    app.dependency_overrides[videos.get_current_customer] = lambda: {
+        "customer_id": "CUS-TEST"
+    }
+    app.include_router(videos.router)
+
+    @app.get("/probe")
+    async def probe():
+        return {"status": "ok"}
+
+    responses = []
+    safety_release = threading.Timer(1.0, release.set)
+    with TestClient(app, raise_server_exceptions=False) as client:
+        create_thread = threading.Thread(
+            target=lambda: responses.append(
+                client.post("/api/v1/videos", json={"result_id": "res_slow"})
+            )
+        )
+        safety_release.start()
+        create_thread.start()
+        assert started.wait(timeout=0.5)
+
+        request_started = time.perf_counter()
+        probe_response = client.get("/probe")
+        probe_elapsed = time.perf_counter() - request_started
+
+        release.set()
+        create_thread.join(timeout=2)
+        safety_release.cancel()
+
+    assert probe_response.status_code == 200
+    assert probe_elapsed < 0.5
+    assert responses[0].status_code == 202
