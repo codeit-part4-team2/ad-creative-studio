@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Mapping
 
 
-SCRIPT_VERSION = "deadpan-ai-v3"
+SCRIPT_VERSION = "deadpan-ai-v4"
 _HANGUL_TEXT = re.compile(r"^[가-힣\s.,!?]+$")
 
 
@@ -79,25 +79,25 @@ _TEMPLATES = {
     "commute_am": (
         _ScriptTemplate(
             intro="{product}, 나왔습니다.",
-            self_aware="광고입니다. 저도 압니다.",
-            cta="보세요. 저는 안 쉽니다.",
+            self_aware="광고입니다.",
+            cta="보세요. 전 일합니다.",
         ),
         _ScriptTemplate(
             intro="{product}, 잠깐 보시죠.",
-            self_aware="저는 안 쉽니다. 광고는 합니다.",
-            cta="보세요. 저는 지각 안 합니다.",
+            self_aware="안 쉽니다. 광고합니다.",
+            cta="보세요. 안 늦습니다.",
         ),
     ),
     "commute_pm": (
         _ScriptTemplate(
             intro="{product}, 퇴근길입니다.",
-            self_aware="저는 퇴근이 없습니다.",
-            cta="보세요. 저는 먼저 못 갑니다.",
+            self_aware="퇴근은 없습니다.",
+            cta="보세요. 전 못 갑니다.",
         ),
         _ScriptTemplate(
             intro="{product}, 보고 가세요.",
-            self_aware="광고입니다. 목소리는 최선입니다.",
-            cta="보세요. 저는 계속 일합니다.",
+            self_aware="광고입니다. 최선입니다.",
+            cta="보세요. 전 일합니다.",
         ),
     ),
 }
