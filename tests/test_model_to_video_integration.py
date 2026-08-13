@@ -41,6 +41,7 @@ class _RecordingRenderer:
     def __init__(self) -> None:
         self.scene_count = 0
         self.audio_count = 0
+        self.hero_pixel: tuple[int, ...] | None = None
 
     def validate_runtime(self) -> None:
         return None
@@ -48,6 +49,8 @@ class _RecordingRenderer:
     def render(self, storyboard, *, scene_images, speech_audio, output_path):
         self.scene_count = len(scene_images.images)
         self.audio_count = len(speech_audio)
+        with Image.open(scene_images.images[0].path) as hero_image:
+            self.hero_pixel = hero_image.getpixel((0, 0))
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"model-result-comic-short")
         return RenderResult(
@@ -68,9 +71,11 @@ def test_persisted_model_result_builds_three_image_four_voice_short(tmp_path, mo
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(store, "STORE_PATH", tmp_path / "var" / "store.json")
     store.reset_for_tests()
-    hero_path = tmp_path / "data" / "outputs" / "model-card.png"
-    hero_path.parent.mkdir(parents=True)
-    Image.new("RGB", (1024, 1024), "navy").save(hero_path)
+    source_path = tmp_path / "data" / "outputs" / "model-source.png"
+    source_path.parent.mkdir(parents=True)
+    Image.new("RGB", (1024, 1024), "navy").save(source_path)
+    card_path = tmp_path / "data" / "outputs" / "model-card.png"
+    Image.new("RGB", (1024, 1024), "gold").save(card_path)
     store.PRODUCTS["prd_model"] = {
         "product_name": "휴대용 선풍기",
         "selling_points": ["저소음", "USB-C 충전"],
@@ -87,6 +92,7 @@ def test_persisted_model_result_builds_three_image_four_voice_short(tmp_path, mo
                     "time_slot": "commute_am",
                     "headline": "출근길 시원하게",
                     "subcopy": "가볍게 챙기세요",
+                    "source_image_url": "/files/outputs/model-source.png",
                     "images": {"sns_card": "/files/outputs/model-card.png"},
                 }
             ],
@@ -131,3 +137,4 @@ def test_persisted_model_result_builds_three_image_four_voice_short(tmp_path, mo
     assert len(tts_provider.texts) == 4
     assert len(completed.scene_image_sha256s) == 3
     assert completed.video_url == f"/files/videos/{job.video_job_id}.mp4"
+    assert renderer.hero_pixel == (0, 0, 128)

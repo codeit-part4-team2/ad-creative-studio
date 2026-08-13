@@ -22,8 +22,10 @@ def seeded_result(tmp_path):
     static_root = tmp_path / "data"
     output_root = static_root / "outputs"
     output_root.mkdir(parents=True)
-    image_path = output_root / "card.png"
-    Image.new("RGB", (1080, 1350), "#315a78").save(image_path)
+    source_path = output_root / "source.png"
+    Image.new("RGB", (1024, 1024), "#315a78").save(source_path)
+    card_path = output_root / "card.png"
+    Image.new("RGB", (1080, 1350), "#f0c040").save(card_path)
 
     PRODUCTS["prd_1"] = {
         "product_name": "휴대용 선풍기",
@@ -40,6 +42,7 @@ def seeded_result(tmp_path):
                     "time_slot": "commute_am",
                     "headline": "출근길 필수템",
                     "subcopy": "가볍고 시원하게",
+                    "source_image_url": "/files/outputs/source.png",
                     "images": {
                         "thumbnail": "/files/outputs/thumb.png",
                         "sns_card": "/files/outputs/card.png",
@@ -48,7 +51,7 @@ def seeded_result(tmp_path):
             ],
         }
     )
-    return static_root, output_root, image_path
+    return static_root, output_root, source_path
 
 
 def test_storyboard_uses_only_stored_product_facts(seeded_result):
@@ -98,11 +101,21 @@ def test_storyboard_rejects_path_outside_output_root(seeded_result, tmp_path):
     static_root, output_root, _ = seeded_result
     secret_path = tmp_path / "secret.png"
     Image.new("RGB", (10, 10), "red").save(secret_path)
-    HISTORY[0]["results"][0]["images"] = {
-        "sns_card": "/files/../secret.png",
-    }
+    HISTORY[0]["results"][0]["source_image_url"] = "/files/../secret.png"
 
     with pytest.raises(ValueError, match="허용된 출력 경로"):
+        build_storyboard(
+            "res_abc123",
+            output_root=output_root,
+            static_root=static_root,
+        )
+
+
+def test_storyboard_rejects_legacy_result_without_clean_source(seeded_result):
+    static_root, output_root, _ = seeded_result
+    HISTORY[0]["results"][0].pop("source_image_url")
+
+    with pytest.raises(ValueError, match="무자막 원본 이미지"):
         build_storyboard(
             "res_abc123",
             output_root=output_root,

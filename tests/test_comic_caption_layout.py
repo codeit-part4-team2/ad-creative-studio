@@ -95,7 +95,6 @@ def test_caption_has_no_black_panel_behind_text():
         source=source,
         scene=scene,
         font_path=FONT_PATH,
-        crop_variant="intro",
     )
 
     caption_region = frame.crop((100, 120, 980, 360))
@@ -105,6 +104,56 @@ def test_caption_has_no_black_panel_behind_text():
         if max(pixel) < 80
     )
     assert dark_pixels / (caption_region.width * caption_region.height) < 0.15
+
+
+def test_scene_frame_fills_portrait_with_single_unfiltered_image(monkeypatch):
+    source_color = (110, 147, 184)
+    source = Image.new("RGB", (768, 768), source_color)
+    scene = StoryboardScene(
+        "전체 화면으로 보여드립니다.",
+        2.0,
+        kind=ComicLineKind.BENEFIT,
+        image_purpose="benefit",
+    )
+
+    def reject_filter(*_args, **_kwargs):
+        raise AssertionError("scene image must not be blurred")
+
+    monkeypatch.setattr("PIL.Image.Image.filter", reject_filter)
+
+    frame = _make_scene_frame(
+        source=source,
+        scene=scene,
+        font_path=FONT_PATH,
+    )
+
+    assert frame.size == (1080, 1920)
+    assert frame.getpixel((0, 0)) == source_color
+    assert frame.getpixel((1079, 0)) == source_color
+    assert frame.getpixel((0, 1919)) == source_color
+    assert frame.getpixel((1079, 1919)) == source_color
+
+
+def test_scene_frame_cover_crop_keeps_centered_product_visible():
+    source = Image.new("RGB", (768, 768), "#B94A48")
+    source_draw = ImageDraw.Draw(source)
+    source_draw.rectangle((300, 0, 468, 768), fill="#356AA0")
+    scene = StoryboardScene(
+        "제품은 가운데 있습니다.",
+        2.0,
+        kind=ComicLineKind.BENEFIT,
+        image_purpose="benefit",
+    )
+
+    frame = _make_scene_frame(
+        source=source,
+        scene=scene,
+        font_path=FONT_PATH,
+    )
+
+    assert frame.getpixel((0, 960)) == (185, 74, 72)
+    assert frame.getpixel((540, 960)) == (53, 106, 160)
+    assert frame.getpixel((1079, 960)) == (185, 74, 72)
 
 
 def test_three_images_map_to_four_scenes_with_hero_reused_for_cta(tmp_path):

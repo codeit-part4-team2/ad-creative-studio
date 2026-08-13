@@ -177,6 +177,7 @@ R2/R3(model_server)와 R4+R5(app/backend) 사이의 계약입니다. 이 문서�
       "time_slot": "commute_am",
       "headline": "아침의 여유",
       "subcopy": "10분이면 완성되는 아침",
+      "source_image_url": "/files/outputs/job_001_emotional_commute_am_source.png",
       "images": {
         "thumbnail": "/files/result_01_1x1.png",
         "detail_banner": "/files/result_01_banner.png",
@@ -187,6 +188,11 @@ R2/R3(model_server)와 R4+R5(app/backend) 사이의 계약입니다. 이 문서�
   ]
 }
 ```
+
+`source_image_url`은 모델 서버가 생성한 무자막 원본 이미지다. `images`는
+헤드라인/서브카피가 포함된 규격별 광고 결과이며, 쇼츠는 자막 중복을 막기 위해
+`source_image_url`만 사용한다. 이 필드가 없는 이전 결과는 조회할 수 있지만 쇼츠
+생성에는 사용할 수 없으므로 광고 이미지를 다시 생성해야 한다.
 
 ### PATCH /api/v1/generations/{generation_id}/copy
 이미지는 재생성하지 않고 문구만 수정 (PIL 오버레이 전략의 핵심 이점, 결정 7)

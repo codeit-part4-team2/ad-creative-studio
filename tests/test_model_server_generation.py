@@ -2,6 +2,7 @@ import asyncio
 import io
 import shutil
 import uuid
+from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -95,9 +96,18 @@ def test_model_server_generation_success(monkeypatch):
     results = asyncio.run(service.generate("job_test", req, product))
 
     assert len(results) == 4  # 톤 4종
+    source_urls = set()
     for r in results:
         assert r.result_id.startswith("res_")
         assert len(r.images) == len(req.output_formats)
+        assert r.source_image_url is not None
+        assert r.source_image_url not in r.images.values()
+        source_urls.add(r.source_image_url)
+        source_path = Path("data") / r.source_image_url.removeprefix("/files/")
+        with Image.open(source_path) as saved_source:
+            assert saved_source.size == (64, 64)
+            assert saved_source.getpixel((0, 0)) == (200, 100, 50)
+    assert len(source_urls) == 4
     assert JOBS["job_test"]["completed_count"] == 4
     assert JOBS["job_test"]["progress"] == 100
 

@@ -32,3 +32,18 @@
 - Branch and implementation: `[VERIFIED] codex/shorts-tts-headroom @ a41031b` plus design commit `b8131d9`.
 - Second L4 result: `[VERIFIED]` v3 generated 14.365 seconds of speech and 15.965 seconds including silence; the 15.05-second guard rejected it before FFmpeg. The measured self-aware and CTA clips totalled 8.036 seconds.
 - Current milestone: `[VERIFIED]` all four self-aware/CTA variants are shortened under `deadpan-ai-v4`; real MeloTTS duration and final video quality remain `[UNVERIFIED]` until the follow-up PR is deployed and E2E is rerun.
+
+## 2026-08-13 Shorts full-bleed visual update
+
+- Project root: `[VERIFIED] G:\Codex\projects\상급프로젝트\worktrees\ad-creative-studio-shorts-full-bleed`.
+- Base: `[VERIFIED] origin/main @ 607e80d8f08cf5e2c760406d041ea495762f2c34`, the merge commit for PR #27.
+- Branch: `[VERIFIED] codex/shorts-full-bleed`, locally modified and not staged, committed, pushed, or opened as a PR.
+- Current milestone: `[VERIFIED]` the renderer uses a single centered cover crop with no blurred duplicate, dark overlay, or inset card; plain captions use a 3px dark outline over the full image.
+- External state: `[UNVERIFIED]` the user reports the preceding v4 VM E2E passed, but no job payload, probe output, or logs were captured in this task. This visual change has not yet run on the L4 VM.
+
+## 2026-08-13 Shorts clean-source model handoff
+
+- Worktree and branch: `[VERIFIED] G:\Codex\projects\상급프로젝트\worktrees\ad-creative-studio-shorts-full-bleed` on `codex/shorts-full-bleed`, still unstaged, uncommitted, unpushed, and without a PR.
+- Contract: `[VERIFIED]` each new real or mock `ToneResult` stores a separate text-free `source_image_url`; formatted headline/subcopy exports remain under `images`.
+- Shorts boundary: `[VERIFIED]` storyboard construction requires the source URL and rejects legacy results rather than falling back to a copy-baked card.
+- Current milestone: `[VERIFIED]` full-bleed rendering and clean-source selection pass the complete local suite. Native 9:16 inference remains `[UNVERIFIED]` and excluded pending an L4 same-input quality, latency, and VRAM comparison.

@@ -27,6 +27,24 @@ def test_create_placeholder_background_matches_requested_size():
     assert img.size == (300, 200)
 
 
+def test_save_source_image_preserves_unbranded_model_output():
+    source = Image.new("RGB", (73, 41), (12, 34, 56))
+
+    url = overlay.save_source_image(
+        job_id="job_source",
+        tone="premium",
+        time_slot="commute_pm",
+        image=source,
+    )
+
+    assert url.startswith("/files/outputs/")
+    saved_path = Path("data") / url.removeprefix("/files/")
+    with Image.open(saved_path) as saved:
+        assert saved.mode == "RGB"
+        assert saved.size == source.size
+        assert saved.tobytes() == source.tobytes()
+
+
 def test_overlay_copy_resizes_to_format_spec():
     bg = overlay.create_placeholder_background("modern", (100, 100))
     result = overlay.overlay_copy(bg, "헤드라인", "서브카피", "thumbnail", tone="modern")

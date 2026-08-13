@@ -8,7 +8,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from app.backend.services.comic_script import ComicLineKind
 from app.backend.services.scene_images import SceneImage, SceneImageSet
@@ -19,7 +19,8 @@ from app.backend.services.tts_provider import TTSAudio
 VIDEO_WIDTH = 1080
 VIDEO_HEIGHT = 1920
 VIDEO_FPS = 30
-CAPTION_LAYOUT_VERSION = "plain-outline-v2"
+CAPTION_LAYOUT_VERSION = "full-bleed-outline-v3"
+CAPTION_STROKE_WIDTH = 3
 BASE_SILENCE_SEC = 0.1
 DEADPAN_SILENCE_SEC = 0.5
 MIN_VIDEO_DURATION_SEC = 9.95
@@ -83,18 +84,6 @@ def _segment_timing(
         pre_silence_sec=pre_silence_sec,
         post_silence_sec=post_silence_sec,
     )
-
-
-def fit_inside(
-    source_size: tuple[int, int],
-    bounds: tuple[int, int],
-) -> tuple[int, int]:
-    source_width, source_height = source_size
-    bound_width, bound_height = bounds
-    if min(source_width, source_height, bound_width, bound_height) <= 0:
-        raise ValueError("image dimensions must be positive")
-    scale = min(bound_width / source_width, bound_height / source_height)
-    return round(source_width * scale), round(source_height * scale)
 
 
 def _wrap_text(
@@ -167,7 +156,7 @@ def _font_and_lines(
             font=font,
             spacing=spacing,
             align="center",
-            stroke_width=2,
+            stroke_width=CAPTION_STROKE_WIDTH,
         )
         if bbox[3] - bbox[1] <= max_height and 1 <= len(lines) <= 2:
             return font, lines, spacing
@@ -179,7 +168,12 @@ def _font_and_lines(
             final_words = visible_lines[-1].split()
             while final_words:
                 candidate = f"{' '.join(final_words)}…"
-                bbox = draw.textbbox((0, 0), candidate, font=font, stroke_width=2)
+                bbox = draw.textbbox(
+                    (0, 0),
+                    candidate,
+                    font=font,
+                    stroke_width=CAPTION_STROKE_WIDTH,
+                )
                 if bbox[2] - bbox[0] <= max_width:
                     visible_lines[-1] = candidate
                     return font, visible_lines, spacing
@@ -188,7 +182,12 @@ def _font_and_lines(
             final_line = visible_lines[-1]
             while final_line:
                 candidate = f"{final_line}…"
-                bbox = draw.textbbox((0, 0), candidate, font=font, stroke_width=2)
+                bbox = draw.textbbox(
+                    (0, 0),
+                    candidate,
+                    font=font,
+                    stroke_width=CAPTION_STROKE_WIDTH,
+                )
                 if bbox[2] - bbox[0] <= max_width:
                     visible_lines[-1] = candidate
                     return font, visible_lines, spacing
@@ -210,7 +209,15 @@ def _draw_caption(
         max_width=900,
         max_height=210,
     )
-    line_boxes = [base_draw.textbbox((0, 0), line, font=font, stroke_width=2) for line in lines]
+    line_boxes = [
+        base_draw.textbbox(
+            (0, 0),
+            line,
+            font=font,
+            stroke_width=CAPTION_STROKE_WIDTH,
+        )
+        for line in lines
+    ]
     line_heights = [box[3] - box[1] for box in line_boxes]
     block_height = sum(line_heights) + spacing * (len(lines) - 1)
     if scene.kind in {ComicLineKind.INTRO, ComicLineKind.SELF_AWARE}:
@@ -232,7 +239,7 @@ def _draw_caption(
             line,
             font=font,
             fill="#F8FAFC",
-            stroke_width=2,
+            stroke_width=CAPTION_STROKE_WIDTH,
             stroke_fill="#121826",
         )
 
@@ -242,35 +249,19 @@ def _make_scene_frame(
     source: Image.Image,
     scene: StoryboardScene,
     font_path: Path,
-    crop_variant: str,
 ) -> Image.Image:
-    background = ImageOps.fit(
+    canvas = ImageOps.fit(
         source.convert("RGB"),
         (VIDEO_WIDTH, VIDEO_HEIGHT),
         method=Image.Resampling.LANCZOS,
-    ).filter(ImageFilter.GaussianBlur(radius=30))
-    canvas = background.convert("RGBA")
-    canvas.alpha_composite(
-        Image.new("RGBA", canvas.size, (10, 16, 28, 68))
-    )
+        centering=(0.5, 0.5),
+    ).convert("RGBA")
 
-    if crop_variant == "cta":
-        foreground = ImageOps.fit(
-            source.convert("RGBA"),
-            (1010, 1320),
-            method=Image.Resampling.LANCZOS,
-        )
-        foreground_y = 300
-    else:
-        foreground_size = fit_inside(source.size, (980, 1220))
-        foreground = source.convert("RGBA").resize(
-            foreground_size,
-            Image.Resampling.LANCZOS,
-        )
-        foreground_y = 350 + (1220 - foreground.height) // 2
-    foreground_x = (VIDEO_WIDTH - foreground.width) // 2
-    canvas.alpha_composite(foreground, (foreground_x, foreground_y))
-    _draw_caption(canvas, scene=scene, font_path=font_path)
+    _draw_caption(
+        canvas,
+        scene=scene,
+        font_path=font_path,
+    )
     return canvas.convert("RGB")
 
 
@@ -582,7 +573,6 @@ class RushHourVideoRenderer:
                         source=source_image.copy(),
                         scene=scene,
                         font_path=self._font_path,
-                        crop_variant="cta" if index == 3 else "intro",
                     )
                 frame.save(frame_path)
                 self._write_segment(
