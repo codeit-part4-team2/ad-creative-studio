@@ -122,10 +122,12 @@ def _font_and_lines(
     max_width: int,
     max_height: int,
 ) -> tuple[ImageFont.FreeTypeFont, list[str], int]:
+    fallback: tuple[ImageFont.FreeTypeFont, list[str], int] | None = None
     for size in range(78, 41, -2):
         font = ImageFont.truetype(str(font_path), size)
         lines = _wrap_text(draw, text, font, max_width)
         spacing = max(10, size // 5)
+        fallback = (font, lines, spacing)
         bbox = draw.multiline_textbbox(
             (0, 0),
             "\n".join(lines),
@@ -136,6 +138,28 @@ def _font_and_lines(
         )
         if bbox[3] - bbox[1] <= max_height and 1 <= len(lines) <= 2:
             return font, lines, spacing
+
+    if fallback is not None:
+        font, lines, spacing = fallback
+        if len(lines) > 2:
+            visible_lines = lines[:2]
+            final_words = visible_lines[-1].split()
+            while final_words:
+                candidate = f"{' '.join(final_words)}…"
+                bbox = draw.textbbox((0, 0), candidate, font=font, stroke_width=2)
+                if bbox[2] - bbox[0] <= max_width:
+                    visible_lines[-1] = candidate
+                    return font, visible_lines, spacing
+                final_words.pop()
+
+            final_line = visible_lines[-1]
+            while final_line:
+                candidate = f"{final_line}…"
+                bbox = draw.textbbox((0, 0), candidate, font=font, stroke_width=2)
+                if bbox[2] - bbox[0] <= max_width:
+                    visible_lines[-1] = candidate
+                    return font, visible_lines, spacing
+                final_line = final_line[:-1]
     raise ValueError("자막이 2줄 안전 영역 안에 들어가지 않습니다")
 
 
