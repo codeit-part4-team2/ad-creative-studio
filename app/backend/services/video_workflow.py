@@ -307,8 +307,12 @@ class VideoWorkflowService:
         with self._render_lock:
             with self._state_lock:
                 job = self._get_locked(video_job_id)
-                if job.render_status is not RenderStatus.QUEUED:
+                if job.render_status in {RenderStatus.COMPLETED, RenderStatus.FAILED}:
                     return
+                if job.render_status is RenderStatus.PROCESSING:
+                    raise WorkflowConflict("영상 렌더링이 이미 진행 중입니다")
+                if job.render_status is not RenderStatus.QUEUED:
+                    raise WorkflowConflict("대기 중인 영상만 렌더링할 수 있습니다")
                 processing = job.model_copy(
                     update={
                         "render_status": RenderStatus.PROCESSING,
@@ -512,6 +516,14 @@ class VideoWorkflowService:
                 snapshot = self._get_locked(video_job_id)
             if snapshot.approval_status is not ApprovalStatus.APPROVED:
                 raise WorkflowConflict("승인된 영상만 게시할 수 있습니다")
+            if snapshot.publish_status in {
+                PublishStatus.SCHEDULED,
+                PublishStatus.FAILED,
+                PublishStatus.AUTH_REQUIRED,
+                PublishStatus.NEEDS_REVIEW,
+                PublishStatus.SCHEDULE_EXPIRED,
+            }:
+                return
             if snapshot.publish_status is not PublishStatus.PENDING:
                 raise WorkflowConflict("게시 대기 중인 영상만 업로드할 수 있습니다")
             if snapshot.activation_at is None:

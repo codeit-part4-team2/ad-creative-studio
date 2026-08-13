@@ -485,6 +485,14 @@ def test_duplicate_render_call_keeps_completed_job_unchanged(workflow):
     assert len(workflow.tts_provider.texts) == tts_call_count
 
 
+def test_processing_render_retry_is_reported_as_conflict(workflow):
+    queued = workflow.create("res_1")
+    store.VIDEO_JOBS[queued.video_job_id]["render_status"] = "processing"
+
+    with pytest.raises(WorkflowConflict, match="진행 중"):
+        workflow.run_render(queued.video_job_id)
+
+
 def test_create_removes_only_expired_failed_work_directories(tmp_path, board):
     setup_service = _service(
         tmp_path,
@@ -647,6 +655,23 @@ def test_youtube_failure_keeps_internal_approval(tmp_path, board):
     assert stored.approval_status is ApprovalStatus.APPROVED
     assert stored.publish_status is PublishStatus.FAILED
     assert "external detail" not in (stored.youtube_error or "")
+
+
+def test_duplicate_publish_call_keeps_scheduled_job_unchanged(workflow):
+    job = _rendered_job(workflow)
+    workflow.approve(
+        job.video_job_id,
+        activation_at=_next_commute_am(),
+        publish_to_youtube=True,
+    )
+    workflow.run_publish(job.video_job_id)
+    scheduled = workflow.get(job.video_job_id)
+    publish_count = len(workflow.publisher.requests)
+
+    workflow.run_publish(job.video_job_id)
+
+    assert workflow.get(job.video_job_id) == scheduled
+    assert len(workflow.publisher.requests) == publish_count
 
 
 def test_concurrent_publish_jobs_wait_and_never_stay_pending(tmp_path, board):
