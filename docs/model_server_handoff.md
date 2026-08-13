@@ -15,10 +15,10 @@ uvicorn model_server.main:app --host 0.0.0.0 --port 8001 --workers 1 --env-file 
 
 - backend는 `app/backend/services/tts_provider.py`에서 `melo.api.TTS`를 직접 import하는 구조라, backend 프로세스 자체가 melo 패키지를 가진 인터프리터로 실행되어야 함
 - backend `requirements.txt`에는 torch가 없어(GPU 불필요), model_server(CUDA venv)와 물리적으로 분리된 별도 CPU venv를 사용
-- venv 위치: `~/ad-studio-runtime/backend-venv` (Python 3.11, CPU 전용)
+- venv 위치: `~/ad-studio-runtime/backend-venv` (Python 3.12, CPU 전용)
 - 설치 절차:
 ```bash
-  python3.11 -m venv ~/ad-studio-runtime/backend-venv
+  python3.12 -m venv ~/ad-studio-runtime/backend-venv
   ~/ad-studio-runtime/backend-venv/bin/python -m pip install -e ".[video]"
   ~/ad-studio-runtime/backend-venv/bin/python -m pip install -r requirements-tts.txt
   ~/ad-studio-runtime/backend-venv/bin/python -m pip install -r requirements.txt

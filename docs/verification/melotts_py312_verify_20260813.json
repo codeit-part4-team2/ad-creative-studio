@@ -1,0 +1,90 @@
+{
+  "source_revision": "209145371cff8fc3bd60d7be902ea69cbdb7965a",
+  "model_revision": "0207e5adfc90129a51b6b03d89be6d84360ed323",
+  "results": [
+    {
+      "key": "product_microwave",
+      "category": "product_name",
+      "text": "테스트 전자레인지입니다.",
+      "wav_file": "product_microwave.wav",
+      "duration_sec": 2.920839,
+      "sha256": "04a3d248d707182b87846b2cc1ba4a6b2b0129c620a6a86a4e4a72f0e7810a4f",
+      "engine": "melotts-korean",
+      "voice_preset": "deadpan-ai-v1",
+      "pronunciation_status": "needs_review",
+      "review_notes": ""
+    },
+    {
+      "key": "numbers_price",
+      "category": "numbers",
+      "text": "가격은 십이만 삼천사백 원입니다.",
+      "wav_file": "numbers_price.wav",
+      "duration_sec": 3.779977,
+      "sha256": "e4f022b8ae5da32dc71906074e427b108f19272db09834e7aa3695e31940fe99",
+      "engine": "melotts-korean",
+      "voice_preset": "deadpan-ai-v1",
+      "pronunciation_status": "needs_review",
+      "review_notes": ""
+    },
+    {
+      "key": "commute_time",
+      "category": "time",
+      "text": "오전 여덟 시 삼십 분입니다.",
+      "wav_file": "commute_time.wav",
+      "duration_sec": 3.408458,
+      "sha256": "5f29b89c6dffdab36f5d0ae703949a6026595dccd4a0c5f789fa718a964181c8",
+      "engine": "melotts-korean",
+      "voice_preset": "deadpan-ai-v1",
+      "pronunciation_status": "needs_review",
+      "review_notes": ""
+    },
+    {
+      "key": "capacity_unit",
+      "category": "units",
+      "text": "용량은 삼백오십 밀리리터입니다.",
+      "wav_file": "capacity_unit.wav",
+      "duration_sec": 3.710317,
+      "sha256": "6e850db5fe22e7b2415ff4295ded1b6bdbf1299a1c26ce56dd1f158df0844b10",
+      "engine": "melotts-korean",
+      "voice_preset": "deadpan-ai-v1",
+      "pronunciation_status": "needs_review",
+      "review_notes": ""
+    },
+    {
+      "key": "mixed_usb_c",
+      "category": "mixed_language",
+      "text": "유에스비 씨 충전을 지원합니다.",
+      "wav_file": "mixed_usb_c.wav",
+      "duration_sec": 3.338798,
+      "sha256": "dc74f01e22114047872527e09ea0b7797d635b78fed54a05c5742af1ab5251df",
+      "engine": "melotts-korean",
+      "voice_preset": "deadpan-ai-v1",
+      "pronunciation_status": "needs_review",
+      "review_notes": ""
+    },
+    {
+      "key": "batchim_linking",
+      "category": "batchim_linking",
+      "text": "밥을 먹고 출근합니다.",
+      "wav_file": "batchim_linking.wav",
+      "duration_sec": 2.735079,
+      "sha256": "c29eb04a25e671b24108b2fd04c5bcf197ba761c34817122b8b6c6bc4a362821",
+      "engine": "melotts-korean",
+      "voice_preset": "deadpan-ai-v1",
+      "pronunciation_status": "needs_review",
+      "review_notes": ""
+    },
+    {
+      "key": "self_aware",
+      "category": "product_name",
+      "text": "저는 퇴근을 하지 않습니다.",
+      "wav_file": "self_aware.wav",
+      "duration_sec": 3.060159,
+      "sha256": "a47b4dd89d784c38929cf9b63b068cda7d33b3b6304dccbfed36d185932e2c01",
+      "engine": "melotts-korean",
+      "voice_preset": "deadpan-ai-v1",
+      "pronunciation_status": "needs_review",
+      "review_notes": ""
+    }
+  ]
+}
