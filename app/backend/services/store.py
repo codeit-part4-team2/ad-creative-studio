@@ -14,6 +14,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from app.backend.services.auth import CUSTOMERS, SESSIONS
+
 STORE_PATH = Path("var/store.json")
 # ⚠️ 중요: "data/" 하위에 두면 안 된다 - main.py가 app.mount("/files", StaticFiles(directory="data"))로
 # data/ 전체를 정적 서빙하기 때문에, data/store.json으로 두면 GET /files/store.json 한 번으로
@@ -35,6 +37,7 @@ def save() -> None:
                 "jobs": JOBS,
                 "history": HISTORY,
                 "video_jobs": VIDEO_JOBS,
+                "customers": CUSTOMERS,
             },
             ensure_ascii=False,
         ),
@@ -60,6 +63,20 @@ def load() -> None:
     HISTORY.extend(data.get("history", []))
     VIDEO_JOBS.clear()
     VIDEO_JOBS.update(data.get("video_jobs", {}))
+    CUSTOMERS.clear()
+    CUSTOMERS.update(data.get("customers", {}))
+
+    # 인증 도입 전(customer_id 개념이 없던 시절) 만들어진 상품/작업/이력은 그대로 두면
+    # 배포 즉시 "어느 고객사 것도 아닌" 상태가 되어 영구 404가 된다 - LEGACY라는
+    # 특수 고객사로 일괄 배정해서, 최소한 관리자가 LEGACY 계정으로 로그인하면
+    # 예전 데이터를 계속 볼 수 있게 한다 (PR 리뷰에서 지적됨). LEGACY 계정 자체는
+    # main.py의 lifespan에서 서버 시작 시 자동 생성된다.
+    for product in PRODUCTS.values():
+        product.setdefault("customer_id", "LEGACY")
+    for job in JOBS.values():
+        job.setdefault("customer_id", "LEGACY")
+    for entry in HISTORY:
+        entry.setdefault("customer_id", "LEGACY")
 
     # 좀비 job 정리: 서버가 죽기 전 queued/processing 상태였던 job은, 그걸 돌리던
     # BackgroundTask가 재시작으로 같이 사라졌으므로 다시는 완료되지 않는다.
@@ -128,5 +145,7 @@ def reset_for_tests() -> None:
     JOBS.clear()
     HISTORY.clear()
     VIDEO_JOBS.clear()
+    CUSTOMERS.clear()
+    SESSIONS.clear()
     if STORE_PATH.exists():
         STORE_PATH.unlink()

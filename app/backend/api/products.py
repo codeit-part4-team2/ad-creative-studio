@@ -1,11 +1,12 @@
 import uuid
 from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 
 from app.backend.schemas.generation import ProductCreateResponse
 from app.backend.services import store
 from app.backend.services.store import PRODUCTS
+from app.backend.api.deps import get_current_customer
 
 router = APIRouter(prefix="/api/v1/products", tags=["products"])
 
@@ -20,6 +21,7 @@ async def create_product(
     product_name: str = Form(...),
     price: Optional[int] = Form(None),
     selling_points: Optional[str] = Form(None),  # comma-separated, TODO: JSON 배열로 교체
+    customer: dict = Depends(get_current_customer),
 ):
     suffix = Path(image.filename or "").suffix.lower()
     if suffix not in ALLOWED_SUFFIXES:
@@ -38,6 +40,7 @@ async def create_product(
 
     image_url = f"/files/uploads/{product_id}{suffix}"
     PRODUCTS[product_id] = {
+        "customer_id": customer["customer_id"],  # multi-tenant 데이터 격리 - 이 상품의 소유 고객사
         "product_name": product_name,
         "price": price,
         "selling_points": (selling_points or "").split(",") if selling_points else [],

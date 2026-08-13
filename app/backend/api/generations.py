@@ -1,6 +1,6 @@
 import time
 import uuid
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 
 from app.backend.schemas.generation import (
     GenerationRequest,
@@ -11,6 +11,7 @@ from app.backend.schemas.generation import (
 from app.backend.services import store
 from app.backend.services.store import PRODUCTS, JOBS, HISTORY
 from app.backend.services.generation_service import generation_service
+from app.backend.api.deps import get_current_customer
 from app.prompt.templates import MAX_TIME_SLOTS_PER_REQUEST, estimate_seconds
 from app.prompt.schemas import PromptRequest
 
@@ -36,8 +37,12 @@ def build_generation_plan(req: GenerationRequest, product: dict) -> list[PromptR
 
 
 @router.post("", response_model=GenerationCreateResponse, status_code=202)
-async def create_generation(req: GenerationRequest, background_tasks: BackgroundTasks):
-    if req.product_id not in PRODUCTS:
+async def create_generation(req: GenerationRequest, background_tasks: BackgroundTasks, customer: dict = Depends(get_current_customer)):
+    product = PRODUCTS.get(req.product_id)
+    if not product:
+        raise HTTPException(404, "product not found")
+    # 다른 고객사 상품 ID를 넣어도 "없는 것"과 똑같이 404 - 존재 여부 자체를 노출하지 않는다
+    if product.get("customer_id") != customer["customer_id"]:
         raise HTTPException(404, "product not found")
     if not req.time_slots:
         raise HTTPException(400, "select at least one time slot")
@@ -65,6 +70,7 @@ async def create_generation(req: GenerationRequest, background_tasks: Background
     total = len(req.tones) * len(req.time_slots)  # 시간대 x 톤만 (규격 곱하지 않음)
     est = estimate_seconds(len(req.tones), len(req.time_slots))
     JOBS[job_id] = {
+        "customer_id": customer["customer_id"],  # multi-tenant 데이터 격리
         "status": "queued",
         "progress": 0,
         "current_step": None,
@@ -101,6 +107,7 @@ async def run_generation(job_id: str) -> None:
         job["current_step"] = None
 
         HISTORY.append({
+            "customer_id": job["customer_id"],  # multi-tenant 데이터 격리
             "job_id": job_id,
             "product_id": job["product_id"],
             "created_at": time.time(),
@@ -116,9 +123,9 @@ async def run_generation(job_id: str) -> None:
 
 
 @router.get("/{job_id}", response_model=GenerationResultResponse)
-async def get_generation_result(job_id: str):
+async def get_generation_result(job_id: str, customer: dict = Depends(get_current_customer)):
     job = JOBS.get(job_id)
-    if not job:
+    if not job or job.get("customer_id") != customer["customer_id"]:
         raise HTTPException(404, "job not found")
     if job["status"] != "completed":
         raise HTTPException(409, "job not finished yet")
@@ -126,7 +133,7 @@ async def get_generation_result(job_id: str):
 
 
 @router.patch("/{job_id}/copy")
-async def update_copy(job_id: str, body: CopyUpdateRequest):
+async def update_copy(job_id: str, body: CopyUpdateRequest, customer: dict = Depends(get_current_customer)):
     """
     이미지는 재생성하지 않고 문구만 수정하는 게 원래 설계 의도였다 (결정 7).
     하지만 M3/S2/S3 구현으로 문구가 이제 PNG에 실제로 구워지면서 이 전제가 무효화됐다 -
@@ -136,8 +143,12 @@ async def update_copy(job_id: str, body: CopyUpdateRequest):
     TODO: overlay.overlay_copy() 재실행 + job["result"] 갱신까지 구현되면 501을 없앨 것.
     결과가 여러 개(톤x시간대)이므로, PATCH /api/v1/results/{result_id}/copy 로
     세분화하는 게 더 정확할 수 있음 (job_id 단위로는 어느 톤/시간대인지 특정 불가).
+
+    이 PR 전에는 인증 자체가 없어서 로그인 없이 job_id 존재 여부를 알아낼 수 있었다
+    (지금은 501만 뱉지만 나중에 실제 로직이 들어가면 그대로 뚫릴 위험) - PR 리뷰에서
+    지적되어 다른 endpoint와 동일한 로그인+소유권 확인을 추가했다.
     """
     job = JOBS.get(job_id)
-    if not job:
+    if not job or job.get("customer_id") != customer["customer_id"]:
         raise HTTPException(404, "generation not found")
     raise HTTPException(501, "문구 수정 후 이미지 재생성/History 갱신은 아직 구현되지 않았습니다")
