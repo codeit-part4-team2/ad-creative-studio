@@ -6,9 +6,11 @@ import os
 import shutil
 import threading
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
+from time import perf_counter
 from zoneinfo import ZoneInfo
 
 from app.backend.schemas.video import ApprovalStatus, PublishStatus, RenderStatus, VideoJob
@@ -67,6 +69,45 @@ class WorkflowConflict(WorkflowError):
 
 class WorkflowValidation(WorkflowError):
     pass
+
+
+@contextmanager
+def _track_render_stage(
+    *,
+    stage: str,
+    video_job_id: str,
+    result_id: str,
+) -> Iterator[None]:
+    context = {
+        "render_stage": stage,
+        "video_job_id": video_job_id,
+        "result_id": result_id,
+    }
+    LOGGER.info(
+        "video render stage started stage=%s video_job_id=%s result_id=%s",
+        stage,
+        video_job_id,
+        result_id,
+        extra={**context, "render_event": "started"},
+    )
+    started_at = perf_counter()
+    yield
+    duration_ms = round((perf_counter() - started_at) * 1000)
+    LOGGER.info(
+        (
+            "video render stage completed stage=%s video_job_id=%s "
+            "result_id=%s duration_ms=%d"
+        ),
+        stage,
+        video_job_id,
+        result_id,
+        duration_ms,
+        extra={
+            **context,
+            "render_event": "completed",
+            "duration_ms": duration_ms,
+        },
+    )
 
 
 def _sha256(path: Path) -> str:
@@ -325,37 +366,92 @@ class VideoWorkflowService:
                 )
                 self._persist_locked(processing)
 
+            render_stage = "storyboard"
             try:
-                storyboard = self._storyboard_builder(processing.result_id)
-                if storyboard.source_fingerprint != processing.source_fingerprint:
-                    raise WorkflowConflict("원본 광고가 변경되어 다시 생성해야 합니다")
-                self._renderer.validate_runtime()
-                self._tts_provider.validate_runtime()
-                job_dir = self._job_work_dir(video_job_id)
-                product_image_url = self._product_image_url_builder(processing.product_id)
-                scene_images = self._scene_image_provider.build(
-                    storyboard=storyboard,
-                    product_image_url=product_image_url,
-                    output_dir=job_dir / "images",
-                )
-                speech_audio = tuple(
-                    self._tts_provider.synthesize(
-                        scene.spoken_text,
-                        job_dir / "audio" / f"line-{index:02d}.wav",
+                with _track_render_stage(
+                    stage=render_stage,
+                    video_job_id=video_job_id,
+                    result_id=processing.result_id,
+                ):
+                    storyboard = self._storyboard_builder(processing.result_id)
+                    if storyboard.source_fingerprint != processing.source_fingerprint:
+                        raise WorkflowConflict("원본 광고가 변경되어 다시 생성해야 합니다")
+
+                render_stage = "runtime_validation"
+                with _track_render_stage(
+                    stage=render_stage,
+                    video_job_id=video_job_id,
+                    result_id=processing.result_id,
+                ):
+                    self._renderer.validate_runtime()
+                    self._tts_provider.validate_runtime()
+
+                render_stage = "scene_images"
+                with _track_render_stage(
+                    stage=render_stage,
+                    video_job_id=video_job_id,
+                    result_id=processing.result_id,
+                ):
+                    job_dir = self._job_work_dir(video_job_id)
+                    product_image_url = self._product_image_url_builder(
+                        processing.product_id
                     )
-                    for index, scene in enumerate(storyboard.scenes)
-                )
-                if len({audio.engine for audio in speech_audio}) != 1:
-                    raise WorkflowConflict("TTS 엔진이 장면별로 일치하지 않습니다")
-                if len({audio.voice_preset for audio in speech_audio}) != 1:
-                    raise WorkflowConflict("TTS 음성 프리셋이 장면별로 일치하지 않습니다")
-                rendered = self._renderer.render(
-                    storyboard,
-                    scene_images=scene_images,
-                    speech_audio=speech_audio,
-                    output_path=self._video_dir / f"{video_job_id}.mp4",
-                )
+                    scene_images = self._scene_image_provider.build(
+                        storyboard=storyboard,
+                        product_image_url=product_image_url,
+                        output_dir=job_dir / "images",
+                    )
+
+                render_stage = "tts"
+                with _track_render_stage(
+                    stage=render_stage,
+                    video_job_id=video_job_id,
+                    result_id=processing.result_id,
+                ):
+                    speech_audio = tuple(
+                        self._tts_provider.synthesize(
+                            scene.spoken_text,
+                            job_dir / "audio" / f"line-{index:02d}.wav",
+                        )
+                        for index, scene in enumerate(storyboard.scenes)
+                    )
+                    if len({audio.engine for audio in speech_audio}) != 1:
+                        raise WorkflowConflict("TTS 엔진이 장면별로 일치하지 않습니다")
+                    if len({audio.voice_preset for audio in speech_audio}) != 1:
+                        raise WorkflowConflict(
+                            "TTS 음성 프리셋이 장면별로 일치하지 않습니다"
+                        )
+
+                render_stage = "ffmpeg_render"
+                with _track_render_stage(
+                    stage=render_stage,
+                    video_job_id=video_job_id,
+                    result_id=processing.result_id,
+                ):
+                    rendered = self._renderer.render(
+                        storyboard,
+                        scene_images=scene_images,
+                        speech_audio=speech_audio,
+                        output_path=self._video_dir / f"{video_job_id}.mp4",
+                    )
             except Exception as exc:
+                LOGGER.exception(
+                    (
+                        "video render failed stage=%s video_job_id=%s "
+                        "result_id=%s exception_type=%s"
+                    ),
+                    render_stage,
+                    video_job_id,
+                    processing.result_id,
+                    type(exc).__name__,
+                    extra={
+                        "render_stage": render_stage,
+                        "render_event": "failed",
+                        "video_job_id": video_job_id,
+                        "result_id": processing.result_id,
+                        "exception_type": type(exc).__name__,
+                    },
+                )
                 if isinstance(exc, TTSRuntimeUnavailable):
                     error_message = "TTS 실행 환경이 준비되지 않았습니다"
                 elif isinstance(exc, VideoRuntimeUnavailable):

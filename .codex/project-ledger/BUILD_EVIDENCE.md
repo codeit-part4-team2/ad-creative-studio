@@ -19,3 +19,7 @@
 | 2026-08-10 13:43 KST | Combined static and environment gates | Ruff, compileall, `pip check`, `git diff --check` | `[VERIFIED] every command exited 0` | Fresh terminal output |
 | 2026-08-10 13:43 KST | Combined secret and artifact hygiene | credential-shaped name/value scan plus `git check-ignore` | `[VERIFIED] no credential-shaped tracked content; four runtime probes ignored by expected rules` | `var/store.json`, `data/videos/probe.mp4`, `logs/probe.log`, `.env` |
 | 2026-08-10 13:43 KST | Pre-push boundary | listener check and `git ls-remote` | `[VERIFIED] no listeners on 8000/8001/8010/8501/8511; fork branch remains f265d43` | No push, PR update, deploy, or publication performed |
+| 2026-08-13 KST | Current-main baseline | `python -m pytest -q` | `[VERIFIED] 304 passed in 43.74s` | Clean `origin/main @ 603be34` before the observability change |
+| 2026-08-13 KST | Render observability regression | focused RED then GREEN workflow tests | `[VERIFIED] 4 expected failures before implementation; 4 passed after implementation` | Covers scene image, TTS, FFmpeg failure stage and successful stage events |
+| 2026-08-13 KST | Render observability full suite | `python -m pytest -q` | `[VERIFIED] 308 passed in 40.62s` | Local `codex/video-stage-logging` worktree before commit |
+| 2026-08-13 KST | Render observability static checks | Ruff on changed Python files plus `git diff --check` | `[VERIFIED] exit 0` | Local `codex/video-stage-logging` worktree before commit |

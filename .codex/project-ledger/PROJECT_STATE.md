@@ -8,3 +8,10 @@
 - Related Shorts worktree: `[VERIFIED] codex/rush-hour-shorts-design @ 58f2bb7`, clean and unpushed.
 - Related integration worktree: `[VERIFIED] codex/model-shorts-integration @ 929c3be`, clean after applying the five new model commits.
 - Current milestone: model, Shorts, and combined branches are locally verified and preserved immediately before push; external L4 comparison gates remain open.
+
+## 2026-08-13 render observability update
+
+- Project root: `[VERIFIED] G:\Codex\projects\상급프로젝트\worktrees\ad-creative-studio-video-stage-logging`.
+- Base: `[VERIFIED] origin/main @ 603be34`, the squash merge commit for PR #22.
+- Branch: `[VERIFIED] codex/video-stage-logging`, created from the current remote main.
+- Current milestone: `[VERIFIED]` stage-aware render logs and traceback coverage are implemented locally; the VM failure's actual stage remains `[UNVERIFIED]` until this change is deployed and E2E is rerun.

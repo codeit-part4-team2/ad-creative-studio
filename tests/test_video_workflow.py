@@ -385,6 +385,101 @@ def test_run_render_records_sanitized_failure(tmp_path, board):
     assert service.create("res_1").render_status is RenderStatus.QUEUED
 
 
+def _assert_failed_stage_log(caplog, *, job, expected_stage: str) -> None:
+    records = [
+        record
+        for record in caplog.records
+        if getattr(record, "render_event", None) == "failed"
+    ]
+    assert len(records) == 1
+    record = records[0]
+    assert record.render_stage == expected_stage
+    assert record.video_job_id == job.video_job_id
+    assert record.result_id == job.result_id
+    assert record.exc_info is not None
+    assert record.exc_info[0] is RuntimeError
+    assert expected_stage in record.getMessage()
+    assert job.video_job_id in record.getMessage()
+
+
+@pytest.mark.parametrize(
+    ("failure_source", "expected_stage", "private_detail"),
+    (
+        ("scene_images", "scene_images", "private scene provider detail"),
+        ("tts", "tts", "private tts provider detail"),
+        ("renderer", "ffmpeg_render", "renderer detail must stay private"),
+    ),
+)
+def test_run_render_logs_failed_stage_with_traceback_and_safe_job_context(
+    tmp_path,
+    board,
+    caplog,
+    failure_source,
+    expected_stage,
+    private_detail,
+):
+    class FailingTTSProvider(FakeTTSProvider):
+        def synthesize(self, _spoken_text, _output_path):
+            raise RuntimeError("private tts provider detail")
+
+    service = _service(
+        tmp_path,
+        board,
+        scene_provider=FakeSceneProvider(fail=failure_source == "scene_images"),
+        tts_provider=(
+            FailingTTSProvider()
+            if failure_source == "tts"
+            else FakeTTSProvider()
+        ),
+        renderer=FakeRenderer(fail=failure_source == "renderer"),
+    )
+    job = service.create("res_1")
+
+    with caplog.at_level(
+        "ERROR",
+        logger="app.backend.services.video_workflow",
+    ):
+        service.run_render(job.video_job_id)
+
+    failed = service.get(job.video_job_id)
+    assert failed.render_status is RenderStatus.FAILED
+    assert failed.error_message == "영상 렌더링에 실패했습니다"
+    assert private_detail not in (failed.error_message or "")
+    _assert_failed_stage_log(caplog, job=job, expected_stage=expected_stage)
+
+
+def test_run_render_logs_major_stage_start_and_completion(workflow, caplog):
+    with caplog.at_level(
+        "INFO",
+        logger="app.backend.services.video_workflow",
+    ):
+        job = _rendered_job(workflow)
+
+    stage_events = [
+        (record.render_stage, record.render_event)
+        for record in caplog.records
+        if getattr(record, "render_stage", None)
+        in {"scene_images", "tts", "ffmpeg_render"}
+    ]
+    assert stage_events == [
+        ("scene_images", "started"),
+        ("scene_images", "completed"),
+        ("tts", "started"),
+        ("tts", "completed"),
+        ("ffmpeg_render", "started"),
+        ("ffmpeg_render", "completed"),
+    ]
+    completed_records = [
+        record
+        for record in caplog.records
+        if getattr(record, "render_event", None) == "completed"
+        and getattr(record, "render_stage", None)
+        in {"scene_images", "tts", "ffmpeg_render"}
+    ]
+    assert all(record.duration_ms >= 0 for record in completed_records)
+    assert all(record.video_job_id == job.video_job_id for record in completed_records)
+
+
 def test_run_render_records_source_conflict_reason(tmp_path, board):
     service = _service(tmp_path, board)
     job = service.create("res_1")
