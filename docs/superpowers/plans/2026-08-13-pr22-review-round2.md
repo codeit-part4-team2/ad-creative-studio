@@ -29,11 +29,11 @@
 - Consumes: `_font_and_lines(draw, text, font_path, max_width, max_height)`.
 - Produces: at most two width-safe lines; overlong captions end in `…` while the storyboard spoken text remains untouched.
 
-- [ ] Add a regression test using the exact long product sentence from the review and assert two lines, an ellipsis, and width compliance.
-- [ ] Run the focused test and verify the existing implementation raises `ValueError`.
-- [ ] Add a two-line ellipsis fallback at the minimum approved font size without changing normal word wrapping.
-- [ ] Run caption-layout and renderer tests and verify they pass.
-- [ ] Commit the isolated caption fix.
+- [x] Add a regression test using the exact long product sentence from the review and assert two lines, an ellipsis, and width compliance.
+- [x] Run the focused test and verify the existing implementation raises `ValueError`.
+- [x] Add a two-line ellipsis fallback at the minimum approved font size without changing normal word wrapping.
+- [x] Run caption-layout and renderer tests and verify they pass.
+- [x] Commit the isolated caption fix.
 
 ### Task 2: Prompt Safety Deduplication and Budget
 
@@ -50,11 +50,11 @@
 - Produces: `DEFAULT_NEGATIVE_PROMPT`, `FAST_BACKGROUND_NEGATIVE_PROMPT`, and `merge_negative_prompts(*prompts)` with stable ordering and case-insensitive exact-term deduplication.
 - Consumes: existing comma-separated negative-prompt strings at the backend/model-server boundary.
 
-- [ ] Add failing tests proving the fast path contains no duplicate terms, keeps text/sign/background exclusions, and remains under the conservative 28-term safety budget.
-- [ ] Run the three focused prompt suites and verify the duplicated 57-term prompt fails.
-- [ ] Introduce the shared prompt-safety module and import it from all three paths.
-- [ ] Put text-free instructions at the beginning of the fast background positive prompt so truncation cannot discard them first.
-- [ ] Run focused prompt/model pipeline tests and commit.
+- [x] Add failing tests proving the fast path contains no duplicate terms, keeps text/sign/background exclusions, and remains under the conservative 28-term safety budget.
+- [x] Run the three focused prompt suites and verify the duplicated 57-term prompt fails.
+- [x] Introduce the shared prompt-safety module and import it from all three paths.
+- [x] Put text-free instructions at the beginning of the fast background positive prompt so truncation cannot discard them first.
+- [x] Run focused prompt/model pipeline tests and commit.
 
 ### Task 3: Fail-Closed Persisted Job Index
 
@@ -66,10 +66,10 @@
 - Consumes: raw `store.VIDEO_JOBS` records during `VideoWorkflowService` initialization.
 - Produces: conservative active-result reservations for malformed records that still expose string `result_id` and `video_job_id`, plus an error log.
 
-- [ ] Add a failing test with a malformed completed record and assert a second job for the same result is blocked and logged.
-- [ ] Run the test and verify duplicate creation currently succeeds.
-- [ ] Reserve the raw result ID on validation failure and log the validation exception without sensitive record contents.
-- [ ] Run workflow tests and commit.
+- [x] Add a failing test with a malformed completed record and assert a second job for the same result is blocked and logged.
+- [x] Run the test and verify duplicate creation currently succeeds.
+- [x] Reserve the raw result ID on validation failure and log the validation exception without sensitive record contents.
+- [x] Run workflow tests and commit.
 
 ### Task 4: Non-Blocking Create Cleanup
 
@@ -81,10 +81,10 @@
 - Consumes: synchronous `VideoWorkflowService.create(result_id)` which can perform filesystem cleanup.
 - Produces: a synchronous FastAPI route executed by Starlette's worker threadpool, preserving the same HTTP response contract.
 
-- [ ] Add a concurrent API regression test where a deliberately slow create call must not delay an unrelated health request.
-- [ ] Run the test and verify the current async route blocks the app event loop.
-- [ ] Convert only the create endpoint to a synchronous route so FastAPI offloads it automatically.
-- [ ] Run video API tests and commit.
+- [x] Add a concurrent API regression test where a deliberately slow create call must not delay an unrelated health request.
+- [x] Run the test and verify the current async route blocks the app event loop.
+- [x] Convert only the create endpoint to a synchronous route so FastAPI offloads it automatically.
+- [x] Run video API tests and commit.
 
 ### Task 5: Render and Publish Retry State Safety
 
@@ -96,10 +96,10 @@
 - `run_render(video_job_id)` ignores only terminal `COMPLETED`/`FAILED`; `PROCESSING` raises `WorkflowConflict`.
 - `run_publish(video_job_id)` returns unchanged for terminal publish states and invokes the publisher at most once.
 
-- [ ] Add failing tests for a `PROCESSING` render retry and a second publish call after scheduling.
-- [ ] Run both tests and verify the first is silently swallowed and the second raises.
-- [ ] Narrow the render terminal-state guard and add the publish terminal-state guard.
-- [ ] Run workflow and video API tests and commit.
+- [x] Add failing tests for a `PROCESSING` render retry and a second publish call after scheduling.
+- [x] Run both tests and verify the first is silently swallowed and the second raises.
+- [x] Narrow the render terminal-state guard and add the publish terminal-state guard.
+- [x] Run workflow and video API tests and commit.
 
 ### Task 6: Recovery Timestamp and Renderer Runtime Gate
 
@@ -117,11 +117,11 @@
 - `RushHourVideoRenderer.validate_runtime()` verifies the font and both FFmpeg executables.
 - `run_render()` calls both TTS and renderer runtime validators before scene generation.
 
-- [ ] Add failing timestamp, missing-executable, and pre-L4 renderer-validation tests.
-- [ ] Run them and verify the old timestamp and late executable failures.
-- [ ] Implement aware recovery timestamps and the renderer runtime validator with sanitized errors.
-- [ ] Update typed test doubles to implement `validate_runtime()` and call the validator before scene generation.
-- [ ] Run store, renderer, workflow, API, and model-to-video tests and commit.
+- [x] Add failing timestamp, missing-executable, and pre-L4 renderer-validation tests.
+- [x] Run them and verify the old timestamp and late executable failures.
+- [x] Implement aware recovery timestamps and the renderer runtime validator with sanitized errors.
+- [x] Update typed test doubles to implement `validate_runtime()` and call the validator before scene generation.
+- [x] Run store, renderer, workflow, API, and model-to-video tests and commit.
 
 ### Task 7: Follow-up Documentation and Full Verification
 
@@ -132,8 +132,7 @@
 **Interfaces:**
 - Documents that completed intermediate work directories require an explicit retention period before automated deletion.
 
-- [ ] Record item 8 as a non-blocking storage-retention decision with final MP4 excluded from intermediate cleanup.
+- [x] Record item 8 as a non-blocking storage-retention decision with final MP4 excluded from intermediate cleanup.
 - [ ] Run all pytest tests, Ruff, `git diff --check`, and the real FFmpeg render integration.
 - [ ] Inspect git diff and confirm no TTS/model/approval contract drift.
 - [ ] Push the existing branch, wait for GitHub Actions, and comment on PR #22 with item-by-item evidence.
-
