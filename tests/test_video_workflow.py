@@ -1,4 +1,6 @@
 import hashlib
+import subprocess
+import sys
 import threading
 import wave
 from datetime import datetime, timedelta
@@ -17,6 +19,7 @@ from app.backend.services.tts_provider import TTSAudio, TTSRuntimeUnavailable
 from app.backend.services.video_renderer import RenderResult
 from app.backend.services.video_workflow import (
     DEFAULT_FAILED_WORK_TTL_SECONDS,
+    LOGGER,
     VideoWorkflowService,
     WorkflowConflict,
     WorkflowNotFound,
@@ -437,7 +440,7 @@ def test_run_render_logs_failed_stage_with_traceback_and_safe_job_context(
 
     with caplog.at_level(
         "ERROR",
-        logger="app.backend.services.video_workflow",
+        logger=LOGGER.name,
     ):
         service.run_render(job.video_job_id)
 
@@ -451,7 +454,7 @@ def test_run_render_logs_failed_stage_with_traceback_and_safe_job_context(
 def test_run_render_logs_major_stage_start_and_completion(workflow, caplog):
     with caplog.at_level(
         "INFO",
-        logger="app.backend.services.video_workflow",
+        logger=LOGGER.name,
     ):
         job = _rendered_job(workflow)
 
@@ -478,6 +481,37 @@ def test_run_render_logs_major_stage_start_and_completion(workflow, caplog):
     ]
     assert all(record.duration_ms >= 0 for record in completed_records)
     assert all(record.video_job_id == job.video_job_id for record in completed_records)
+
+
+def test_render_stage_info_logs_are_visible_with_uvicorn_default_logging():
+    probe = """
+import logging.config
+
+from uvicorn.config import LOGGING_CONFIG
+
+logging.config.dictConfig(LOGGING_CONFIG)
+
+from app.backend.services.video_workflow import _track_render_stage
+
+with _track_render_stage(
+    stage="scene_images",
+    video_job_id="video_probe",
+    result_id="res_probe",
+):
+    pass
+"""
+
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    output = f"{completed.stdout}\n{completed.stderr}"
+    assert completed.returncode == 0
+    assert "video render stage started stage=scene_images" in output
+    assert "video render stage completed stage=scene_images" in output
 
 
 def test_run_render_records_source_conflict_reason(tmp_path, board):

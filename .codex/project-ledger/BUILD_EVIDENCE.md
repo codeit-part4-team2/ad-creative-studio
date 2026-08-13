@@ -23,3 +23,4 @@
 | 2026-08-13 KST | Render observability regression | focused RED then GREEN workflow tests | `[VERIFIED] 4 expected failures before implementation; 4 passed after implementation` | Covers scene image, TTS, FFmpeg failure stage and successful stage events |
 | 2026-08-13 KST | Render observability full suite | `python -m pytest -q` | `[VERIFIED] 308 passed in 40.62s` | Local `codex/video-stage-logging` worktree before commit |
 | 2026-08-13 KST | Render observability static checks | Ruff on changed Python files plus `git diff --check` | `[VERIFIED] exit 0` | Local `codex/video-stage-logging` worktree before commit |
+| 2026-08-13 KST | Uvicorn journal visibility regression and final suite | subprocess probe, `python -m pytest -q`, Ruff, and `git diff --check` | `[VERIFIED] probe failed before logger routing fix; 309 passed in 39.31s after fix; static checks exited 0` | PR #25 follow-up before second push |

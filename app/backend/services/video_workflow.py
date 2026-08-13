@@ -52,7 +52,9 @@ SLOT_WINDOWS = {
 }
 DEFAULT_FAILED_WORK_TTL_SECONDS = 7 * 24 * 60 * 60
 DEFAULT_FAILED_WORK_CLEANUP_INTERVAL_SECONDS = 60 * 60
-LOGGER = logging.getLogger(__name__)
+# Keep application stage logs on Uvicorn's configured error hierarchy so INFO
+# records are visible in the systemd journal without a separate log config.
+LOGGER = logging.getLogger(f"uvicorn.error.{__name__}")
 
 
 class WorkflowError(RuntimeError):
