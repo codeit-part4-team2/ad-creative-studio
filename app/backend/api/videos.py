@@ -26,7 +26,7 @@ def _workflow(request: Request) -> VideoWorkflowService:
 
 
 @router.post("", response_model=VideoCreateResponse, status_code=202)
-async def create_video(
+def create_video(
     req: VideoCreateRequest,
     request: Request,
     background_tasks: BackgroundTasks,
