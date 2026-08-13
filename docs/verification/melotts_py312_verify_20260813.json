@@ -11,8 +11,8 @@
       "sha256": "04a3d248d707182b87846b2cc1ba4a6b2b0129c620a6a86a4e4a72f0e7810a4f",
       "engine": "melotts-korean",
       "voice_preset": "deadpan-ai-v1",
-      "pronunciation_status": "needs_review",
-      "review_notes": ""
+      "pronunciation_status": "confirmed",
+      "review_notes": "2026-08-13 김재헌 직접 청취 확인 - 3.11 대비 발음 이상 없음"
     },
     {
       "key": "numbers_price",
@@ -23,8 +23,8 @@
       "sha256": "e4f022b8ae5da32dc71906074e427b108f19272db09834e7aa3695e31940fe99",
       "engine": "melotts-korean",
       "voice_preset": "deadpan-ai-v1",
-      "pronunciation_status": "needs_review",
-      "review_notes": ""
+      "pronunciation_status": "confirmed",
+      "review_notes": "2026-08-13 김재헌 직접 청취 확인 - 3.11 대비 발음 이상 없음"
     },
     {
       "key": "commute_time",
@@ -35,8 +35,8 @@
       "sha256": "5f29b89c6dffdab36f5d0ae703949a6026595dccd4a0c5f789fa718a964181c8",
       "engine": "melotts-korean",
       "voice_preset": "deadpan-ai-v1",
-      "pronunciation_status": "needs_review",
-      "review_notes": ""
+      "pronunciation_status": "confirmed",
+      "review_notes": "2026-08-13 김재헌 직접 청취 확인 - 3.11 대비 발음 이상 없음"
     },
     {
       "key": "capacity_unit",
@@ -47,8 +47,8 @@
       "sha256": "6e850db5fe22e7b2415ff4295ded1b6bdbf1299a1c26ce56dd1f158df0844b10",
       "engine": "melotts-korean",
       "voice_preset": "deadpan-ai-v1",
-      "pronunciation_status": "needs_review",
-      "review_notes": ""
+      "pronunciation_status": "confirmed",
+      "review_notes": "2026-08-13 김재헌 직접 청취 확인 - 3.11 대비 발음 이상 없음"
     },
     {
       "key": "mixed_usb_c",
@@ -59,8 +59,8 @@
       "sha256": "dc74f01e22114047872527e09ea0b7797d635b78fed54a05c5742af1ab5251df",
       "engine": "melotts-korean",
       "voice_preset": "deadpan-ai-v1",
-      "pronunciation_status": "needs_review",
-      "review_notes": ""
+      "pronunciation_status": "confirmed",
+      "review_notes": "2026-08-13 김재헌 직접 청취 확인 - 3.11 대비 발음 이상 없음"
     },
     {
       "key": "batchim_linking",
@@ -71,8 +71,8 @@
       "sha256": "c29eb04a25e671b24108b2fd04c5bcf197ba761c34817122b8b6c6bc4a362821",
       "engine": "melotts-korean",
       "voice_preset": "deadpan-ai-v1",
-      "pronunciation_status": "needs_review",
-      "review_notes": ""
+      "pronunciation_status": "confirmed",
+      "review_notes": "2026-08-13 김재헌 직접 청취 확인 - 3.11 대비 발음 이상 없음"
     },
     {
       "key": "self_aware",
@@ -83,8 +83,8 @@
       "sha256": "a47b4dd89d784c38929cf9b63b068cda7d33b3b6304dccbfed36d185932e2c01",
       "engine": "melotts-korean",
       "voice_preset": "deadpan-ai-v1",
-      "pronunciation_status": "needs_review",
-      "review_notes": ""
+      "pronunciation_status": "confirmed",
+      "review_notes": "2026-08-13 김재헌 직접 청취 확인 - 3.11 대비 발음 이상 없음"
     }
   ]
 }
