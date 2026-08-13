@@ -127,6 +127,7 @@ class VideoWorkflowService:
         self._active_job_ids_by_result: dict[str, set[str]] = {}
         self._failed_job_updated_at: dict[str, datetime] = {}
         self._next_failed_work_cleanup_at: datetime | None = None
+        self._job_index_complete = True
         self._initialize_job_indexes()
 
     def _clock(self) -> datetime:
@@ -150,7 +151,30 @@ class VideoWorkflowService:
         for raw_job in store.VIDEO_JOBS.values():
             try:
                 job = VideoJob.model_validate(raw_job)
-            except ValueError:
+            except ValueError as exc:
+                result_id = raw_job.get("result_id")
+                video_job_id = raw_job.get("video_job_id")
+                if (
+                    isinstance(result_id, str)
+                    and result_id
+                    and isinstance(video_job_id, str)
+                    and video_job_id
+                ):
+                    self._active_job_ids_by_result.setdefault(result_id, set()).add(
+                        video_job_id
+                    )
+                    LOGGER.error(
+                        "invalid persisted video job %s (%s); reserving result %s",
+                        video_job_id,
+                        type(exc).__name__,
+                        result_id,
+                    )
+                else:
+                    self._job_index_complete = False
+                    LOGGER.error(
+                        "persisted video job cannot be indexed (%s); blocking new jobs",
+                        type(exc).__name__,
+                    )
                 continue
             self._update_job_indexes_locked(job)
 
@@ -202,6 +226,8 @@ class VideoWorkflowService:
         now = self._clock()
         self._cleanup_stale_failed_work_dirs(now=now)
         with self._state_lock:
+            if not self._job_index_complete:
+                raise WorkflowConflict("저장된 영상 작업을 먼저 복구해야 합니다")
             if result_id in self._active_job_ids_by_result:
                 raise WorkflowConflict("이 결과에는 이미 활성 영상 작업이 있습니다")
             job = VideoJob(

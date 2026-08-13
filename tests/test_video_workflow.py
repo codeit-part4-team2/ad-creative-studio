@@ -269,6 +269,26 @@ def test_create_persists_script_and_rejects_active_duplicate(workflow):
         workflow.create("res_1")
 
 
+def test_malformed_persisted_job_blocks_duplicate_result_and_is_logged(
+    tmp_path,
+    board,
+    caplog,
+):
+    setup = _service(tmp_path, board)
+    existing = setup.create("res_1")
+    store.VIDEO_JOBS[existing.video_job_id].update(
+        render_status="completed",
+        tone="invalid-tone",
+    )
+
+    with caplog.at_level("ERROR"):
+        recovered = _service(tmp_path, board)
+
+    with pytest.raises(WorkflowConflict, match="이미"):
+        recovered.create("res_1")
+    assert existing.video_job_id in caplog.text
+
+
 def test_create_maps_invalid_and_unknown_storyboards(tmp_path):
     common = dict(
         renderer=FakeRenderer(),
