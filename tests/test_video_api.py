@@ -300,6 +300,9 @@ def test_slow_create_does_not_block_unrelated_async_request():
 
     app = FastAPI()
     app.state.video_workflow = SlowCreateWorkflow()
+    app.dependency_overrides[videos.get_current_customer] = lambda: {
+        "customer_id": "CUS-TEST"
+    }
     app.include_router(videos.router)
 
     @app.get("/probe")
