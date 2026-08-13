@@ -62,10 +62,10 @@ def test_storyboard_uses_only_stored_product_facts(seeded_result):
 
     assert board.image_path == image_path.resolve()
     assert [scene.display_text for scene in board.scenes] == [
-        "휴대용 선풍기, 출근길에 짧게 소개할게요.",
-        "광고라서 칭찬은 해야 합니다. 과장은 안 하겠습니다.",
-        "주요 특징을 말씀드리면, USB-C 충전입니다.",
-        "필요하셨다면 확인해 보세요. 저는 계속 여기 있겠습니다.",
+        "휴대용 선풍기, 나왔습니다.",
+        "광고입니다. 저도 압니다.",
+        "USB-C 충전, 됩니다.",
+        "보세요. 저는 안 쉽니다.",
     ]
     assert [scene.image_purpose for scene in board.scenes] == [
         "hero",
@@ -73,7 +73,7 @@ def test_storyboard_uses_only_stored_product_facts(seeded_result):
         "benefit",
         "cta",
     ]
-    assert board.script_version == "deadpan-ai-v2"
+    assert board.script_version == "deadpan-ai-v3"
     assert board.pronunciation_review_required is True
     assert all("할인" not in scene.display_text for scene in board.scenes)
 
@@ -91,7 +91,7 @@ def test_storyboard_without_selling_points_keeps_four_scene_contract(
     )
 
     assert len(board.scenes) == 4
-    assert board.scenes[2].display_text == "제품의 주요 특징을 확인해 보세요."
+    assert board.scenes[2].display_text == "장점은 화면으로 보세요."
 
 
 def test_storyboard_rejects_path_outside_output_root(seeded_result, tmp_path):

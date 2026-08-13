@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Mapping
 
 
-SCRIPT_VERSION = "deadpan-ai-v2"
+SCRIPT_VERSION = "deadpan-ai-v3"
 _HANGUL_TEXT = re.compile(r"^[가-힣\s.,!?]+$")
 
 
@@ -78,26 +78,26 @@ class _ScriptTemplate:
 _TEMPLATES = {
     "commute_am": (
         _ScriptTemplate(
-            intro="{product}, 출근길에 짧게 소개할게요.",
-            self_aware="광고라서 칭찬은 해야 합니다. 과장은 안 하겠습니다.",
-            cta="필요하셨다면 확인해 보세요. 저는 계속 여기 있겠습니다.",
+            intro="{product}, 나왔습니다.",
+            self_aware="광고입니다. 저도 압니다.",
+            cta="보세요. 저는 안 쉽니다.",
         ),
         _ScriptTemplate(
-            intro="바쁜 아침이니 {product}부터 보여드릴게요.",
-            self_aware="저는 잠이 없어서 아침 광고도 괜찮습니다.",
-            cta="출근 전에 한 번 확인해 보세요. 저는 지각하지 않습니다.",
+            intro="{product}, 잠깐 보시죠.",
+            self_aware="저는 안 쉽니다. 광고는 합니다.",
+            cta="보세요. 저는 지각 안 합니다.",
         ),
     ),
     "commute_pm": (
         _ScriptTemplate(
-            intro="{product}, 퇴근길에 짧게 소개할게요.",
-            self_aware="저는 퇴근이 없습니다. 광고는 계속할 수 있습니다.",
-            cta="필요하셨다면 확인해 보세요. 저는 먼저 퇴근하지 않겠습니다.",
+            intro="{product}, 퇴근길입니다.",
+            self_aware="저는 퇴근이 없습니다.",
+            cta="보세요. 저는 먼저 못 갑니다.",
         ),
         _ScriptTemplate(
-            intro="퇴근 중이시라면 {product}만 보고 가세요.",
-            self_aware="광고라서 활기차야 합니다. 목소리는 이게 최선입니다.",
-            cta="퇴근길에 한 번 확인해 보세요. 저는 계속 여기 있겠습니다.",
+            intro="{product}, 보고 가세요.",
+            self_aware="광고입니다. 목소리는 최선입니다.",
+            cta="보세요. 저는 계속 일합니다.",
         ),
     ),
 }
@@ -156,19 +156,15 @@ def build_comic_script(
     if selling_points:
         selling_point = lexicon.resolve(selling_points[0])
         benefit = _line(
-            display_text=(
-                f"주요 특징을 말씀드리면, {selling_point.display_text}입니다."
-            ),
-            spoken_text=(
-                f"주요 특징을 말씀드리면, {selling_point.spoken_text}입니다."
-            ),
+            display_text=f"{selling_point.display_text}, 됩니다.",
+            spoken_text=f"{selling_point.spoken_text}, 됩니다.",
             kind=ComicLineKind.BENEFIT,
             review_required=selling_point.review_required,
         )
     else:
         benefit = _line(
-            display_text="제품의 주요 특징을 확인해 보세요.",
-            spoken_text="제품의 주요 특징을 확인해 보세요.",
+            display_text="장점은 화면으로 보세요.",
+            spoken_text="장점은 화면으로 보세요.",
             kind=ComicLineKind.BENEFIT,
         )
 

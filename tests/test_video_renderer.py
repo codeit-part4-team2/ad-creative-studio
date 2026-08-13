@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
+from app.backend.services import video_renderer
 from app.backend.services.comic_script import ComicLineKind
 from app.backend.services.scene_images import SceneImage, SceneImageSet
 from app.backend.services.storyboard import Storyboard, StoryboardScene
@@ -67,21 +68,21 @@ def _scene_images(tmp_path: Path) -> SceneImageSet:
 
 def _storyboard(tmp_path: Path) -> Storyboard:
     scenes = (
-        StoryboardScene("테스트 상품입니다.", 2.0, kind=ComicLineKind.INTRO, image_purpose="hero"),
+        StoryboardScene("테스트 상품입니다.", 2.5, kind=ComicLineKind.INTRO, image_purpose="hero"),
         StoryboardScene(
             "저는 퇴근을 하지 않습니다.",
-            2.0,
+            2.5,
             kind=ComicLineKind.SELF_AWARE,
             image_purpose="self_aware",
         ),
         StoryboardScene(
             "주요 특징은 빠른 조리입니다.",
-            2.0,
+            3.0,
             kind=ComicLineKind.BENEFIT,
             image_purpose="benefit",
             accent_terms=("빠른 조리",),
         ),
-        StoryboardScene("퇴근길에 확인해 보세요.", 2.0, kind=ComicLineKind.CTA, image_purpose="cta"),
+        StoryboardScene("퇴근길에 확인해 보세요.", 3.0, kind=ComicLineKind.CTA, image_purpose="cta"),
     )
     return Storyboard(
         result_id="res_1",
@@ -92,7 +93,22 @@ def _storyboard(tmp_path: Path) -> Storyboard:
         image_path=tmp_path / "unused-legacy-path.png",
         scenes=scenes,
         source_fingerprint="a" * 64,
-        script_version="deadpan-ai-v1",
+        script_version="deadpan-ai-v3",
+    )
+
+
+def _write_audio_stub(
+    path: Path,
+    *,
+    duration_sec: float,
+) -> TTSAudio:
+    path.write_bytes(f"voice:{path.name}".encode("ascii"))
+    return TTSAudio(
+        path=path.resolve(),
+        duration_sec=duration_sec,
+        sha256=_sha256(path),
+        engine="fake-melotts",
+        voice_preset="deadpan-ai-v1",
     )
 
 
@@ -104,6 +120,21 @@ def test_fit_inside_preserves_entire_source_aspect_ratio():
 
     assert (width, height) == (980, 1225)
     assert width / height == 1080 / 1350
+
+
+def test_segment_timing_pads_short_speech_to_storyboard_target():
+    scene = StoryboardScene(
+        "장점은 화면으로 보세요.",
+        3.0,
+        kind=ComicLineKind.BENEFIT,
+        image_purpose="benefit",
+    )
+
+    timing = video_renderer._segment_timing(scene, speech_duration_sec=0.1)
+
+    assert timing.segment_duration_sec == pytest.approx(3.0)
+    assert timing.pre_silence_sec == pytest.approx(0.1)
+    assert timing.post_silence_sec == pytest.approx(2.8)
 
 
 @pytest.mark.parametrize("background", ("white", "#E8E8E8", "#0B1020"))
@@ -187,7 +218,7 @@ def test_renderer_outputs_verified_vertical_mp4_with_voiced_aac(tmp_path):
     assert result.output_path.stat().st_size > 0
     assert result.width == 1080
     assert result.height == 1920
-    assert 9.95 <= result.duration_sec <= 10.3
+    assert 11.4 <= result.duration_sec <= 11.8
     assert result.video_codec == "h264"
     assert result.audio_codec == "aac"
     assert result.caption_layout_version == CAPTION_LAYOUT_VERSION
@@ -210,12 +241,16 @@ def test_renderer_rejects_invalid_estimated_duration_before_ffmpeg(tmp_path):
             raise AssertionError(f"FFmpeg must not run for invalid duration: {args}")
 
     renderer = NoFfmpegRenderer()
+    measured_durations = (4.186, 6.016, 5.633, 6.527)
     speech_audio = tuple(
-        _write_voice_wav(tmp_path / f"short-{index}.wav", duration_sec=0.1)
-        for index in range(4)
+        _write_audio_stub(
+            tmp_path / f"line-{index:02d}.wav",
+            duration_sec=duration_sec,
+        )
+        for index, duration_sec in enumerate(measured_durations)
     )
 
-    with pytest.raises(RuntimeError, match="10~15"):
+    with pytest.raises(RuntimeError, match="10~15") as error:
         renderer.render(
             _storyboard(tmp_path),
             scene_images=_scene_images(tmp_path),
@@ -223,6 +258,12 @@ def test_renderer_rejects_invalid_estimated_duration_before_ffmpeg(tmp_path):
             output_path=tmp_path / "must-not-exist.mp4",
         )
 
+    detail = str(error.value)
+    assert "estimated=23.962s" in detail
+    assert "speech_total=22.362s" in detail
+    assert "silence_total=1.600s" in detail
+    for scene_name in ("intro", "self_aware", "benefit", "cta"):
+        assert scene_name in detail
     assert renderer.run_count == 0
     assert not (tmp_path / "must-not-exist.mp4").exists()
 

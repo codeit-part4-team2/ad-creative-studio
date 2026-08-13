@@ -16,3 +16,11 @@
 - Branch: `[VERIFIED] codex/video-stage-logging`, created from the current remote main.
 - Current milestone: `[VERIFIED]` stage-aware render logs and traceback coverage are implemented locally; the VM failure's actual stage remains `[UNVERIFIED]` until this change is deployed and E2E is rerun.
 - VM process mode: `[VERIFIED]` no `ad-service-api.service`; test operation uses direct Uvicorn terminals (`app.backend.main` on 8000 and `model_server.main` on 8001). Both servers were stopped when reported, so live post-deploy log output remains `[UNVERIFIED]`.
+
+## 2026-08-13 Shorts duration-budget update
+
+- Project root: `[VERIFIED] G:\Codex\projects\상급프로젝트\worktrees\ad-creative-studio-shorts-duration-budget`.
+- Base: `[VERIFIED] origin/main @ 096ea6815d60739f11fd984e9c44965cd1d603b4`, the squash merge commit for PR #25.
+- Branch and implementation: `[VERIFIED] codex/shorts-duration-budget @ 54e5712` plus design commit `1b13cc5`.
+- Root cause: `[VERIFIED]` VM job `video_906b946fcef1` produced four WAV files totalling 22.362 seconds; 1.600 seconds of silence yielded a 23.962-second estimate and the 10~15-second guard rejected it before FFmpeg.
+- Current milestone: `[VERIFIED]` concise `deadpan-ai-v3`, target-duration padding, and numeric overrun evidence are locally implemented and tested; actual MeloTTS duration and video quality on L4 remain `[UNVERIFIED]` until a new E2E job runs.
