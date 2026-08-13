@@ -63,9 +63,9 @@ def test_storyboard_uses_only_stored_product_facts(seeded_result):
     assert board.image_path == image_path.resolve()
     assert [scene.display_text for scene in board.scenes] == [
         "휴대용 선풍기, 나왔습니다.",
-        "광고입니다. 저도 압니다.",
+        "광고입니다.",
         "USB-C 충전, 됩니다.",
-        "보세요. 저는 안 쉽니다.",
+        "보세요. 전 일합니다.",
     ]
     assert [scene.image_purpose for scene in board.scenes] == [
         "hero",
@@ -73,7 +73,7 @@ def test_storyboard_uses_only_stored_product_facts(seeded_result):
         "benefit",
         "cta",
     ]
-    assert board.script_version == "deadpan-ai-v3"
+    assert board.script_version == "deadpan-ai-v4"
     assert board.pronunciation_review_required is True
     assert all("할인" not in scene.display_text for scene in board.scenes)
 
