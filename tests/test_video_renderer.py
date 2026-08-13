@@ -225,3 +225,14 @@ def test_renderer_rejects_invalid_estimated_duration_before_ffmpeg(tmp_path):
 
     assert renderer.run_count == 0
     assert not (tmp_path / "must-not-exist.mp4").exists()
+
+
+def test_renderer_runtime_validation_rejects_missing_ffmpeg_before_render(tmp_path):
+    renderer = RushHourVideoRenderer(
+        font_path=Path("assets/fonts/NanumGothic-Regular.ttf"),
+        ffmpeg_bin=str(tmp_path / "missing-ffmpeg"),
+        ffprobe_bin=str(tmp_path / "missing-ffprobe"),
+    )
+
+    with pytest.raises(RuntimeError, match="FFmpeg"):
+        renderer.validate_runtime()

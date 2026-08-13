@@ -103,6 +103,9 @@ class FakeRenderer:
         self.calls: list[dict[str, object]] = []
         self.observed_status: str | None = None
 
+    def validate_runtime(self) -> None:
+        return None
+
     def render(self, storyboard, *, scene_images, speech_audio, output_path):
         self.observed_status = store.VIDEO_JOBS[next(iter(store.VIDEO_JOBS))]["render_status"]
         self.calls.append(
@@ -470,6 +473,30 @@ def test_missing_tts_runtime_validator_fails_before_l4_scene_generation(
     assert failed.render_status is RenderStatus.FAILED
     assert scene_provider.calls == []
     assert service.renderer.calls == []
+
+
+def test_renderer_runtime_failure_stops_before_l4_scene_generation(
+    tmp_path,
+    board,
+):
+    class UnavailableRenderer(FakeRenderer):
+        def validate_runtime(self) -> None:
+            raise RuntimeError("ffmpeg unavailable")
+
+    scene_provider = FakeSceneProvider()
+    service = _service(
+        tmp_path,
+        board,
+        renderer=UnavailableRenderer(),
+        scene_provider=scene_provider,
+    )
+    job = service.create("res_1")
+
+    service.run_render(job.video_job_id)
+
+    failed = service.get(job.video_job_id)
+    assert failed.render_status is RenderStatus.FAILED
+    assert scene_provider.calls == []
 
 
 def test_duplicate_render_call_keeps_completed_job_unchanged(workflow):

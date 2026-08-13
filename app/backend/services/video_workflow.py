@@ -26,7 +26,10 @@ from app.backend.services.tts_provider import (
     TTSProvider,
     TTSRuntimeUnavailable,
 )
-from app.backend.services.video_renderer import RushHourVideoRenderer
+from app.backend.services.video_renderer import (
+    RushHourVideoRenderer,
+    VideoRuntimeUnavailable,
+)
 from app.backend.services.youtube_publisher import (
     AuthenticationRequired,
     DisabledPublisher,
@@ -326,6 +329,7 @@ class VideoWorkflowService:
                 storyboard = self._storyboard_builder(processing.result_id)
                 if storyboard.source_fingerprint != processing.source_fingerprint:
                     raise WorkflowConflict("원본 광고가 변경되어 다시 생성해야 합니다")
+                self._renderer.validate_runtime()
                 self._tts_provider.validate_runtime()
                 job_dir = self._job_work_dir(video_job_id)
                 product_image_url = self._product_image_url_builder(processing.product_id)
@@ -354,6 +358,8 @@ class VideoWorkflowService:
             except Exception as exc:
                 if isinstance(exc, TTSRuntimeUnavailable):
                     error_message = "TTS 실행 환경이 준비되지 않았습니다"
+                elif isinstance(exc, VideoRuntimeUnavailable):
+                    error_message = "영상 렌더링 실행 환경이 준비되지 않았습니다"
                 elif isinstance(exc, WorkflowConflict):
                     error_message = str(exc)
                 else:

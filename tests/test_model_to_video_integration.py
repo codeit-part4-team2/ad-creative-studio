@@ -42,6 +42,9 @@ class _RecordingRenderer:
         self.scene_count = 0
         self.audio_count = 0
 
+    def validate_runtime(self) -> None:
+        return None
+
     def render(self, storyboard, *, scene_images, speech_audio, output_path):
         self.scene_count = len(scene_images.images)
         self.audio_count = len(speech_audio)

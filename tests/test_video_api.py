@@ -64,6 +64,9 @@ class ApiTTSProvider:
 
 
 class ApiRenderer:
+    def validate_runtime(self) -> None:
+        return None
+
     def render(self, storyboard, *, scene_images, speech_audio, output_path):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"api-video")

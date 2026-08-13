@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -23,6 +24,10 @@ BASE_SILENCE_SEC = 0.1
 DEADPAN_SILENCE_SEC = 0.5
 MIN_VIDEO_DURATION_SEC = 9.95
 MAX_VIDEO_DURATION_SEC = 15.05
+
+
+class VideoRuntimeUnavailable(RuntimeError):
+    pass
 
 @dataclass(frozen=True, slots=True)
 class RenderResult:
@@ -271,6 +276,22 @@ class RushHourVideoRenderer:
         self._ffprobe_bin = ffprobe_bin
         self._preset = preset
 
+    def validate_runtime(self) -> None:
+        if not self._font_path.is_file():
+            raise VideoRuntimeUnavailable("한글 폰트 파일을 찾을 수 없습니다")
+        missing = [
+            label
+            for label, executable in (
+                ("FFmpeg", self._ffmpeg_bin),
+                ("ffprobe", self._ffprobe_bin),
+            )
+            if shutil.which(executable) is None
+        ]
+        if missing:
+            raise VideoRuntimeUnavailable(
+                f"{', '.join(missing)} 실행 파일을 찾을 수 없습니다"
+            )
+
     def _run(self, args: list[str]) -> None:
         completed = subprocess.run(
             args,
@@ -473,8 +494,7 @@ class RushHourVideoRenderer:
         speech_audio: tuple[TTSAudio, ...],
         output_path: Path,
     ) -> RenderResult:
-        if not self._font_path.is_file():
-            raise ValueError("한글 폰트 파일을 찾을 수 없습니다")
+        self.validate_runtime()
         tts_audio_sha256 = self._validate_speech_audio(storyboard, speech_audio)
         self._validate_estimated_duration(storyboard, speech_audio)
         image_sequence = _scene_image_sequence(scene_images)

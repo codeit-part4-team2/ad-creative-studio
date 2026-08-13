@@ -11,6 +11,7 @@
 """
 import json
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 STORE_PATH = Path("var/store.json")
@@ -91,9 +92,13 @@ def _migrate_missing_result_ids() -> None:
                 r["result_id"] = f"res_migrated_{uuid.uuid4().hex[:8]}"
 
 
-def _recover_video_jobs() -> None:
+def _recover_video_jobs(*, recovered_at: datetime | None = None) -> None:
     """재시작으로 중단된 영상 작업을 중복 실행되지 않는 안전한 상태로 바꾼다."""
+    recovery_time = recovered_at or datetime.now(timezone.utc)
+    if recovery_time.tzinfo is None or recovery_time.utcoffset() is None:
+        raise ValueError("video job recovery time must be timezone-aware")
     for job in VIDEO_JOBS.values():
+        recovered = False
         for removed_field in (
             "music_key",
             "music_warning",
@@ -105,12 +110,16 @@ def _recover_video_jobs() -> None:
             job["error_message"] = (
                 "서버 재시작으로 영상 생성이 중단되었습니다. 다시 시도해주세요."
             )
+            recovered = True
         if (
             job.get("publish_status") == "pending"
             and not job.get("youtube_video_id")
         ):
             job["publish_status"] = "needs_review"
             job["youtube_error"] = "게시 성공 여부를 확인한 뒤 다시 시도해주세요."
+            recovered = True
+        if recovered:
+            job["updated_at"] = recovery_time.isoformat()
 
 
 def reset_for_tests() -> None:
