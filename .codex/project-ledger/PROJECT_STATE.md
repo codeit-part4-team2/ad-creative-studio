@@ -43,7 +43,7 @@
 
 ## 2026-08-13 Shorts clean-source model handoff
 
-- Worktree and branch: `[VERIFIED] G:\Codex\projects\상급프로젝트\worktrees\ad-creative-studio-shorts-full-bleed` on `codex/shorts-full-bleed`, still unstaged, uncommitted, unpushed, and without a PR.
+- Worktree and branch: `[VERIFIED] G:\Codex\projects\상급프로젝트\worktrees\ad-creative-studio-shorts-full-bleed` on `codex/shorts-full-bleed`; implementation commit `0e7137a` is pushed to the team repository and Draft PR #28 is open against `main`.
 - Contract: `[VERIFIED]` each new real or mock `ToneResult` stores a separate text-free `source_image_url`; formatted headline/subcopy exports remain under `images`.
 - Shorts boundary: `[VERIFIED]` storyboard construction requires the source URL and rejects legacy results rather than falling back to a copy-baked card.
-- Current milestone: `[VERIFIED]` full-bleed rendering and clean-source selection pass the complete local suite. Native 9:16 inference remains `[UNVERIFIED]` and excluded pending an L4 same-input quality, latency, and VRAM comparison.
+- Current milestone: `[VERIFIED]` full-bleed rendering and clean-source selection pass the complete local suite and are published for review. PR #28 CI is `[UNVERIFIED]` while the GitHub pytest job is still running; review requests are intentionally deferred until 2026-08-14. Native 9:16 inference remains `[UNVERIFIED]` and excluded pending an L4 same-input quality, latency, and VRAM comparison.
