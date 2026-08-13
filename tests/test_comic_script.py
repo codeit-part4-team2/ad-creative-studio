@@ -20,7 +20,7 @@ def test_script_has_one_natural_self_aware_beat_and_factual_cta():
     )
 
     assert first == second
-    assert first.version == "deadpan-ai-v2"
+    assert first.version == "deadpan-ai-v3"
     assert [line.kind for line in first.lines] == [
         ComicLineKind.INTRO,
         ComicLineKind.SELF_AWARE,
@@ -30,12 +30,10 @@ def test_script_has_one_natural_self_aware_beat_and_factual_cta():
     self_aware = next(
         line for line in first.lines if line.kind is ComicLineKind.SELF_AWARE
     )
-    assert self_aware.display_text == (
-        "광고라서 칭찬은 해야 합니다. 과장은 안 하겠습니다."
-    )
-    assert first.lines[-1].display_text == (
-        "필요하셨다면 확인해 보세요. 저는 계속 여기 있겠습니다."
-    )
+    assert first.lines[0].display_text == "휴대용 선풍기, 나왔습니다."
+    assert self_aware.display_text == "광고입니다. 저도 압니다."
+    assert first.lines[-1].display_text == "보세요. 저는 안 쉽니다."
+    assert sum(len(line.spoken_text) for line in first.lines) <= 64
     assert all("할인" not in line.display_text for line in first.lines)
 
 
@@ -50,8 +48,8 @@ def test_script_uses_only_one_stored_selling_point():
     benefit = next(
         line for line in script.lines if line.kind is ComicLineKind.BENEFIT
     )
-    assert benefit.display_text == "주요 특징을 말씀드리면, USB-C 충전입니다."
-    assert benefit.spoken_text == "주요 특징을 말씀드리면, 유에스비 씨 충전입니다."
+    assert benefit.display_text == "USB-C 충전, 됩니다."
+    assert benefit.spoken_text == "유에스비 씨 충전, 됩니다."
     assert all("8시간 사용" not in line.display_text for line in script.lines)
 
 

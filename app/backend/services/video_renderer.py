@@ -43,6 +43,13 @@ class RenderResult:
     caption_layout_version: str
 
 
+@dataclass(frozen=True, slots=True)
+class _SegmentTiming:
+    segment_duration_sec: float
+    pre_silence_sec: float
+    post_silence_sec: float
+
+
 def _file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source_file:
@@ -55,6 +62,27 @@ def _scene_silence_sec(scene: StoryboardScene) -> float:
     if scene.kind is ComicLineKind.SELF_AWARE:
         return DEADPAN_SILENCE_SEC
     return BASE_SILENCE_SEC
+
+
+def _segment_timing(
+    scene: StoryboardScene,
+    *,
+    speech_duration_sec: float,
+) -> _SegmentTiming:
+    minimum_silence_sec = _scene_silence_sec(scene)
+    segment_duration_sec = max(
+        scene.duration_sec,
+        speech_duration_sec + 2 * minimum_silence_sec,
+    )
+    pre_silence_sec = minimum_silence_sec
+    post_silence_sec = (
+        segment_duration_sec - speech_duration_sec - pre_silence_sec
+    )
+    return _SegmentTiming(
+        segment_duration_sec=segment_duration_sec,
+        pre_silence_sec=pre_silence_sec,
+        post_silence_sec=post_silence_sec,
+    )
 
 
 def fit_inside(
@@ -311,15 +339,15 @@ class RushHourVideoRenderer:
         frame_path: Path,
         speech_path: Path,
         segment_path: Path,
-        speech_duration_sec: float,
-        silence_sec: float,
+        timing: _SegmentTiming,
     ) -> None:
-        segment_duration = speech_duration_sec + 2 * silence_sec
         audio_filter = (
-            f"[1:a]atrim=duration={silence_sec:.3f},asetpts=PTS-STARTPTS[pre];"
+            f"[1:a]atrim=duration={timing.pre_silence_sec:.3f},"
+            "asetpts=PTS-STARTPTS[pre];"
             "[2:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=mono,"
             "asetpts=PTS-STARTPTS[voice];"
-            f"[3:a]atrim=duration={silence_sec:.3f},asetpts=PTS-STARTPTS[post];"
+            f"[3:a]atrim=duration={timing.post_silence_sec:.3f},"
+            "asetpts=PTS-STARTPTS[post];"
             "[pre][voice][post]concat=n=3:v=0:a=1,aresample=44100[audio]"
         )
         self._run(
@@ -338,7 +366,7 @@ class RushHourVideoRenderer:
                 "-f",
                 "lavfi",
                 "-t",
-                f"{silence_sec:.3f}",
+                f"{timing.pre_silence_sec:.3f}",
                 "-i",
                 "anullsrc=channel_layout=mono:sample_rate=44100",
                 "-i",
@@ -346,7 +374,7 @@ class RushHourVideoRenderer:
                 "-f",
                 "lavfi",
                 "-t",
-                f"{silence_sec:.3f}",
+                f"{timing.post_silence_sec:.3f}",
                 "-i",
                 "anullsrc=channel_layout=mono:sample_rate=44100",
                 "-filter_complex",
@@ -356,7 +384,7 @@ class RushHourVideoRenderer:
                 "-map",
                 "[audio]",
                 "-t",
-                f"{segment_duration:.3f}",
+                f"{timing.segment_duration_sec:.3f}",
                 "-c:v",
                 "libx264",
                 "-preset",
@@ -474,17 +502,42 @@ class RushHourVideoRenderer:
     def _validate_estimated_duration(
         storyboard: Storyboard,
         speech_audio: tuple[TTSAudio, ...],
-    ) -> None:
-        estimated_duration = sum(
-            audio.duration_sec + 2 * _scene_silence_sec(scene)
+    ) -> tuple[_SegmentTiming, ...]:
+        timings = tuple(
+            _segment_timing(
+                scene,
+                speech_duration_sec=audio.duration_sec,
+            )
             for scene, audio in zip(
                 storyboard.scenes,
                 speech_audio,
                 strict=True,
             )
         )
+        estimated_duration = sum(
+            timing.segment_duration_sec for timing in timings
+        )
         if not MIN_VIDEO_DURATION_SEC <= estimated_duration <= MAX_VIDEO_DURATION_SEC:
-            raise RuntimeError("완성 영상 길이가 10~15초 범위를 벗어났습니다")
+            speech_total = sum(audio.duration_sec for audio in speech_audio)
+            silence_total = estimated_duration - speech_total
+            speech_by_scene = ", ".join(
+                f"{scene.kind.value}={audio.duration_sec:.3f}s"
+                for scene, audio in zip(
+                    storyboard.scenes,
+                    speech_audio,
+                    strict=True,
+                )
+            )
+            raise RuntimeError(
+                "완성 영상 길이가 10~15초 범위를 벗어났습니다: "
+                f"estimated={estimated_duration:.3f}s, "
+                f"speech_total={speech_total:.3f}s, "
+                f"silence_total={silence_total:.3f}s, "
+                f"allowed={MIN_VIDEO_DURATION_SEC:.2f}~"
+                f"{MAX_VIDEO_DURATION_SEC:.2f}s, "
+                f"speech_by_scene=[{speech_by_scene}]"
+            )
+        return timings
 
     def render(
         self,
@@ -496,7 +549,10 @@ class RushHourVideoRenderer:
     ) -> RenderResult:
         self.validate_runtime()
         tts_audio_sha256 = self._validate_speech_audio(storyboard, speech_audio)
-        self._validate_estimated_duration(storyboard, speech_audio)
+        segment_timings = self._validate_estimated_duration(
+            storyboard,
+            speech_audio,
+        )
         image_sequence = _scene_image_sequence(scene_images)
         for scene_image in scene_images.images:
             if not scene_image.path.is_file() or _file_sha256(scene_image.path) != scene_image.sha256:
@@ -510,8 +566,14 @@ class RushHourVideoRenderer:
         ) as temporary:
             temp_dir = Path(temporary)
             segment_paths: list[Path] = []
-            for index, (scene, scene_image, audio) in enumerate(
-                zip(storyboard.scenes, image_sequence, speech_audio, strict=True)
+            for index, (scene, scene_image, audio, timing) in enumerate(
+                zip(
+                    storyboard.scenes,
+                    image_sequence,
+                    speech_audio,
+                    segment_timings,
+                    strict=True,
+                )
             ):
                 frame_path = temp_dir / f"frame-{index:02d}.png"
                 segment_path = temp_dir / f"segment-{index:02d}.mp4"
@@ -527,8 +589,7 @@ class RushHourVideoRenderer:
                     frame_path=frame_path,
                     speech_path=audio.path,
                     segment_path=segment_path,
-                    speech_duration_sec=audio.duration_sec,
-                    silence_sec=_scene_silence_sec(scene),
+                    timing=timing,
                 )
                 segment_paths.append(segment_path)
             self._concat_segments(
