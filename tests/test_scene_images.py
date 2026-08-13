@@ -111,8 +111,6 @@ def test_provider_passes_existing_infer_contract_fields(tmp_path):
         assert "wristwatch" in negative_prompt
         assert "large circular prop" in negative_prompt
         assert "softbox" in negative_prompt
-        assert "photography equipment" in negative_prompt
-        assert "readable text" in negative_prompt
         assert "pseudo-text" in negative_prompt
         assert "numbers" in negative_prompt
         assert "price tag" in negative_prompt

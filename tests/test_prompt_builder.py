@@ -1,5 +1,6 @@
 import pytest
 
+from app.backend.services.scene_images import NEGATIVE_PROMPT
 from app.prompt.builder import build
 from app.prompt.schemas import PromptRequest, PromotionInfo
 from app.prompt.templates import TIME_SLOT_TEMPLATES, TONE_TEMPLATES
@@ -78,18 +79,23 @@ def test_premium_prompt_uses_a_restrained_set_without_watch_like_hero_props():
 def test_negative_prompt_rejects_competing_objects_and_photography_equipment():
     result = build(PromptRequest(product_name="air purifier", tone="premium"))
 
+    assert result.negative_prompt == NEGATIVE_PROMPT
     rejected_objects = (
+        "text",
+        "pseudo-text",
+        "numbers",
+        "price tag",
+        "signboard",
+        "poster",
+        "user interface",
         "wristwatch",
-        "watch face",
         "clock",
         "timer",
         "dial",
-        "secondary product",
-        "duplicate appliance",
+        "duplicate product",
         "large circular prop",
         "softbox",
         "tripod",
         "studio light",
-        "photography equipment",
     )
     assert all(item in result.negative_prompt for item in rejected_objects)

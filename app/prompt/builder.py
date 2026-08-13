@@ -10,20 +10,13 @@ Builder 역할:
 문구에 만들어 넣지 않는다 (COPY_RULES, requires_promotion_data 참고).
 """
 from .schemas import PromptRequest, PromptResult
+from .safety import DEFAULT_NEGATIVE_PROMPT
 from .templates import TONE_TEMPLATES, TIME_SLOT_TEMPLATES, COPY_RULES
 
 PRODUCT_PRESERVATION_INSTRUCTION = (
     "Product must be preserved exactly as uploaded "
     "(do not alter product shape, color, or logo)."
 )
-
-DEFAULT_NEGATIVE_PROMPT = (
-    "blurry, distorted product, extra logo, watermark, fake text, "
-    "wristwatch, watch face, clock, timer, dial, secondary product, "
-    "duplicate appliance, large circular prop, dominant background object, "
-    "softbox, tripod, studio light, photography equipment"
-)
-
 
 def build_image_prompt(req: PromptRequest) -> str:
     tone = TONE_TEMPLATES[req.tone]

@@ -7,6 +7,10 @@ from typing import Any
 
 from PIL import Image
 
+from app.prompt.safety import (
+    FAST_BACKGROUND_NEGATIVE_PROMPT,
+    merge_negative_prompts,
+)
 from model_server.cache import TTLCache
 from model_server.config import InferenceConfig, InferenceProfile
 from model_server.preprocessing import ProductArtifacts
@@ -29,6 +33,7 @@ class GenerationResult:
 
 def build_background_prompt(prompt: str) -> str:
     return (
+        "text-free background, no letters, numbers, signs, or UI, "
         f"{prompt}, empty product photography scene, "
         "one clear lower-center placement area, "
         "unobstructed background behind the placement area, "
@@ -212,18 +217,9 @@ class DiffusersGenerationPipeline:
         self._reset_peak_memory()
 
         if self._config.profile is InferenceProfile.FAST_COMPOSITE:
-            background_negative = ", ".join(
-                item
-                for item in (
-                    negative_prompt.strip(),
-                    (
-                        "foreground product, appliance, cup, package, logo, text, watermark, "
-                        "wristwatch, watch face, clock, timer, dial, secondary product, "
-                        "duplicate appliance, large circular prop, dominant background object, "
-                        "softbox, tripod, studio light, photography equipment"
-                    ),
-                )
-                if item
+            background_negative = merge_negative_prompts(
+                FAST_BACKGROUND_NEGATIVE_PROMPT,
+                negative_prompt,
             )
             output = loaded.pipeline(
                 prompt=build_background_prompt(prompt),

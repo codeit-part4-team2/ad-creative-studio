@@ -9,18 +9,11 @@ from PIL import Image
 
 from app.backend.services import model_server_client
 from app.backend.services.storyboard import Storyboard
+from app.prompt.safety import DEFAULT_NEGATIVE_PROMPT
 
 
 MAX_SCENE_PIXELS = 20_000_000
-NEGATIVE_PROMPT = (
-    "text, readable text, letters, pseudo-text, gibberish lettering, numbers, "
-    "typography, logo, watermark, signature, price tag, discount badge, menu board, "
-    "signboard, poster, product label, packaging text, screen text, user interface, "
-    "duplicate product, extra appliance, distorted object, blurry, low resolution, "
-    "wristwatch, watch face, clock, timer, dial, secondary product, duplicate appliance, "
-    "large circular prop, dominant background object, softbox, tripod, studio light, "
-    "photography equipment"
-)
+NEGATIVE_PROMPT = DEFAULT_NEGATIVE_PROMPT
 
 
 @dataclass(frozen=True, slots=True)
