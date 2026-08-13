@@ -11,3 +11,4 @@
 | 7 | `[UNVERIFIED]` | Obtain the original B/C/D JSON and confirm `background_size=768`, `output_size=1024`. | Response metadata and exact execution commit are recorded. | Serving VM access. |
 | 8 | `[UNVERIFIED]` | Run B0 1024/4-step versus B 768/4-step and stock versus FP16-safe VAE. | Same-seed P50/P95, stages, VRAM, warnings, failures, and image samples. | L4 access and model weights. |
 | 9 | `[UNVERIFIED]` | Run clean Python 3.11 resolver and `pip check` on L4. | Full `model_server/requirements.txt` installs in one command and `pip check` exits 0. | L4 access and multi-GB dependencies. |
+| 10 | `[UNVERIFIED]` | Review and deploy `codex/video-stage-logging`, then rerun one VM Shorts E2E job. | A `video render failed` record identifies `render_stage`, job/result IDs, exception type, and traceback. | Requires PR approval/merge and serving-owner deployment. |

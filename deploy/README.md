@@ -6,6 +6,25 @@
 
 GCP VM 상시 배포 자산 (systemd 유닛, 환경 스냅샷 등). 인프라 단독 소유 원칙에 따라 **김재헌(R3)** 담당.
 
+## 현재 테스트 VM 실행 방식과 쇼츠 로그 확인
+
+2026-08-13 서빙 담당자 확인 기준으로 테스트 VM에는 systemd 유닛이 없으며, 다음 두 터미널에서
+Uvicorn을 직접 실행합니다. 아래 systemd 내용은 향후 상시 배포용 예정 구조입니다.
+
+```bash
+# 터미널 1: 백엔드 API 및 쇼츠 workflow
+uvicorn app.backend.main:app --host 0.0.0.0 --port 8000 --workers 1 --env-file .env
+
+# 터미널 2: GPU 모델 서버
+uvicorn model_server.main:app --host 0.0.0.0 --port 8001 --workers 1 --env-file .env
+```
+
+PR #25 배포 후 터미널 1을 열어둔 상태에서 새 쇼츠 E2E를 실행합니다. 정상이라면 각 단계의
+`video render stage started`와 `video render stage completed`가 출력됩니다. 실패하면
+`video render failed` 행에 `stage`, `video_job_id`, `result_id`, `exception_type`이 나오고 바로 아래에
+traceback이 출력되어야 합니다. 이 로그가 실제 터미널에 보이는 것을 확인하기 전에는 관측성 검증을
+완료로 처리하지 않습니다. 로그에는 인증 토큰이나 `.env` 값을 복사하지 않습니다.
+
 예정 구조 (참고용, 이전 프로젝트 사례):
 ```
 deploy/
