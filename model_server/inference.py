@@ -87,6 +87,15 @@ def _cuda_synchronize() -> None:
         torch.cuda.synchronize()
 
 
+def _cuda_empty_cache() -> None:
+    try:
+        import torch
+    except ImportError:
+        return
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
 class InferenceEngine:
     def __init__(
         self,
@@ -97,6 +106,7 @@ class InferenceEngine:
         output_store: OutputStore,
         compositor: Callable[..., Image.Image] = composite_product,
         synchronize: Callable[[], None] = _cuda_synchronize,
+        empty_cache: Callable[[], None] = _cuda_empty_cache,
     ) -> None:
         self._config = config
         self._preprocessor = preprocessor
@@ -104,6 +114,7 @@ class InferenceEngine:
         self._output_store = output_store
         self._compositor = compositor
         self._synchronize = synchronize
+        self._empty_cache = empty_cache
         self._gpu_lock = Lock()
 
     @property
@@ -143,6 +154,7 @@ class InferenceEngine:
                     negative_prompt=negative_prompt,
                     artifacts=preparation.artifacts,
                 )
+            self._empty_cache()
         finally:
             self._gpu_lock.release()
 

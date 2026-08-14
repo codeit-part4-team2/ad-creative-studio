@@ -143,6 +143,8 @@ def _load_diffusers_pipeline(config: InferenceConfig) -> LoadedPipeline:
         pipeline.set_ip_adapter_scale(config.ip_adapter_scale)
 
     pipeline = pipeline.to(device)
+    if config.enable_vae_tiling:
+        pipeline.enable_vae_tiling()
     if config.enable_torch_compile and device == "cuda":
         _compile_pipeline(pipeline, torch)
     return LoadedPipeline(pipeline=pipeline, device=device)
