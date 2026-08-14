@@ -4,6 +4,7 @@ import hashlib
 import re
 import time
 import uuid
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,6 +18,8 @@ from model_server.config import InferenceConfig, InferenceProfile
 from model_server.pipelines import GenerationResult
 from model_server.preprocessing import PreparationResult
 from model_server.timing import StageTimings
+
+LOGGER = logging.getLogger(__name__)
 
 
 class Preprocessor(Protocol):
@@ -154,7 +157,12 @@ class InferenceEngine:
                     negative_prompt=negative_prompt,
                     artifacts=preparation.artifacts,
                 )
-            self._empty_cache()
+            try:
+                self._empty_cache()
+            except Exception:
+                LOGGER.exception(
+                    "generate 이후 GPU 캐시 정리에 실패했습니다. 생성된 이미지는 정상 처리합니다."
+                )
         finally:
             self._gpu_lock.release()
 

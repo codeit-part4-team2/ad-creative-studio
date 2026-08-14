@@ -203,6 +203,87 @@ def test_fast_loader_uses_fp16_safe_vae(monkeypatch) -> None:
     assert pipeline_calls[0][1]["vae"] is vae
 
 
+def _fast_loader_fixture(monkeypatch):
+    """fast_composite 로더에 필요한 fake torch/diffusers 모듈을 세팅하고,
+    enable_vae_tiling 호출 여부를 기록하는 FakeStableDiffusionXLPipeline을 반환한다."""
+    fp16 = object()
+    vae = object()
+    tiling_calls: list[None] = []
+
+    class FakeAutoencoderKL:
+        @classmethod
+        def from_pretrained(cls, model_id: str, **kwargs: object) -> object:
+            return vae
+
+    class FakeStableDiffusionXLPipeline:
+        def __init__(self) -> None:
+            self.scheduler = SimpleNamespace(config={"name": "base"})
+
+        @classmethod
+        def from_pretrained(
+            cls,
+            model_id: str,
+            **kwargs: object,
+        ) -> "FakeStableDiffusionXLPipeline":
+            return cls()
+
+        def load_lora_weights(self, *_: object, **__: object) -> None:
+            return None
+
+        def set_adapters(self, *_: object, **__: object) -> None:
+            return None
+
+        def to(self, _: str) -> "FakeStableDiffusionXLPipeline":
+            return self
+
+        def enable_vae_tiling(self) -> None:
+            tiling_calls.append(None)
+
+    class FakeLCMScheduler:
+        @classmethod
+        def from_config(cls, config: object) -> object:
+            return SimpleNamespace(config=config)
+
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: True),
+        float16=fp16,
+        float32=object(),
+    )
+    fake_diffusers = SimpleNamespace(
+        AutoencoderKL=FakeAutoencoderKL,
+        ControlNetModel=object,
+        LCMScheduler=FakeLCMScheduler,
+        StableDiffusionXLControlNetPipeline=object,
+        StableDiffusionXLPipeline=FakeStableDiffusionXLPipeline,
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.setitem(sys.modules, "diffusers", fake_diffusers)
+    return tiling_calls
+
+
+def test_fast_loader_enables_vae_tiling_when_configured(monkeypatch) -> None:
+    from model_server.pipelines import _load_diffusers_pipeline
+
+    tiling_calls = _fast_loader_fixture(monkeypatch)
+    config = replace(InferenceConfig(), enable_vae_tiling=True)
+
+    _load_diffusers_pipeline(config)
+
+    assert len(tiling_calls) == 1
+
+
+def test_fast_loader_skips_vae_tiling_by_default(monkeypatch) -> None:
+    from model_server.pipelines import _load_diffusers_pipeline
+
+    tiling_calls = _fast_loader_fixture(monkeypatch)
+    config = InferenceConfig()
+
+    assert config.enable_vae_tiling is False
+    _load_diffusers_pipeline(config)
+
+    assert tiling_calls == []
+
+
 def test_quality_pipeline_reuses_ip_adapter_embedding_for_same_product() -> None:
     config = replace(
         InferenceConfig(),
