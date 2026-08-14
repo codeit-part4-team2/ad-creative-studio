@@ -26,7 +26,6 @@ export interface ToneResult {
   subcopy: string;
   images: Record<string, string>; // output_format -> url
   video_url: string | null;
-  video_job_id?: string | null;
 }
 
 export type JobStatus = "queued" | "processing" | "completed" | "failed";
@@ -51,36 +50,14 @@ export interface HistoryEntry {
   product_id: string;
   favorite: boolean;
   results: ToneResult[];
+  created_at?: number; // 백엔드가 실제로 내려주는 필드(유닉스 타임스탬프) - 최신순 정렬에 사용
 }
 
-export type VideoRenderStatus = "queued" | "processing" | "completed" | "failed";
-export type VideoApprovalStatus = "pending" | "approved" | "rejected";
-export type VideoPublishStatus =
-  | "not_requested"
-  | "pending"
-  | "scheduled"
-  | "failed"
-  | "auth_required"
-  | "needs_review"
-  | "schedule_expired";
+export type VideoJobStatus = "queued" | "processing" | "completed" | "failed";
 
 export interface VideoJobResponse {
   video_job_id: string;
-  result_id: string;
-  product_id: string;
-  tone: Tone;
-  time_slot: "commute_am" | "commute_pm";
-  render_status: VideoRenderStatus;
-  approval_status: VideoApprovalStatus;
-  publish_status: VideoPublishStatus;
+  render_status: VideoJobStatus; // 백엔드 실제 응답 필드명 (queued/processing/completed/failed)
   video_url: string | null;
-  script_version: string;
-  script_lines: string[];
-  tts_engine: string | null;
-  tts_voice_preset: string | null;
-  pronunciation_review_required: boolean;
-  pronunciation_reviewed_at: string | null;
-  scene_image_sha256s: string[];
-  caption_layout_version: string | null;
   error_message: string | null;
 }

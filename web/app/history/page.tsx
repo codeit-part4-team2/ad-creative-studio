@@ -27,6 +27,11 @@ function HistoryContent() {
 
   const { createShorts, isCreatingFor } = useShortsCreation(["history"]);
 
+  // Dashboard와 동일하게 최신순 정렬 - 백엔드는 오래된 순서로 준다
+  const sortedHistory = [...(historyQuery.data ?? [])].sort(
+    (a, b) => (b.created_at ?? 0) - (a.created_at ?? 0)
+  );
+
   return (
     <div className="mx-auto max-w-4xl space-y-6 px-8 py-10">
       <div>
@@ -46,7 +51,7 @@ function HistoryContent() {
       )}
 
       <div className="space-y-8">
-        {historyQuery.data?.map((entry) => (
+        {sortedHistory.map((entry) => (
           <div key={entry.job_id} className="space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
