@@ -75,8 +75,9 @@ SDXL VAE 결과를 같은 seed, 상품, 프롬프트, 768 배경, 4-step 조건�
 `fast_composite`(운영 확정 프로필, 768 배경/4-step) 기준 peak VRAM 8.28GB, P50 1.72s를
 baseline(8/11 확정)으로 삼아 세 가지 최적화 후보를 개별 격리 검증했습니다.
 
-(peak VRAM 8.28GB는 8/11 동시성 테스트에서 실측한 값이며, P50 1.72s는
-docs/model_server_handoff.md의 8/11 확정 항목과 동일합니다.)
+(peak VRAM 8.28GB는 8/11 동시성 테스트 원본 결과이며, 근거 스크린샷은
+docs/verification/concurrency_test_20260811.png에 있습니다.
+P50 1.72s는 docs/model_server_handoff.md의 8/11 확정 항목과 동일합니다.)
 
 세 실험 모두 위 "실험 행렬" 절의 규칙대로 워밍업 1회 + 측정 10회 반복으로 P50을 기록했습니다. peak VRAM은 slicing/tiling 두 후보만 별도 동시성 테스트로 측정했고,
 offload는 P50 결과(3.8배 저하)만으로 판단이 충분해 VRAM 측정을 생략했습니다.
