@@ -67,13 +67,14 @@ def _selling_points(product: dict) -> tuple[str, ...]:
     return tuple(str(value).strip() for value in values if str(value).strip())
 
 
-def _select_image_url(images: dict[str, str]) -> str:
-    image_url = images.get("sns_card") or images.get("thumbnail")
-    if image_url is None and images:
-        image_url = next(iter(images.values()))
-    if not image_url or not image_url.startswith("/files/outputs/"):
+def _select_source_image_url(source_image_url: object) -> str:
+    if not isinstance(source_image_url, str) or not source_image_url.strip():
+        raise ValueError(
+            "쇼츠용 무자막 원본 이미지가 없어 광고를 다시 생성해야 합니다"
+        )
+    if not source_image_url.startswith("/files/outputs/"):
         raise ValueError("허용된 출력 경로의 광고 이미지가 필요합니다")
-    return image_url
+    return source_image_url
 
 
 def _resolve_image_path(
@@ -148,7 +149,7 @@ def build_storyboard(
     headline = str(tone_result["headline"])
     subcopy = str(tone_result["subcopy"])
     selling_points = _selling_points(product)
-    image_url = _select_image_url(tone_result.get("images") or {})
+    image_url = _select_source_image_url(tone_result.get("source_image_url"))
     image_path = _resolve_image_path(
         image_url,
         output_root=output_root,

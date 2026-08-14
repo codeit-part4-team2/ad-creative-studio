@@ -45,6 +45,17 @@ class LocalOverlayGenerationService(GenerationService):
         for i, item in enumerate(plan):
             job["current_step"] = f"{item.time_slot}/{item.tone} 생성 중"
 
+            source_image = overlay.create_placeholder_background(
+                item.tone,
+                (1024, 1024),
+            )
+            source_image_url = await asyncio.to_thread(
+                overlay.save_source_image,
+                job_id=job_id,
+                tone=item.tone,
+                time_slot=item.time_slot or "default",
+                image=source_image,
+            )
             headline, subcopy = await asyncio.to_thread(copy_generator.build_ad_copy, item)
             images = await asyncio.to_thread(
                 overlay.generate_and_save,
@@ -54,6 +65,7 @@ class LocalOverlayGenerationService(GenerationService):
                 headline=headline,
                 subcopy=subcopy,
                 output_formats=req.output_formats,
+                background_image=source_image,
             )
 
             results.append(ToneResult(
@@ -62,6 +74,7 @@ class LocalOverlayGenerationService(GenerationService):
                 time_slot=item.time_slot,
                 headline=headline,
                 subcopy=subcopy,
+                source_image_url=source_image_url,
                 images=images,
             ))
             job["completed_count"] = i + 1
@@ -116,6 +129,13 @@ class ModelServerGenerationService(GenerationService):
             background_image = await model_server_client.fetch_generated_image(
                 response["generated_image_url"]
             )
+            source_image_url = await asyncio.to_thread(
+                overlay.save_source_image,
+                job_id=job_id,
+                tone=item.tone,
+                time_slot=item.time_slot or "default",
+                image=background_image,
+            )
 
             headline, subcopy = await asyncio.to_thread(copy_generator.build_ad_copy, item)
             images = await asyncio.to_thread(
@@ -135,6 +155,7 @@ class ModelServerGenerationService(GenerationService):
                 time_slot=item.time_slot,
                 headline=headline,
                 subcopy=subcopy,
+                source_image_url=source_image_url,
                 images=images,
             ))
             job["completed_count"] = i + 1

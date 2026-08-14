@@ -19,7 +19,6 @@ from app.backend.services.video_renderer import (
     DEADPAN_SILENCE_SEC,
     RushHourVideoRenderer,
     _draw_caption,
-    fit_inside,
 )
 
 
@@ -112,16 +111,6 @@ def _write_audio_stub(
     )
 
 
-def test_fit_inside_preserves_entire_source_aspect_ratio():
-    width, height = fit_inside(
-        source_size=(1080, 1350),
-        bounds=(980, 1225),
-    )
-
-    assert (width, height) == (980, 1225)
-    assert width / height == 1080 / 1350
-
-
 def test_segment_timing_pads_short_speech_to_storyboard_target():
     scene = StoryboardScene(
         "장점은 화면으로 보세요.",
@@ -157,10 +146,7 @@ def test_caption_is_plain_and_readable_without_shadow_or_accent(
     def reject_box(*_args, **_kwargs):
         raise AssertionError("caption box must not be used")
 
-    monkeypatch.setattr(
-        "app.backend.services.video_renderer.ImageFilter.GaussianBlur",
-        reject_blur,
-    )
+    monkeypatch.setattr("PIL.Image.Image.filter", reject_blur)
     monkeypatch.setattr("PIL.ImageDraw.ImageDraw.rectangle", reject_box)
     monkeypatch.setattr("PIL.ImageDraw.ImageDraw.rounded_rectangle", reject_box)
 
@@ -174,7 +160,7 @@ def test_caption_is_plain_and_readable_without_shadow_or_accent(
     assert (248, 250, 252, 255) in pixels
     assert (18, 24, 38, 255) in pixels
     assert (231, 213, 165, 255) not in pixels
-    assert CAPTION_LAYOUT_VERSION == "plain-outline-v2"
+    assert CAPTION_LAYOUT_VERSION == "full-bleed-outline-v3"
 
 
 def test_renderer_outputs_verified_vertical_mp4_with_voiced_aac(tmp_path):

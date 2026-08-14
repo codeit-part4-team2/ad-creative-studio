@@ -70,6 +70,28 @@ def create_placeholder_background(tone: str, size: tuple[int, int]) -> Image.Ima
     return Image.new("RGB", size, color)
 
 
+def _output_url(file_path: Path) -> str:
+    relative_path = file_path.resolve().relative_to(Path("data").resolve())
+    return f"/files/{relative_path.as_posix()}"
+
+
+def save_source_image(
+    *,
+    job_id: str,
+    tone: str,
+    time_slot: str,
+    image: Image.Image,
+) -> str:
+    """Persist the text-free model output without resizing or drawing copy."""
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    filename = (
+        f"{job_id}_{tone}_{time_slot}_source_{uuid.uuid4().hex[:6]}.png"
+    )
+    file_path = OUTPUT_DIR / filename
+    image.convert("RGB").save(file_path, format="PNG")
+    return _output_url(file_path)
+
+
 def _fit_and_pad(image: Image.Image, size: tuple[int, int]) -> Image.Image:
     """
     단순 resize()는 비율을 무시하고 강제로 규격에 맞춰서, 정사각형이 아닌 실제 생성
@@ -158,7 +180,5 @@ def generate_and_save(job_id: str, tone: str, time_slot: str, headline: str, sub
         file_path = OUTPUT_DIR / filename
         final_image.save(file_path)
 
-        rel_path = file_path.resolve().relative_to(Path("data").resolve())
-        urls[fmt] = f"/files/{rel_path.as_posix()}"
+        urls[fmt] = _output_url(file_path)
     return urls
-

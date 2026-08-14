@@ -48,6 +48,7 @@ class ToneResult(BaseModel):
     time_slot: Optional[TimeSlotLiteral] = None
     headline: str
     subcopy: str
+    source_image_url: Optional[str] = None
     images: dict[str, str]  # output_format -> url
     video_url: Optional[str] = None  # 러시아워 쇼츠 생성 완료 시 채워짐
 

@@ -267,6 +267,10 @@ def test_generation_result_images_are_real_files_not_mock_url():
     result = client.get(f"/api/v1/generations/{job_id}").json()
     first_tone = result["results"][0]
     assert "placehold.co" not in str(first_tone["images"])
+    assert first_tone["source_image_url"].startswith("/files/outputs/")
+    source_response = client.get(first_tone["source_image_url"])
+    assert source_response.status_code == 200
+    assert first_tone["source_image_url"] not in first_tone["images"].values()
     for fmt, url in first_tone["images"].items():
         assert url.startswith("/files/outputs/")
         served = client.get(url)
