@@ -21,8 +21,10 @@ function DashboardContent() {
     0
   );
 
-  // 최근 결과 4개 (최신 job이 배열 앞쪽이라고 가정, 각 job의 대표 결과 하나씩)
-  const recentCreatives = entries
+  // 최근 결과 4개 - HISTORY는 백엔드가 오래된 순서로 append하므로, created_at 기준
+  // 최신순으로 명시적으로 정렬한 뒤 앞에서 4개를 뽑는다 (배열 순서에 기대지 않음).
+  const recentCreatives = [...entries]
+    .sort((a, b) => (b.created_at ?? 0) - (a.created_at ?? 0))
     .flatMap((entry) => entry.results.map((r) => ({ entry, result: r })))
     .slice(0, 4);
 

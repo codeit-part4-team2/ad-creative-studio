@@ -51,6 +51,7 @@ export interface HistoryEntry {
   product_id: string;
   favorite: boolean;
   results: ToneResult[];
+  created_at?: number; // 백엔드가 실제로 내려주는 필드(유닉스 타임스탬프) - 최신순 정렬에 사용
 }
 
 export type VideoRenderStatus = "queued" | "processing" | "completed" | "failed";
