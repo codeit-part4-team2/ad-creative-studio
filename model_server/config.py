@@ -93,6 +93,7 @@ class InferenceConfig:
     cache_ttl_seconds: float = 3600.0
     image_allowed_origins: tuple[str, ...] = ("http://localhost:8000",)
     enable_torch_compile: bool = False
+    enable_vae_tiling: bool = False
     allow_cpu_inference: bool = False
 
     @classmethod
@@ -186,6 +187,12 @@ class InferenceConfig:
                 "ENABLE_TORCH_COMPILE",
                 environ.get(
                     "ENABLE_TORCH_COMPILE", str(defaults.enable_torch_compile)
+                ),
+            ),
+            enable_vae_tiling=_parse_bool(
+                "ENABLE_VAE_TILING",
+                environ.get(
+                    "ENABLE_VAE_TILING", str(defaults.enable_vae_tiling)
                 ),
             ),
             allow_cpu_inference=_parse_bool(

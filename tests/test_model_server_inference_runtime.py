@@ -287,6 +287,32 @@ def test_inference_engine_releases_gpu_lock_after_generation_failure() -> None:
     assert result.gpu_queue_wait_sec is not None
 
 
+def test_cache_cleanup_failure_does_not_discard_generated_result() -> None:
+    def failing_empty_cache() -> None:
+        raise RuntimeError("cuda cache cleanup exploded")
+
+    engine = InferenceEngine(
+        config=replace(InferenceConfig(), image_size=16),
+        preprocessor=_FakePreprocessor(),
+        pipeline=_FakePipeline(),
+        output_store=_CaptureStore(),
+        synchronize=lambda: None,
+        empty_cache=failing_empty_cache,
+    )
+
+    result = engine.run(
+        product_id="p-cache-fail",
+        product_image_url="https://images.example/product.png",
+        tone="premium",
+        image_prompt="premium studio",
+        negative_prompt="",
+    )
+
+    assert result.status == "done"
+    assert result.generated_image_url is not None
+    assert not engine._gpu_lock.locked()
+
+
 def test_file_output_store_creates_png_and_public_url(tmp_path: Path) -> None:
     store = FileOutputStore(tmp_path, url_prefix="/files/outputs")
 

@@ -44,11 +44,19 @@ def test_fast_background_size_must_be_positive_aligned_and_not_larger(
 def test_config_parses_explicit_boolean_values() -> None:
     config = InferenceConfig.from_env({
         "ENABLE_TORCH_COMPILE": "true",
+        "ENABLE_VAE_TILING": "true",
         "ALLOW_CPU_INFERENCE": "true",
     })
 
     assert config.enable_torch_compile is True
+    assert config.enable_vae_tiling is True
     assert config.allow_cpu_inference is True
+
+
+def test_vae_tiling_defaults_to_disabled() -> None:
+    config = InferenceConfig.from_env({})
+
+    assert config.enable_vae_tiling is False
 
 
 def test_config_parses_explicit_image_origin_allowlist() -> None:

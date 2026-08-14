@@ -4,6 +4,7 @@ import hashlib
 import re
 import time
 import uuid
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,6 +18,8 @@ from model_server.config import InferenceConfig, InferenceProfile
 from model_server.pipelines import GenerationResult
 from model_server.preprocessing import PreparationResult
 from model_server.timing import StageTimings
+
+LOGGER = logging.getLogger(__name__)
 
 
 class Preprocessor(Protocol):
@@ -87,6 +90,15 @@ def _cuda_synchronize() -> None:
         torch.cuda.synchronize()
 
 
+def _cuda_empty_cache() -> None:
+    try:
+        import torch
+    except ImportError:
+        return
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
 class InferenceEngine:
     def __init__(
         self,
@@ -97,6 +109,7 @@ class InferenceEngine:
         output_store: OutputStore,
         compositor: Callable[..., Image.Image] = composite_product,
         synchronize: Callable[[], None] = _cuda_synchronize,
+        empty_cache: Callable[[], None] = _cuda_empty_cache,
     ) -> None:
         self._config = config
         self._preprocessor = preprocessor
@@ -104,6 +117,7 @@ class InferenceEngine:
         self._output_store = output_store
         self._compositor = compositor
         self._synchronize = synchronize
+        self._empty_cache = empty_cache
         self._gpu_lock = Lock()
 
     @property
@@ -142,6 +156,12 @@ class InferenceEngine:
                     prompt=image_prompt,
                     negative_prompt=negative_prompt,
                     artifacts=preparation.artifacts,
+                )
+            try:
+                self._empty_cache()
+            except Exception:
+                LOGGER.exception(
+                    "generate 이후 GPU 캐시 정리에 실패했습니다. 생성된 이미지는 정상 처리합니다."
                 )
         finally:
             self._gpu_lock.release()
