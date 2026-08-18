@@ -144,7 +144,8 @@ R2/R3(model_server)와 R4+R5(app/backend) 사이의 계약입니다. 이 문서�
 ```
 - `tones`는 생략하면 4종 전체가 기본값 (M2 — 항상 4종 동시 생성)
 - `time_slots`는 1개 이상, 최대 3개: `morning | commute_am | afternoon | commute_pm | evening | late_night`
-- `output_formats`는 1개 이상, 최대 2개의 서로 다른 프리셋을 요청한다. 생략하면 `thumbnail`이다.
+- `output_formats`는 1개 이상, 최대 2개의 서로 다른 프리셋을 요청한다. 기존 UI 호환을
+  위해 생략하면 `thumbnail`, `story_vertical` 두 종을 생성한다.
   - `thumbnail`: 1:1, 모델 합성 1024x1024, 내보내기 1080x1080
   - `sns_card`: 4:5, 모델 합성 896x1120, 내보내기 1080x1350
   - `story_vertical`: 9:16, 모델 합성 720x1280, 내보내기 1080x1920

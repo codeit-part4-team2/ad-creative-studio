@@ -90,6 +90,26 @@ def test_mock_clean_source_is_saved_only_for_rush_hour():
     assert len(list(overlay.OUTPUT_DIR.glob("*_source_*.png"))) == 1
 
 
+def test_default_rush_hour_generation_keeps_a_shorts_source():
+    _prepare_job()
+    JOBS["job_test"]["total_count"] = 2
+
+    [result] = asyncio.run(
+        generation_service.LocalOverlayGenerationService().generate(
+            "job_test",
+            GenerationRequest(
+                product_id="prd_test",
+                tones=["modern"],
+                time_slots=["commute_am"],
+            ),
+            {"product_name": "테스트 상품", "selling_points": []},
+        )
+    )
+
+    assert list(result.images) == ["thumbnail", "story_vertical"]
+    assert result.source_image_url is not None
+
+
 def test_rush_hour_without_story_vertical_does_not_persist_a_shorts_source():
     _prepare_job()
     JOBS["job_test"]["total_count"] = 1

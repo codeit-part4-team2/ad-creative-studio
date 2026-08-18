@@ -31,10 +31,10 @@ def test_image_preset_dimensions_preserve_the_advertising_ratio(
     assert composite[0] * export[1] == composite[1] * export[0]
 
 
-def test_generation_request_defaults_to_one_square_output() -> None:
+def test_generation_request_defaults_to_legacy_thumbnail_and_shorts_output() -> None:
     request = GenerationRequest(product_id="p", time_slots=["morning"])
 
-    assert request.output_formats == ["thumbnail"]
+    assert request.output_formats == ["thumbnail", "story_vertical"]
 
 
 @pytest.mark.parametrize(

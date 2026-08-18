@@ -10,7 +10,9 @@ backend 연동 계약은 [API 계약](../docs/api_contract.md), L4 검증 절차
 
 - `fast_composite` (기본): SDXL + LCM-LoRA 4-step으로 빈 광고 배경을 만든 뒤,
   기본 768×768 배경을 1024×1024로 확대한 후 rembg로 분리한 1024×1024 원본 상품
-  캔버스를 알파 합성합니다. `FAST_BACKGROUND_SIZE=1024`로 기존 조건을 재현할 수 있습니다.
+  캔버스를 알파 합성합니다. 비정사각형 프리셋은 `FAST_BACKGROUND_SIZE=768`,
+  `IMAGE_SIZE=1024`를 기준으로 같은 배율의 8픽셀 그리드 크기를 계산하므로 환경변수
+  튜닝을 바꿔도 원래 비율을 유지합니다.
 - `quality_regenerate`: SDXL + 공식 Canny ControlNet + IP-Adapter를 30-step으로
   실행하는 비교군입니다. 제품 보존 여부를 측정하지 않았으므로 성공 응답에서도
   `product_preserved`를 임의로 `true`로 표시하지 않습니다.

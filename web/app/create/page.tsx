@@ -181,7 +181,7 @@ function CreatePageContent() {
                 <div className="rounded-lg border border-border bg-card p-5">
                   <p className="text-base font-semibold">READY TO GENERATE</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    톤 4종 × 시간대 {selectedSlots.length}개 = {selectedSlots.length * 4}개 이미지(규격 3종씩)를 생성합니다.
+                    톤 4종 × 시간대 {selectedSlots.length}개 × 기본 규격 2종 = {selectedSlots.length * 8}개 이미지를 생성합니다.
                   </p>
                   {generationMutation.isError && (
                     <p className="mt-2 text-sm text-destructive">{(generationMutation.error as Error).message}</p>

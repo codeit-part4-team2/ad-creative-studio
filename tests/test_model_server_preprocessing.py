@@ -114,6 +114,7 @@ def test_cached_segmentation_derives_two_native_ratio_artifact_sets() -> None:
         canvas_size=(72, 128),
         fill_ratio=0.5,
         include_canny=True,
+        canny_builder=lambda image: Image.new("RGB", image.size, "black"),
     )
 
     assert calls == {"download": 1, "segment": 1}

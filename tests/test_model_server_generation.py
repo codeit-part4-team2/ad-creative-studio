@@ -12,6 +12,7 @@ from app.backend.services import model_server_client
 from app.backend.services import overlay
 from app.backend.schemas.generation import GenerationRequest
 from app.backend.services.store import JOBS, PRODUCTS
+from app.image_presets import get_image_preset
 
 
 def _tiny_png_bytes() -> bytes:
@@ -60,6 +61,7 @@ def _clear(monkeypatch):
 
 
 def _setup_job_and_product(job_id="job_test", product_id="prd_test", time_slots=("morning",)):
+    req = GenerationRequest(product_id=product_id, time_slots=list(time_slots))
     PRODUCTS[product_id] = {
         "product_name": "테스트 상품",
         "selling_points": [],
@@ -70,10 +72,9 @@ def _setup_job_and_product(job_id="job_test", product_id="prd_test", time_slots=
         "status": "processing",
         "progress": 0,
         "completed_count": 0,
-        "total_count": len(time_slots) * 4,
+        "total_count": len(time_slots) * len(req.tones) * len(req.output_formats),
         "current_step": None,
     }
-    req = GenerationRequest(product_id=product_id, time_slots=list(time_slots))
     return req, PRODUCTS[product_id]
 
 
@@ -99,15 +100,24 @@ def test_generation_payload_includes_the_selected_native_ratio(monkeypatch):
 
 def test_model_server_generation_success(monkeypatch):
     async def fake_request_generation(**kwargs):
+        output_format = str(kwargs["output_format"])
         return {
             "status": "done",
-            "generated_image_url": "http://fake-model-server/bg.png",
+            "generated_image_url": f"http://fake-model-server/{output_format}.png",
             "product_preserved": True,
             "gen_time_sec": 1.2,
         }
 
+    async def fake_fetch_generated_image(url: str) -> Image.Image:
+        output_format = Path(url).stem
+        return Image.new("RGB", get_image_preset(output_format).composite_size, "green")
+
     monkeypatch.setattr(model_server_client, "request_generation", fake_request_generation)
-    monkeypatch.setattr(model_server_client, "httpx", type("M", (), {"AsyncClient": _FakeAsyncClient}))
+    monkeypatch.setattr(
+        model_server_client,
+        "fetch_generated_image",
+        fake_fetch_generated_image,
+    )
     monkeypatch.setattr(model_server_client, "MODEL_SERVER_URL", "http://fake-model-server")
 
     req, product = _setup_job_and_product(time_slots=("morning", "commute_pm"))
@@ -123,8 +133,8 @@ def test_model_server_generation_success(monkeypatch):
             assert r.source_image_url is None
             continue
         assert r.time_slot == "commute_pm"
-        assert r.source_image_url is None
-    assert JOBS["job_test"]["completed_count"] == 8
+        assert r.source_image_url is not None
+    assert JOBS["job_test"]["completed_count"] == 16
     assert JOBS["job_test"]["progress"] == 100
 
 

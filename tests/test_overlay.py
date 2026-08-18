@@ -115,6 +115,33 @@ def test_overlay_copy_rejects_a_source_with_the_wrong_aspect_ratio():
         )
 
 
+def test_overlay_copy_accepts_one_pixel_aspect_ratio_rounding() -> None:
+    rounded_background = Image.new("RGB", (1079, 1350), (50, 100, 150))
+
+    result = overlay.overlay_copy(
+        rounded_background,
+        "헤드라인",
+        "서브카피",
+        "sns_card",
+        tone="modern",
+    )
+
+    assert result.size == (1080, 1350)
+
+
+def test_overlay_copy_rejects_more_than_one_pixel_aspect_ratio_error() -> None:
+    mismatched_background = Image.new("RGB", (1078, 1350), (50, 100, 150))
+
+    with pytest.raises(ValueError, match="aspect ratio"):
+        overlay.overlay_copy(
+            mismatched_background,
+            "헤드라인",
+            "서브카피",
+            "sns_card",
+            tone="modern",
+        )
+
+
 @pytest.mark.parametrize("output_format", list(IMAGE_PRESETS))
 def test_overlay_copy_exports_native_ratio_without_white_letterbox(
     output_format: str,

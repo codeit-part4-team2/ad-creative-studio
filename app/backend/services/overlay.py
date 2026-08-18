@@ -96,7 +96,13 @@ def _resize_same_aspect_ratio(
     image: Image.Image,
     size: tuple[int, int],
 ) -> Image.Image:
-    if image.width * size[1] != image.height * size[0]:
+    expected_width = image.height * size[0] / size[1]
+    expected_height = image.width * size[1] / size[0]
+    within_one_pixel = (
+        abs(image.width - expected_width) <= 1
+        or abs(image.height - expected_height) <= 1
+    )
+    if not within_one_pixel:
         raise ValueError(
             f"source aspect ratio {image.width}:{image.height} does not match "
             f"target aspect ratio {size[0]}:{size[1]}"

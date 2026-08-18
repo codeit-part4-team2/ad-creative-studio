@@ -13,7 +13,7 @@ from typing import Protocol
 
 from PIL import Image
 
-from app.image_presets import OutputFormatLiteral, get_image_preset
+from app.image_presets import OutputFormatLiteral, resolve_runtime_image_preset
 from model_server.compositing import composite_product
 from model_server.config import InferenceConfig, InferenceProfile
 from model_server.pipelines import GenerationResult
@@ -148,24 +148,25 @@ class InferenceEngine:
         started_at = time.perf_counter()
         timings = StageTimings(synchronize=self._synchronize)
         cache_key = _cache_key(product_id, product_image_url)
-        preset = get_image_preset(output_format)
+        preset = resolve_runtime_image_preset(
+            output_format,
+            fast_background_size=self._config.fast_background_size,
+            image_size=self._config.image_size,
+        )
 
         with timings.measure("preprocess"):
             preparation = self._preprocessor.prepare(
                 cache_key,
                 product_image_url,
             )
-            artifacts = preparation.artifacts
-            if getattr(artifacts, "segmented_product", None) is not None:
-                artifacts = derive_product_artifacts(
-                    artifacts,
-                    canvas_size=preset.composite_size,
-                    fill_ratio=self._config.product_fill_ratio,
-                    include_canny=(
-                        self._config.profile
-                        is InferenceProfile.QUALITY_REGENERATE
-                    ),
-                )
+            artifacts = derive_product_artifacts(
+                preparation.artifacts,
+                canvas_size=preset.composite_size,
+                fill_ratio=self._config.product_fill_ratio,
+                include_canny=(
+                    self._config.profile is InferenceProfile.QUALITY_REGENERATE
+                ),
+            )
 
         queue_started_at = time.perf_counter()
         self._gpu_lock.acquire()

@@ -41,8 +41,9 @@ python -m pip freeze --all > benchmark-environment.txt
 ## 네이티브 광고 비율 인수 테스트
 
 김재헌A 담당자는 확정 fast profile에서 아래 네 요청을 각각 워밍업 1회 후 10회 이상
-측정합니다. 아래 크기는 코드 계약이며 latency, peak VRAM, 실패율은 L4 실측 전까지
-확정값으로 기록하지 않습니다.
+측정합니다. 아래 크기는 기본 `FAST_BACKGROUND_SIZE=768`, `IMAGE_SIZE=1024` 계약이며,
+환경변수를 바꾸면 각 비율을 유지한 채 같은 배율로 조정됩니다. latency, peak VRAM,
+실패율은 L4 실측 전까지 확정값으로 기록하지 않습니다.
 
 | output_format | 비율 | fast 배경 | 합성 출력 |
 |---|---:|---:|---:|

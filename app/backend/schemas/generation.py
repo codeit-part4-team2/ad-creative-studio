@@ -17,7 +17,7 @@ class GenerationRequest(BaseModel):
     )  # M2 — 항상 4종 동시 생성이 기본값이지만 명시적으로 받는다
     time_slots: list[TimeSlotLiteral]  # PM 승인: 체크박스 다중 선택
     output_formats: list[OutputFormatLiteral] = Field(
-        default_factory=lambda: ["thumbnail"],
+        default_factory=lambda: ["thumbnail", "story_vertical"],
         min_length=1,
         max_length=2,
     )

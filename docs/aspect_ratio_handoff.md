@@ -20,7 +20,8 @@
 }
 ```
 
-허용값과 fast profile 크기는 다음과 같다.
+허용값과 기본 환경변수 기준 fast profile 크기는 다음과 같다. `FAST_BACKGROUND_SIZE`와
+`IMAGE_SIZE`를 바꾸면 각 프리셋은 비율을 유지하며 8픽셀 그리드로 함께 조정된다.
 
 | key | 비율 | SDXL 배경 | 제품 합성 출력 |
 |---|---:|---:|---:|
@@ -40,7 +41,7 @@ L4 측정 항목은 `docs/L4_BENCHMARK_CHECKLIST.md`의 "네이티브 광고 비
 ## 박재철 UI 인계
 
 생성 요청의 `output_formats`에 서로 다른 프리셋을 1개 또는 2개 보낸다. 생략 시
-`["thumbnail"]`이다.
+기존 다운로드와 러시아워 쇼츠를 함께 유지하도록 `["thumbnail", "story_vertical"]`이다.
 
 ```json
 {

@@ -88,8 +88,9 @@ Rules:
 
 `GenerationRequest.output_formats` remains the request field to avoid a second
 parallel concept in the API. Its accepted values become the four preset keys
-above and its cardinality becomes 1..2. The default is `['thumbnail']`, so old
-clients that omit the field still receive a valid square result.
+above and its cardinality becomes 1..2. The compatibility default is
+`['thumbnail', 'story_vertical']`, so clients that omit the field retain the
+legacy thumbnail download and a clean rush-hour Shorts source.
 
 The Next.js client explicitly sends the selected values in the UI follow-up:
 

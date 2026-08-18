@@ -218,7 +218,10 @@ def render_review_and_generate_step():
 
     st.write(f"**상품**: {st.session_state.product_name}")
     st.write(f"**시간대**: {', '.join(labels)}")
-    st.write(f"**생성 개수**: 톤 4종 × 시간대 {len(slots)}개 = {len(slots) * 4}개 (규격 3종씩)")
+    st.write(
+        f"**생성 개수**: 톤 4종 × 시간대 {len(slots)}개 × 기본 규격 2종 "
+        f"= {len(slots) * 8}개 이미지"
+    )
     # 예상 소요시간은 일부러 안 보여준다 - 모델팀 구조(fast_composite/quality_regenerate/
     # 캐시/배치)가 계속 바뀌는 중이라 지금 숫자를 계산해서 보여주면 오히려 신뢰를 깎는다.
     # 실제 E2E 실측 끝나면 그때 진짜 근거 있는 숫자로 넣는다.
