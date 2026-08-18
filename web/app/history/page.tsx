@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getHistory, toggleFavorite, downloadAllUrl } from "@/lib/api/history";
 import { resolveAssetUrl } from "@/lib/api/client";
 import { useShortsCreation } from "@/lib/hooks/use-shorts-creation";
+import { formatCreatedAt, stripToneTag } from "@/lib/utils";
 import { ResultReceiptCard } from "@/components/creative/result-card";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -63,7 +64,9 @@ function HistoryContent() {
                   <Star className={entry.favorite ? "h-4 w-4 fill-current" : "h-4 w-4"} />
                 </button>
                 <p className="font-mono text-sm">
-                  {entry.job_id} · {entry.results.length}개 결과
+                  {(entry.results[0]?.headline && stripToneTag(entry.results[0].headline)) || "광고"}
+                  {entry.created_at ? ` · ${formatCreatedAt(entry.created_at)}` : ""}{" "}
+                  · {entry.results.length}개 결과
                 </p>
               </div>
               <Button asChild variant="outline" size="sm">

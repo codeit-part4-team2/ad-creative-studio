@@ -16,6 +16,15 @@ export const TONE_LABEL: Record<Tone, string> = {
   premium: "프리미엄",
 };
 
+// 다운로드 버튼에 API 값(thumbnail 등)을 그대로 노출하면 사용자가 뭘 받는 건지
+// 알기 어렵다는 디자인 피드백 반영 - 화면 표시용 한글 라벨만 매핑, API 요청/응답
+// 값 자체는 절대 안 바꾼다.
+export const FORMAT_LABEL: Record<string, string> = {
+  thumbnail: "정사각형 광고 (1:1)",
+  detail_banner: "상세페이지용",
+  sns_card: "SNS 게시용",
+};
+
 export const MAX_TIME_SLOTS = 3;
 
 export const RUSH_HOUR_SLOTS: TimeSlot[] = ["commute_am", "commute_pm"];
