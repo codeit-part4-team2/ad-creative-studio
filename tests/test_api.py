@@ -162,35 +162,42 @@ def test_generate_rejects_more_than_max_time_slots():
 
 def test_generate_returns_202_and_expected_total_count():
     pid = _upload_product()
-    r = client.post("/api/v1/generations", json={"product_id": pid, "time_slots": ["morning", "evening"]})
+    r = client.post(
+        "/api/v1/generations",
+        json={
+            "product_id": pid,
+            "time_slots": ["morning", "evening"],
+            "output_formats": ["sns_card", "story_vertical"],
+        },
+    )
     assert r.status_code == 202
     job_id = r.json()["job_id"]
 
-    # 톤 4종(기본값) x 시간대 2개 = 8 이어야 한다 (규격 곱하지 않음)
+    # 톤 4종(기본값) x 시간대 2개 x 비율 2개 = 작업 단위 16개
     time.sleep(0.5)  # BackgroundTasks 완료 대기
     status = client.get(f"/api/v1/jobs/{job_id}").json()
-    assert status["total_count"] == 8
+    assert status["total_count"] == 16
 
 
-def test_output_formats_do_not_increase_model_generation_count():
-    """출력 규격은 후처리 조건이라, 몇 개를 요청하든 실제 생성 계획(plan) 개수는 시간대x톤 그대로여야 한다."""
+def test_output_formats_increase_job_work_without_duplicating_prompt_plan():
+    """문구 계획은 시간대x톤이고 실제 이미지 작업량만 비율 수만큼 증가한다."""
     product = {"product_name": "커피메이커", "price": 50000, "selling_points": []}
 
     req_one_format = GenerationRequest(
         product_id="x", time_slots=["morning", "evening"], output_formats=["thumbnail"]
     )
-    req_three_formats = GenerationRequest(
+    req_two_formats = GenerationRequest(
         product_id="x", time_slots=["morning", "evening"],
-        output_formats=["thumbnail", "detail_banner", "sns_card"],
+        output_formats=["sns_card", "story_vertical"],
     )
 
     plan_one = build_generation_plan(req_one_format, product)
-    plan_three = build_generation_plan(req_three_formats, product)
+    plan_two = build_generation_plan(req_two_formats, product)
 
-    # 시간대 2 x 톤 4(기본값) = 8 로 동일해야 함
+    # 문구 계획은 시간대 2 x 톤 4(기본값) = 8 로 동일하다.
     assert len(plan_one) == 8
-    assert len(plan_three) == 8
-    assert len(plan_one) == len(plan_three)
+    assert len(plan_two) == 8
+    assert len(plan_one) == len(plan_two)
 
 
 def test_full_flow_populates_history():
@@ -262,7 +269,11 @@ def test_generation_result_images_are_real_files_not_mock_url():
     pid = _upload_product()
     r = client.post(
         "/api/v1/generations",
-        json={"product_id": pid, "time_slots": ["commute_am"]},
+        json={
+            "product_id": pid,
+            "time_slots": ["commute_am"],
+            "output_formats": ["story_vertical"],
+        },
     )
     job_id = r.json()["job_id"]
     time.sleep(0.5)
@@ -353,7 +364,14 @@ def test_download_one_409_for_unfinished_job():
 
 def test_download_all_returns_zip_with_all_images():
     pid = _upload_product()
-    r = client.post("/api/v1/generations", json={"product_id": pid, "time_slots": ["morning"]})
+    r = client.post(
+        "/api/v1/generations",
+        json={
+            "product_id": pid,
+            "time_slots": ["morning"],
+            "output_formats": ["thumbnail", "sns_card"],
+        },
+    )
     job_id = r.json()["job_id"]
     time.sleep(0.5)
 
@@ -363,8 +381,8 @@ def test_download_all_returns_zip_with_all_images():
 
     zf = zipfile.ZipFile(io.BytesIO(resp.content))
     names = zf.namelist()
-    # 톤 4종 x 규격 3종 = 12개 파일
-    assert len(names) == 12
+    # 톤 4종 x 선택 비율 2종 = 8개 파일
+    assert len(names) == 8
 
 
 def test_download_rejects_path_traversal_attempt():
@@ -429,7 +447,14 @@ def test_download_all_zip_does_not_collide_across_multiple_time_slots():
     """시간대 2개 이상인 job에서 ZIP arcname이 tone_format만 쓰면 서로 다른 시간대
     파일이 같은 이름으로 겹쳐써져서 절반이 유실된다 - time_slot을 arcname에 포함해야 한다."""
     pid = _upload_product()
-    r = client.post("/api/v1/generations", json={"product_id": pid, "time_slots": ["morning", "evening"]})
+    r = client.post(
+        "/api/v1/generations",
+        json={
+            "product_id": pid,
+            "time_slots": ["morning", "evening"],
+            "output_formats": ["thumbnail", "sns_card"],
+        },
+    )
     job_id = r.json()["job_id"]
     time.sleep(0.5)
 
@@ -437,9 +462,9 @@ def test_download_all_zip_does_not_collide_across_multiple_time_slots():
     assert resp.status_code == 200
     zf = zipfile.ZipFile(io.BytesIO(resp.content))
     names = zf.namelist()
-    # 시간대 2 x 톤 4 x 규격 3 = 24개 파일이 전부 유니크한 이름으로 있어야 함
-    assert len(names) == 24
-    assert len(set(names)) == 24  # 중복 없음
+    # 시간대 2 x 톤 4 x 선택 비율 2 = 16개 파일이 전부 유니크해야 함
+    assert len(names) == 16
+    assert len(set(names)) == 16  # 중복 없음
 
 
 def test_download_one_with_time_slot_returns_correct_slot():
@@ -461,7 +486,14 @@ def test_download_one_with_time_slot_returns_correct_slot():
 
 def test_video_creation_flow_for_rush_hour_slot():
     pid = _upload_product()
-    r = client.post("/api/v1/generations", json={"product_id": pid, "time_slots": ["commute_am"]})
+    r = client.post(
+        "/api/v1/generations",
+        json={
+            "product_id": pid,
+            "time_slots": ["commute_am"],
+            "output_formats": ["story_vertical"],
+        },
+    )
     job_id = r.json()["job_id"]
     time.sleep(0.5)
 
@@ -511,7 +543,14 @@ def test_video_status_404_for_unknown_job():
 def test_video_completion_persists_video_url_across_restart():
     """쇼츠 완료 시 store.save()가 호출돼서, 재시작(load) 후에도 video_url이 남아있어야 한다."""
     pid = _upload_product()
-    r = client.post("/api/v1/generations", json={"product_id": pid, "time_slots": ["commute_am"]})
+    r = client.post(
+        "/api/v1/generations",
+        json={
+            "product_id": pid,
+            "time_slots": ["commute_am"],
+            "output_formats": ["story_vertical"],
+        },
+    )
     job_id = r.json()["job_id"]
     time.sleep(0.5)
 

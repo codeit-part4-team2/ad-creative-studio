@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from deploy.monitoring import start_gpu_watcher
 from model_server.cache import TTLCache
-from model_server.config import InferenceConfig, InferenceProfile
+from model_server.config import InferenceConfig
 from model_server.inference import FileOutputStore, InferenceEngine
 from model_server.pipelines import DiffusersGenerationPipeline
 from model_server.preprocessing import (
@@ -78,7 +78,8 @@ def _build_engine() -> InferenceEngine:
         segmenter=RembgSegmenter(),
         image_size=config.image_size,
         product_fill_ratio=config.product_fill_ratio,
-        include_canny=config.profile is InferenceProfile.QUALITY_REGENERATE,
+        # 비율별 Canny는 cache hit 뒤 InferenceEngine에서 정확한 캔버스에 맞춰 만든다.
+        include_canny=False,
     )
     pipeline = DiffusersGenerationPipeline(config)
     output_store = FileOutputStore(
@@ -142,6 +143,7 @@ def infer(
             tone=request.tone,
             image_prompt=request.image_prompt,
             negative_prompt=request.negative_prompt,
+            output_format=request.output_format,
         )
     except Exception:
         LOGGER.exception("inference failed for product_id=%s", request.product_id)

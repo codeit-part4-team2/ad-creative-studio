@@ -98,8 +98,15 @@ python -m tools.benchmark_latency \
 ```
 
 출력에는 전체 P50/P95, preprocess/gpu_queue_wait/generate/composite/save 단계별 중앙값,
-`model_profile`, step, `background_size`, `output_size`가 포함됩니다.
+`model_profile`, step, `output_format`, `background_width`/`background_height`,
+`output_width`/`output_height`가 포함됩니다. 기존 `background_size`/`output_size`는
+정사각형 요청에서만 값이 있고 비정사각형에서는 `null`입니다.
 실제 L4 성능과 이미지 품질은 아직 로컬 테스트만으로 확정할 수 없습니다.
+
+광고 생성 프리셋은 `thumbnail`(1:1), `sns_card`(4:5), `story_vertical`(9:16),
+`wide_banner`(16:9) 네 가지입니다. `output_format`을 생략한 기존 호출은
+`thumbnail`로 동작합니다. 두 비율을 선택한 백엔드 요청도 GPU에서는 병렬화하지 않고
+두 `/infer` 요청을 순차 실행합니다.
 
 2026-08-10 서빙 담당자 보고에서는 fast 768 후보의 warm 10회 결과가 다음과
 같았습니다. 원본 결과 JSON과 `background_size=768`, `output_size=1024` 메타데이터는

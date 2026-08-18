@@ -12,7 +12,6 @@ class PromptRequest(BaseModel):
     tone: Literal["emotional", "modern", "practical", "premium"]
     time_slot: Literal["morning", "commute_am", "afternoon",
                         "commute_pm", "evening", "late_night"] | None = None
-    output_format: Literal["thumbnail", "detail_banner", "sns_card"]
 
 class PromptResult(BaseModel):
     image_prompt: str
@@ -20,6 +19,10 @@ class PromptResult(BaseModel):
     subcopy: str
     negative_prompt: str | None = None
 ```
+
+출력 비율은 문구 프롬프트 조건이 아니므로 `PromptRequest`에 넣지 않는다.
+`GenerationRequest.output_formats`가 1~2개의 프리셋을 받고, 백엔드가 같은
+`PromptResult`를 비율별 네이티브 `/infer` 요청에 재사용한다.
 
 ## Builder 흐름
 ```
@@ -38,7 +41,8 @@ class PromptResult(BaseModel):
 ## 오늘 준비된 템플릿
 - 톤 4종 (감성/모던/실용/프리미엄)
 - 시간대 6종 (아침/출근러시아워/오후/퇴근러시아워/저녁/심야) — PM 승인, 러시아워 세분화 반영
-- 출력 규격 3종 (썸네일 1:1 / 상세배너 / SNS카드 4:5)
+- 출력 프리셋 4종 (정사각형 1:1 / SNS 피드 4:5 / 쇼츠·스토리 9:16 / 웹 배너 16:9)
+- 한 요청당 서로 다른 프리셋 최대 2개, 생략 시 1:1
 
 ## 아직 안 한 것 (의도적으로 보류)
 - 톤별 카피 톤앤매너 실제 문구 — 유수빈님이 정의해서 전달 예정, `build_ad_copy()`는 지금 더미

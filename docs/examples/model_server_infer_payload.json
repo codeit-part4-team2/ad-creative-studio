@@ -4,5 +4,6 @@
   "tone": "premium",
   "image_prompt": "premium product advertisement scene, elegant marble surface, soft studio lighting",
   "negative_prompt": "blurry, text, watermark, duplicated product",
-  "time_slot": "evening"
+  "time_slot": "evening",
+  "output_format": "thumbnail"
 }

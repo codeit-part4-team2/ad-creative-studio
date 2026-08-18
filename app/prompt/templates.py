@@ -7,6 +7,8 @@
 이 템플릿은 승인된 6종 기준입니다.
 """
 
+from app.image_presets import IMAGE_PRESETS
+
 TONE_TEMPLATES = {
     "emotional": {
         "label": "감성",
@@ -98,15 +100,25 @@ COPY_RULES = {
     ],
 }
 
+# 기존 import 경로를 사용하는 오버레이의 과도기 호환 뷰. 크기의 원본은
+# app.image_presets.IMAGE_PRESETS 한 곳뿐이며 새 생성은 아래 네 키만 허용한다.
 OUTPUT_FORMATS = {
-    "thumbnail": {"size": (1000, 1000), "label": "썸네일 1:1"},
-    "detail_banner": {"size": (860, 400), "label": "상세페이지 배너"},
-    "sns_card": {"size": (1080, 1350), "label": "SNS 카드 4:5"},
+    key: {"size": preset.export_size, "label": preset.label}
+    for key, preset in IMAGE_PRESETS.items()
 }
 
 MAX_TIME_SLOTS_PER_REQUEST = 3  # GPU 대기열 보호용 상한 (실측 후 조정)
 SECONDS_PER_GENERATION = 15  # 톤 1개 기준 가정치 - R3 실측으로 교체 예정
 
 
-def estimate_seconds(num_tones: int, num_time_slots: int) -> int:
-    return num_tones * num_time_slots * SECONDS_PER_GENERATION
+def estimate_seconds(
+    num_tones: int,
+    num_time_slots: int,
+    num_output_formats: int = 1,
+) -> int:
+    return (
+        num_tones
+        * num_time_slots
+        * num_output_formats
+        * SECONDS_PER_GENERATION
+    )

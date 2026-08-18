@@ -38,6 +38,24 @@ python -m pip freeze --all > benchmark-environment.txt
 | D | `fast_composite` | 768 | 1024 | 8 | false |
 | E | 선정된 fast 설정 | 768 | 1024 | 선택 | true |
 
+## 네이티브 광고 비율 인수 테스트
+
+김재헌A 담당자는 확정 fast profile에서 아래 네 요청을 각각 워밍업 1회 후 10회 이상
+측정합니다. 아래 크기는 코드 계약이며 latency, peak VRAM, 실패율은 L4 실측 전까지
+확정값으로 기록하지 않습니다.
+
+| output_format | 비율 | fast 배경 | 합성 출력 |
+|---|---:|---:|---:|
+| `thumbnail` | 1:1 | 768x768 | 1024x1024 |
+| `sns_card` | 4:5 | 672x840 | 896x1120 |
+| `story_vertical` | 9:16 | 576x1024 | 720x1280 |
+| `wide_banner` | 16:9 | 1024x576 | 1280x720 |
+
+각 프리셋에서 P50/P95, 실패 건수, peak VRAM, 응답 width/height, cache hit,
+제품 잘림·중복, 흰 여백, 생성 텍스트, 제품보다 강한 대형 배경 소품을 기록합니다.
+추가로 서로 다른 두 프리셋을 한 광고 요청에서 선택해 GPU generate가 순차 실행되고
+두 번째 요청이 동일 상품 세그멘테이션 캐시를 재사용하는지 확인합니다.
+
 각 실험은 모델 로드 후 워밍업 1회, 측정 10회 이상 수행합니다. 서로 다른 프로필은 같은 프로세스에 동시에 올리지 않습니다.
 요청 예시는 `docs/examples/model_server_infer_payload.json`을 복사해 실제 업로드 URL로
 바꿔 사용합니다.
@@ -45,7 +63,7 @@ python -m pip freeze --all > benchmark-environment.txt
 ## 성능 판정
 
 - API 전체 P50/P95
-- 응답 `background_size`와 `output_size`가 실험 행렬과 일치하는지
+- 응답의 명시적 background/output width·height가 선택 프리셋과 일치하는지
 - `preprocess`, `gpu_queue_wait`, `generate`, `composite`, `save` 단계별 중앙값
 - 첫 요청 cold-start 시간
 - 캐시 miss와 hit 각각의 시간

@@ -48,6 +48,7 @@ def _generation_payload(
     image_prompt: str,
     negative_prompt: str | None,
     time_slot: str | None,
+    output_format: str = "thumbnail",
 ) -> dict[str, object]:
     return {
         "product_id": product_id,
@@ -56,12 +57,14 @@ def _generation_payload(
         "image_prompt": image_prompt,
         "negative_prompt": negative_prompt or "",
         "time_slot": time_slot,
+        "output_format": output_format,
     }
 
 
 async def request_generation(product_id: str, product_image_url: str, tone: str,
                               image_prompt: str, negative_prompt: str | None,
-                              time_slot: str | None) -> dict:
+                              time_slot: str | None,
+                              output_format: str = "thumbnail") -> dict:
     payload = _generation_payload(
         product_id,
         product_image_url,
@@ -69,6 +72,7 @@ async def request_generation(product_id: str, product_image_url: str, tone: str,
         image_prompt,
         negative_prompt,
         time_slot,
+        output_format,
     )
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(f"{MODEL_SERVER_URL}/infer", json=payload)
@@ -78,7 +82,8 @@ async def request_generation(product_id: str, product_image_url: str, tone: str,
 
 def request_generation_sync(product_id: str, product_image_url: str, tone: str,
                             image_prompt: str, negative_prompt: str | None,
-                            time_slot: str | None) -> dict:
+                            time_slot: str | None,
+                            output_format: str = "thumbnail") -> dict:
     payload = _generation_payload(
         product_id,
         product_image_url,
@@ -86,6 +91,7 @@ def request_generation_sync(product_id: str, product_image_url: str, tone: str,
         image_prompt,
         negative_prompt,
         time_slot,
+        output_format,
     )
     with httpx.Client(timeout=120) as client:
         response = client.post(f"{MODEL_SERVER_URL}/infer", json=payload)

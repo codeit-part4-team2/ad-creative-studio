@@ -138,6 +138,47 @@ def test_quality_result_does_not_claim_unmeasured_product_preservation() -> None
     assert result.output_size == 16
 
 
+def test_non_square_inference_forwards_preset_dimensions_and_reports_metadata() -> None:
+    class RatioPipeline(_FakePipeline):
+        def generate(self, **kwargs: object) -> GenerationResult:
+            self.calls.append(kwargs)
+            return GenerationResult(
+                image=Image.new("RGB", (896, 1120), "green"),
+                requires_composite=False,
+                peak_vram_gb=4.0,
+                background_width=672,
+                background_height=840,
+                output_width=896,
+                output_height=1120,
+            )
+
+    pipeline = RatioPipeline(requires_composite=False)
+    engine = InferenceEngine(
+        config=InferenceConfig(),
+        preprocessor=_FakePreprocessor(),
+        pipeline=pipeline,
+        output_store=_CaptureStore(),
+        synchronize=lambda: None,
+    )
+
+    result = engine.run(
+        product_id="p-1",
+        product_image_url="https://images.example/product.png",
+        tone="modern",
+        image_prompt="modern studio",
+        negative_prompt="blurry",
+        output_format="sns_card",
+    )
+
+    assert pipeline.calls[0]["background_size"] == (672, 840)
+    assert pipeline.calls[0]["output_size"] == (896, 1120)
+    assert result.output_format == "sns_card"
+    assert result.background_size is None
+    assert result.output_size is None
+    assert (result.background_width, result.background_height) == (672, 840)
+    assert (result.output_width, result.output_height) == (896, 1120)
+
+
 def test_inference_engine_serializes_pipeline_generation() -> None:
     entered = threading.Event()
     second_preprocessed = threading.Event()

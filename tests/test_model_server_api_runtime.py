@@ -7,7 +7,11 @@ from model_server.main import app, get_engine
 
 
 class _SuccessfulEngine:
-    def run(self, **_: object) -> InferenceResult:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def run(self, **kwargs: object) -> InferenceResult:
+        self.calls.append(kwargs)
         return InferenceResult(
             status="done",
             generated_image_url="/files/outputs/premium.png",
@@ -25,6 +29,11 @@ class _SuccessfulEngine:
             num_inference_steps=4,
             background_size=768,
             output_size=1024,
+            output_format="thumbnail",
+            background_width=768,
+            background_height=768,
+            output_width=1024,
+            output_height=1024,
             peak_vram_gb=3.0,
         )
 
@@ -53,7 +62,8 @@ def _payload() -> dict[str, str]:
 
 
 def test_infer_returns_backward_compatible_fields_and_per_stage_timings() -> None:
-    app.dependency_overrides[get_engine] = lambda: _SuccessfulEngine()
+    engine = _SuccessfulEngine()
+    app.dependency_overrides[get_engine] = lambda: engine
     try:
         response = TestClient(app).post("/infer", json=_payload())
     finally:
@@ -73,6 +83,38 @@ def test_infer_returns_backward_compatible_fields_and_per_stage_timings() -> Non
     assert body["num_inference_steps"] == 4
     assert body["background_size"] == 768
     assert body["output_size"] == 1024
+    assert body["output_format"] == "thumbnail"
+    assert body["background_width"] == 768
+    assert body["background_height"] == 768
+    assert body["output_width"] == 1024
+    assert body["output_height"] == 1024
+    assert engine.calls[0]["output_format"] == "thumbnail"
+
+
+def test_infer_forwards_an_explicit_native_ratio() -> None:
+    engine = _SuccessfulEngine()
+    app.dependency_overrides[get_engine] = lambda: engine
+    payload = {**_payload(), "output_format": "story_vertical"}
+    try:
+        response = TestClient(app).post("/infer", json=payload)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert engine.calls[0]["output_format"] == "story_vertical"
+
+
+def test_infer_rejects_legacy_detail_banner_for_new_generation() -> None:
+    engine = _SuccessfulEngine()
+    app.dependency_overrides[get_engine] = lambda: engine
+    payload = {**_payload(), "output_format": "detail_banner"}
+    try:
+        response = TestClient(app).post("/infer", json=payload)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert engine.calls == []
 
 
 def test_infer_failure_does_not_expose_internal_exception_text() -> None:

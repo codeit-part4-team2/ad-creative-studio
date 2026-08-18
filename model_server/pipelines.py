@@ -29,6 +29,10 @@ class GenerationResult:
     peak_vram_gb: float | None
     background_size: int | None = None
     output_size: int | None = None
+    background_width: int | None = None
+    background_height: int | None = None
+    output_width: int | None = None
+    output_height: int | None = None
 
 
 def build_background_prompt(prompt: str) -> str:
@@ -213,10 +217,26 @@ class DiffusersGenerationPipeline:
         prompt: str,
         negative_prompt: str,
         artifacts: ProductArtifacts,
+        background_size: tuple[int, int] | None = None,
+        output_size: tuple[int, int] | None = None,
     ) -> GenerationResult:
         loaded = self._get_loaded()
         generator = self._generator_factory(loaded.device, self._config.seed)
         self._reset_peak_memory()
+
+        resolved_output_size = output_size or (
+            self._config.image_size,
+            self._config.image_size,
+        )
+        resolved_background_size = background_size or (
+            self._config.fast_background_size,
+            self._config.fast_background_size,
+        )
+        if (
+            resolved_background_size[0] * resolved_output_size[1]
+            != resolved_background_size[1] * resolved_output_size[0]
+        ):
+            raise ValueError("background and output sizes must share an aspect ratio")
 
         if self._config.profile is InferenceProfile.FAST_COMPOSITE:
             background_negative = merge_negative_prompts(
@@ -228,8 +248,8 @@ class DiffusersGenerationPipeline:
                 negative_prompt=background_negative,
                 num_inference_steps=self._config.fast_steps,
                 guidance_scale=self._config.fast_guidance_scale,
-                width=self._config.fast_background_size,
-                height=self._config.fast_background_size,
+                width=resolved_background_size[0],
+                height=resolved_background_size[1],
                 generator=generator,
             )
             requires_composite = True
@@ -237,7 +257,10 @@ class DiffusersGenerationPipeline:
             if artifacts.canny_image is None:
                 raise ValueError("quality profile requires a Canny control image")
             image_embeds = self._quality_embedding(
-                cache_key=cache_key,
+                cache_key=(
+                    f"{cache_key}:"
+                    f"{resolved_output_size[0]}x{resolved_output_size[1]}"
+                ),
                 loaded=loaded,
                 product_image=artifacts.product_on_white,
             )
@@ -251,8 +274,8 @@ class DiffusersGenerationPipeline:
                 controlnet_conditioning_scale=(
                     self._config.controlnet_conditioning_scale
                 ),
-                width=self._config.image_size,
-                height=self._config.image_size,
+                width=resolved_output_size[0],
+                height=resolved_output_size[1],
                 generator=generator,
             )
             requires_composite = False
@@ -260,20 +283,33 @@ class DiffusersGenerationPipeline:
         image = output.images[0].convert("RGB")
         if (
             self._config.profile is InferenceProfile.FAST_COMPOSITE
-            and image.size != (self._config.image_size, self._config.image_size)
+            and image.size != resolved_output_size
         ):
             image = image.resize(
-                (self._config.image_size, self._config.image_size),
+                resolved_output_size,
                 Image.Resampling.LANCZOS,
             )
+        actual_background_size = (
+            resolved_background_size
+            if self._config.profile is InferenceProfile.FAST_COMPOSITE
+            else resolved_output_size
+        )
         return GenerationResult(
             image=image,
             requires_composite=requires_composite,
             peak_vram_gb=self._peak_memory_reader(),
             background_size=(
-                self._config.fast_background_size
-                if self._config.profile is InferenceProfile.FAST_COMPOSITE
-                else self._config.image_size
+                actual_background_size[0]
+                if actual_background_size[0] == actual_background_size[1]
+                else None
             ),
-            output_size=self._config.image_size,
+            output_size=(
+                resolved_output_size[0]
+                if resolved_output_size[0] == resolved_output_size[1]
+                else None
+            ),
+            background_width=actual_background_size[0],
+            background_height=actual_background_size[1],
+            output_width=resolved_output_size[0],
+            output_height=resolved_output_size[1],
         )

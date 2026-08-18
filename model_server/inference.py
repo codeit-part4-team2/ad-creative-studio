@@ -13,10 +13,11 @@ from typing import Protocol
 
 from PIL import Image
 
+from app.image_presets import OutputFormatLiteral, get_image_preset
 from model_server.compositing import composite_product
 from model_server.config import InferenceConfig, InferenceProfile
 from model_server.pipelines import GenerationResult
-from model_server.preprocessing import PreparationResult
+from model_server.preprocessing import PreparationResult, derive_product_artifacts
 from model_server.timing import StageTimings
 
 LOGGER = logging.getLogger(__name__)
@@ -36,6 +37,8 @@ class Pipeline(Protocol):
         prompt: str,
         negative_prompt: str,
         artifacts: object,
+        background_size: tuple[int, int],
+        output_size: tuple[int, int],
     ) -> GenerationResult: ...
 
 
@@ -57,6 +60,11 @@ class InferenceResult:
     num_inference_steps: int | None = None
     background_size: int | None = None
     output_size: int | None = None
+    output_format: OutputFormatLiteral | None = None
+    background_width: int | None = None
+    background_height: int | None = None
+    output_width: int | None = None
+    output_height: int | None = None
     peak_vram_gb: float | None = None
     error_message: str | None = None
 
@@ -135,16 +143,29 @@ class InferenceEngine:
         tone: str,
         image_prompt: str,
         negative_prompt: str,
+        output_format: OutputFormatLiteral = "thumbnail",
     ) -> InferenceResult:
         started_at = time.perf_counter()
         timings = StageTimings(synchronize=self._synchronize)
         cache_key = _cache_key(product_id, product_image_url)
+        preset = get_image_preset(output_format)
 
         with timings.measure("preprocess"):
             preparation = self._preprocessor.prepare(
                 cache_key,
                 product_image_url,
             )
+            artifacts = preparation.artifacts
+            if getattr(artifacts, "segmented_product", None) is not None:
+                artifacts = derive_product_artifacts(
+                    artifacts,
+                    canvas_size=preset.composite_size,
+                    fill_ratio=self._config.product_fill_ratio,
+                    include_canny=(
+                        self._config.profile
+                        is InferenceProfile.QUALITY_REGENERATE
+                    ),
+                )
 
         queue_started_at = time.perf_counter()
         self._gpu_lock.acquire()
@@ -155,7 +176,9 @@ class InferenceEngine:
                     cache_key=cache_key,
                     prompt=image_prompt,
                     negative_prompt=negative_prompt,
-                    artifacts=preparation.artifacts,
+                    artifacts=artifacts,
+                    background_size=preset.background_size,
+                    output_size=preset.composite_size,
                 )
             try:
                 self._empty_cache()
@@ -171,7 +194,7 @@ class InferenceEngine:
             with timings.measure("composite"):
                 output = self._compositor(
                     output,
-                    preparation.artifacts.product_rgba,
+                    artifacts.product_rgba,
                 )
             product_preserved: bool | None = True
             preservation_method = "source_alpha_composite"
@@ -191,6 +214,31 @@ class InferenceEngine:
             "gpu_queue_wait": gpu_queue_wait_sec,
             **timings.as_dict(),
         }
+        default_background_size = (
+            self._config.fast_background_size
+            if self._config.profile is InferenceProfile.FAST_COMPOSITE
+            else self._config.image_size
+        )
+        background_width = (
+            generation.background_width
+            if generation.background_width is not None
+            else generation.background_size or default_background_size
+        )
+        background_height = (
+            generation.background_height
+            if generation.background_height is not None
+            else generation.background_size or default_background_size
+        )
+        output_width = (
+            generation.output_width
+            if generation.output_width is not None
+            else generation.output_size or self._config.image_size
+        )
+        output_height = (
+            generation.output_height
+            if generation.output_height is not None
+            else generation.output_size or self._config.image_size
+        )
         return InferenceResult(
             status="done",
             generated_image_url=generated_image_url,
@@ -203,18 +251,15 @@ class InferenceEngine:
             model_profile=self._config.profile.value,
             num_inference_steps=steps,
             background_size=(
-                generation.background_size
-                if generation.background_size is not None
-                else (
-                    self._config.fast_background_size
-                    if self._config.profile is InferenceProfile.FAST_COMPOSITE
-                    else self._config.image_size
-                )
+                background_width
+                if background_width == background_height
+                else None
             ),
-            output_size=(
-                generation.output_size
-                if generation.output_size is not None
-                else self._config.image_size
-            ),
+            output_size=output_width if output_width == output_height else None,
+            output_format=output_format,
+            background_width=background_width,
+            background_height=background_height,
+            output_width=output_width,
+            output_height=output_height,
             peak_vram_gb=generation.peak_vram_gb,
         )
