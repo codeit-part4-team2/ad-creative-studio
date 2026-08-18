@@ -6,6 +6,7 @@ from app.frontend.video_view_state import (
     build_video_view_state,
     can_create_rush_hour_short,
     default_activation_at,
+    short_creation_unavailable_reason,
 )
 
 
@@ -13,10 +14,34 @@ KST = ZoneInfo("Asia/Seoul")
 
 
 def test_only_rush_hour_results_can_create_comic_short():
-    assert can_create_rush_hour_short({"result_id": "res_1", "time_slot": "commute_am"}) is True
-    assert can_create_rush_hour_short({"result_id": "res_2", "time_slot": "commute_pm"}) is True
+    assert can_create_rush_hour_short(
+        {
+            "result_id": "res_1",
+            "time_slot": "commute_am",
+            "source_image_url": "/files/outputs/source-1.png",
+        }
+    ) is True
+    assert can_create_rush_hour_short(
+        {
+            "result_id": "res_2",
+            "time_slot": "commute_pm",
+            "source_image_url": "/files/outputs/source-2.png",
+        }
+    ) is True
     assert can_create_rush_hour_short({"result_id": "res_3", "time_slot": "afternoon"}) is False
     assert can_create_rush_hour_short({"time_slot": "commute_am"}) is False
+
+
+def test_legacy_rush_hour_result_requires_ad_regeneration():
+    legacy_result = {"result_id": "res_legacy", "time_slot": "commute_am"}
+
+    assert can_create_rush_hour_short(legacy_result) is False
+    assert short_creation_unavailable_reason(legacy_result) == (
+        "이 결과에는 쇼츠용 무자막 원본이 없습니다. 광고를 다시 생성해 주세요."
+    )
+    assert short_creation_unavailable_reason(
+        {"result_id": "res_day", "time_slot": "afternoon"}
+    ) is None
 
 
 def test_view_state_blocks_approval_until_pronunciation_is_reviewed():

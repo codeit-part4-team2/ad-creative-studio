@@ -72,9 +72,10 @@ def _select_source_image_url(source_image_url: object) -> str:
         raise ValueError(
             "쇼츠용 무자막 원본 이미지가 없어 광고를 다시 생성해야 합니다"
         )
-    if not source_image_url.startswith("/files/outputs/"):
+    normalized_url = source_image_url.strip()
+    if not normalized_url.startswith("/files/outputs/"):
         raise ValueError("허용된 출력 경로의 광고 이미지가 필요합니다")
-    return source_image_url
+    return normalized_url
 
 
 def _resolve_image_path(

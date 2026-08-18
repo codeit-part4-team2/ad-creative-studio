@@ -9,9 +9,46 @@ import os
 import uuid
 from abc import ABC, abstractmethod
 
+from PIL import Image
+
 from app.backend.schemas.generation import GenerationRequest, ToneResult
 from app.backend.services import copy_generator, overlay
 from app.backend.services.store import JOBS
+from app.prompt.schemas import PromptRequest
+
+
+RUSH_HOUR_SLOTS = frozenset({"commute_am", "commute_pm"})
+
+
+async def _prepare_copy_and_source(
+    *,
+    job_id: str,
+    item: PromptRequest,
+    source_image: Image.Image | None,
+) -> tuple[str, str, str | None]:
+    """Build copy and persist a Shorts source concurrently when one is needed."""
+    is_rush_hour = item.time_slot in RUSH_HOUR_SLOTS
+    if is_rush_hour and source_image is None:
+        raise ValueError("러시아워 결과에는 무자막 원본 이미지가 필요합니다")
+
+    copy_work = asyncio.to_thread(copy_generator.build_ad_copy, item)
+    if not is_rush_hour:
+        headline, subcopy = await copy_work
+        return headline, subcopy, None
+
+    time_slot = item.time_slot or "default"
+    copy_result, source_image_url = await asyncio.gather(
+        copy_work,
+        asyncio.to_thread(
+            overlay.save_source_image,
+            job_id=job_id,
+            tone=item.tone,
+            time_slot=time_slot,
+            image=source_image,
+        ),
+    )
+    headline, subcopy = copy_result
+    return headline, subcopy, source_image_url
 
 
 class GenerationService(ABC):
@@ -44,28 +81,26 @@ class LocalOverlayGenerationService(GenerationService):
 
         for i, item in enumerate(plan):
             job["current_step"] = f"{item.time_slot}/{item.tone} 생성 중"
+            time_slot = item.time_slot or "default"
 
-            source_image = overlay.create_placeholder_background(
-                item.tone,
-                (1024, 1024),
+            source_image = (
+                overlay.create_placeholder_background(item.tone, (1024, 1024))
+                if item.time_slot in RUSH_HOUR_SLOTS
+                else None
             )
-            source_image_url = await asyncio.to_thread(
-                overlay.save_source_image,
+            headline, subcopy, source_image_url = await _prepare_copy_and_source(
                 job_id=job_id,
-                tone=item.tone,
-                time_slot=item.time_slot or "default",
-                image=source_image,
+                item=item,
+                source_image=source_image,
             )
-            headline, subcopy = await asyncio.to_thread(copy_generator.build_ad_copy, item)
             images = await asyncio.to_thread(
                 overlay.generate_and_save,
                 job_id=job_id,
                 tone=item.tone,
-                time_slot=item.time_slot or "default",
+                time_slot=time_slot,
                 headline=headline,
                 subcopy=subcopy,
                 output_formats=req.output_formats,
-                background_image=source_image,
             )
 
             results.append(ToneResult(
@@ -107,6 +142,7 @@ class ModelServerGenerationService(GenerationService):
 
         for i, item in enumerate(plan):
             job["current_step"] = f"{item.time_slot}/{item.tone} 생성 중"
+            time_slot = item.time_slot or "default"
 
             prompt_result = prompt_builder.build(item)  # image_prompt(영어)/negative_prompt
             response = await model_server_client.request_generation(
@@ -129,20 +165,17 @@ class ModelServerGenerationService(GenerationService):
             background_image = await model_server_client.fetch_generated_image(
                 response["generated_image_url"]
             )
-            source_image_url = await asyncio.to_thread(
-                overlay.save_source_image,
+            headline, subcopy, source_image_url = await _prepare_copy_and_source(
                 job_id=job_id,
-                tone=item.tone,
-                time_slot=item.time_slot or "default",
-                image=background_image,
+                item=item,
+                source_image=background_image,
             )
 
-            headline, subcopy = await asyncio.to_thread(copy_generator.build_ad_copy, item)
             images = await asyncio.to_thread(
                 overlay.generate_and_save,
                 job_id=job_id,
                 tone=item.tone,
-                time_slot=item.time_slot or "default",
+                time_slot=time_slot,
                 headline=headline,
                 subcopy=subcopy,
                 output_formats=req.output_formats,

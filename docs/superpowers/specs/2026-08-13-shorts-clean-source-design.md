@@ -12,19 +12,23 @@ enlarge baked-in copy underneath the video captions.
 ## Decision
 
 Persist the model server output once, before resizing or drawing copy, as a separate
-`source_image_url` on every new `ToneResult`. Formatted exports remain in `images`
-and keep their existing UI and download behavior. The Shorts storyboard consumes
-only `source_image_url`.
+`source_image_url` on every new rush-hour `ToneResult`. Normal time slots leave the
+optional field empty because they cannot enter the Shorts workflow. Formatted
+exports remain in `images` and keep their existing UI and download behavior. The
+Shorts storyboard consumes only `source_image_url`.
 
-The local mock generator also writes a text-free placeholder source so local API and
-E2E tests preserve the same contract. A legacy result without `source_image_url`
-fails closed with a message instructing the user to regenerate the advertisement;
-it must never fall back to a copy-baked formatted card.
+The local mock generator also writes a text-free placeholder source for rush-hour
+results so local API and E2E tests preserve the same contract. Its formatted exports
+continue to create a tone placeholder at each target aspect ratio, avoiding white
+letterbox bands. A legacy result without `source_image_url` fails closed with a
+message instructing the user to regenerate the advertisement; it must never fall
+back to a copy-baked formatted card.
 
 ## Data flow
 
 1. Receive or create a text-free RGB image.
-2. Save it under `data/outputs` without resize, crop, or text overlay.
+2. For a rush-hour result, save it under `data/outputs` without resize, crop, or text
+   overlay while copy generation runs independently.
 3. Generate the existing formatted exports from the same in-memory image.
 4. Store the source URL separately from the formatted `images` mapping.
 5. Resolve and fingerprint only the source URL when building a Shorts storyboard.
@@ -47,7 +51,8 @@ before becoming a production default.
 ## Verification
 
 - Unit-test lossless source persistence and URL separation.
-- Verify real and mock generation both populate the new field.
+- Verify real and mock rush-hour generation populate the new field while normal
+  time slots leave it empty.
 - Verify the storyboard chooses the raw source even when a formatted card exists.
 - Verify legacy results and path traversal fail closed.
 - Run focused, dependent, and full regression suites before tomorrow's PR.

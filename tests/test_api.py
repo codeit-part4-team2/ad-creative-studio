@@ -260,7 +260,10 @@ def test_favorite_toggle_404_for_unknown_job():
 def test_generation_result_images_are_real_files_not_mock_url():
     """M3+S2 — 규격별로 실제 오버레이 이미지가 생성되는지 (더 이상 placehold.co mock 아님)."""
     pid = _upload_product()
-    r = client.post("/api/v1/generations", json={"product_id": pid, "time_slots": ["evening"]})
+    r = client.post(
+        "/api/v1/generations",
+        json={"product_id": pid, "time_slots": ["commute_am"]},
+    )
     job_id = r.json()["job_id"]
     time.sleep(0.5)
 

@@ -31,7 +31,31 @@ class VideoViewState:
 
 
 def can_create_rush_hour_short(result: dict[str, object]) -> bool:
-    return bool(result.get("result_id")) and result.get("time_slot") in RUSH_HOUR_SLOTS
+    source_image_url = result.get("source_image_url")
+    has_clean_source = (
+        isinstance(source_image_url, str)
+        and source_image_url.strip().startswith("/files/outputs/")
+    )
+    return (
+        bool(result.get("result_id"))
+        and result.get("time_slot") in RUSH_HOUR_SLOTS
+        and has_clean_source
+    )
+
+
+def short_creation_unavailable_reason(
+    result: dict[str, object],
+) -> str | None:
+    is_rush_hour_result = (
+        bool(result.get("result_id"))
+        and result.get("time_slot") in RUSH_HOUR_SLOTS
+    )
+    if is_rush_hour_result and not can_create_rush_hour_short(result):
+        return (
+            "이 결과에는 쇼츠용 무자막 원본이 없습니다. "
+            "광고를 다시 생성해 주세요."
+        )
+    return None
 
 
 def default_activation_at(time_slot: str, now: datetime) -> datetime:

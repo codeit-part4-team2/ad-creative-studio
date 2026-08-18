@@ -90,16 +90,20 @@ def test_model_server_generation_success(monkeypatch):
     monkeypatch.setattr(model_server_client, "httpx", type("M", (), {"AsyncClient": _FakeAsyncClient}))
     monkeypatch.setattr(model_server_client, "MODEL_SERVER_URL", "http://fake-model-server")
 
-    req, product = _setup_job_and_product(time_slots=("morning",))
+    req, product = _setup_job_and_product(time_slots=("morning", "commute_pm"))
     service = gs.ModelServerGenerationService()
 
     results = asyncio.run(service.generate("job_test", req, product))
 
-    assert len(results) == 4  # 톤 4종
+    assert len(results) == 8  # 시간대 2종 x 톤 4종
     source_urls = set()
     for r in results:
         assert r.result_id.startswith("res_")
         assert len(r.images) == len(req.output_formats)
+        if r.time_slot == "morning":
+            assert r.source_image_url is None
+            continue
+        assert r.time_slot == "commute_pm"
         assert r.source_image_url is not None
         assert r.source_image_url not in r.images.values()
         source_urls.add(r.source_image_url)
@@ -108,7 +112,7 @@ def test_model_server_generation_success(monkeypatch):
             assert saved_source.size == (64, 64)
             assert saved_source.getpixel((0, 0)) == (200, 100, 50)
     assert len(source_urls) == 4
-    assert JOBS["job_test"]["completed_count"] == 4
+    assert JOBS["job_test"]["completed_count"] == 8
     assert JOBS["job_test"]["progress"] == 100
 
 

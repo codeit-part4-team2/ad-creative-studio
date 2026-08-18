@@ -123,6 +123,21 @@ def test_storyboard_rejects_legacy_result_without_clean_source(seeded_result):
         )
 
 
+def test_storyboard_normalizes_whitespace_around_clean_source_url(seeded_result):
+    static_root, output_root, source_path = seeded_result
+    HISTORY[0]["results"][0]["source_image_url"] = (
+        "  /files/outputs/source.png  "
+    )
+
+    board = build_storyboard(
+        "res_abc123",
+        output_root=output_root,
+        static_root=static_root,
+    )
+
+    assert board.image_path == source_path.resolve()
+
+
 def test_storyboard_rejects_non_rush_hour_result(seeded_result):
     static_root, output_root, _ = seeded_result
     HISTORY[0]["results"][0]["time_slot"] = "afternoon"
