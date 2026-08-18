@@ -1,4 +1,6 @@
 from __future__ import annotations
+from contextlib import asynccontextmanager
+from deploy.monitoring import start_gpu_watcher
 
 import logging
 import os
@@ -49,7 +51,14 @@ def _resolve_output_dir(
 OUTPUT_DIR = _resolve_output_dir(os.environ, base_dir=Path.cwd())
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="Team 2 Advertisement Model Server", version="0.2.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 서버 시작 시 GPU 감시 스레드 시작
+    start_gpu_watcher()
+    yield
+    # 서버 종료 시 할 일 없음 (daemon 스레드라 자동 정리됨)
+
+app = FastAPI(title="Team 2 Advertisement Model Server", version="0.2.0", lifespan=lifespan)
 app.mount("/files/outputs", StaticFiles(directory=OUTPUT_DIR), name="model-outputs")
 _engine: InferenceEngine | None = None
 _engine_lock = Lock()
