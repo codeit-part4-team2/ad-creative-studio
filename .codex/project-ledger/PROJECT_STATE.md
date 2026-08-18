@@ -43,7 +43,22 @@
 
 ## 2026-08-13 Shorts clean-source model handoff
 
-- Worktree and branch: `[VERIFIED] G:\Codex\projects\상급프로젝트\worktrees\ad-creative-studio-shorts-full-bleed` on `codex/shorts-full-bleed`; implementation commit `0e7137a` is pushed to the team repository and Draft PR #28 is open against `main`.
+- Worktree and branch: `[VERIFIED] G:\Codex\projects\상급프로젝트\worktrees\ad-creative-studio-shorts-full-bleed` on `codex/shorts-full-bleed`; implementation commit `0e7137a` and ledger commit `17c4c06` were squash-merged through PR #28 as `806e4ca`.
 - Contract: `[VERIFIED]` each new real or mock `ToneResult` stores a separate text-free `source_image_url`; formatted headline/subcopy exports remain under `images`.
 - Shorts boundary: `[VERIFIED]` storyboard construction requires the source URL and rejects legacy results rather than falling back to a copy-baked card.
-- Current milestone: `[VERIFIED]` full-bleed rendering and clean-source selection pass the complete local suite and are published for review. PR #28 CI is `[UNVERIFIED]` while the GitHub pytest job is still running; review requests are intentionally deferred until 2026-08-14. Native 9:16 inference remains `[UNVERIFIED]` and excluded pending an L4 same-input quality, latency, and VRAM comparison.
+- Current milestone: `[VERIFIED]` PM approval, GitHub pytest success, squash merge, and matching merged tree were confirmed on 2026-08-14. Native 9:16 inference remains `[UNVERIFIED]` and excluded pending an L4 same-input quality, latency, and VRAM comparison.
+
+## 2026-08-14 PR #28 review follow-ups
+
+- Worktree and branch: `[VERIFIED] G:\Codex\projects\상급프로젝트\worktrees\ad-creative-studio-shorts-review-followups` on `codex/shorts-review-followups`, forked from merged `origin/main @ 806e4ca`.
+- Reproduced review issue: `[VERIFIED]` mock non-square exports used a square clean-source placeholder and produced white edge bands.
+- Local changes: `[VERIFIED]` formatted mock exports again use per-format tone placeholders; clean sources are persisted only for rush-hour slots; source persistence overlaps copy generation; legacy results show regeneration guidance; valid source URLs are whitespace-normalized. The full local suite passes 325 tests.
+- External state: `[UNVERIFIED]` product crop safety and caption readability on complex generated backgrounds remain assigned to serving/UI E2E. No automatic focal-crop heuristic was introduced without product-mask or focal metadata.
+- Publication state: `[VERIFIED]` changes are local, unstaged, uncommitted, unpushed, and have no PR.
+
+### 2026-08-18 latest-main refresh
+
+- Root and branch: `[VERIFIED] G:\Codex\projects\상급프로젝트\worktrees\ad-creative-studio-shorts-review-followups` on `codex/shorts-review-followups`.
+- Base reconciliation: `[VERIFIED]` the branch was refreshed from `806e4ca` through current `origin/main @ 9a938f6` after preserving the local diff in named recovery stashes; the saved changes reapplied without conflicts after both main updates.
+- Current validation: `[VERIFIED]` clean-main baseline 324 passed, focused follow-up suite 50 passed, and the final full suite on `origin/main @ 9a938f6` passed 329 tests in 40.98 seconds. Changed-file Ruff, compileall, pip check, and `git diff --check` exited 0.
+- Publication state: `[VERIFIED]` implementation commit `2b8587f` is pushed to the team remote and Draft PR #35 is open against `main`. At the latest live read, GitHub pytest is `IN_PROGRESS`, review is `REVIEW_REQUIRED`, and merge is `BLOCKED`; no merge, deployment, or VM mutation occurred.

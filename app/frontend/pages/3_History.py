@@ -9,6 +9,7 @@ from app.frontend.video_view_state import (
     build_video_view_state,
     can_create_rush_hour_short,
     default_activation_at,
+    short_creation_unavailable_reason,
 )
 
 API_BASE = "http://localhost:8000"
@@ -48,6 +49,10 @@ def _create_video(result_id: str) -> str | None:
 
 
 def render_video_workflow(result: dict) -> None:
+    unavailable_reason = short_creation_unavailable_reason(result)
+    if unavailable_reason:
+        st.info(unavailable_reason)
+        return
     if not can_create_rush_hour_short(result):
         return
 
