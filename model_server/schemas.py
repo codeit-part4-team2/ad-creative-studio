@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.image_presets import OutputFormatLiteral
+
 
 ToneLiteral = Literal["emotional", "practical", "premium", "modern"]
 TimeSlotLiteral = Literal[
@@ -23,6 +25,7 @@ class InferRequest(BaseModel):
     image_prompt: str = Field(min_length=1, max_length=4000)
     negative_prompt: str = Field(default="", max_length=4000)
     time_slot: TimeSlotLiteral
+    output_format: OutputFormatLiteral = "thumbnail"
 
 
 class InferResponse(BaseModel):
@@ -40,6 +43,11 @@ class InferResponse(BaseModel):
     num_inference_steps: int | None = None
     background_size: int | None = None
     output_size: int | None = None
+    output_format: OutputFormatLiteral | None = None
+    background_width: int | None = None
+    background_height: int | None = None
+    output_width: int | None = None
+    output_height: int | None = None
     peak_vram_gb: float | None = None
     error_message: str | None = None
 

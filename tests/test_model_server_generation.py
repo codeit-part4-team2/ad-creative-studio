@@ -12,6 +12,7 @@ from app.backend.services import model_server_client
 from app.backend.services import overlay
 from app.backend.schemas.generation import GenerationRequest
 from app.backend.services.store import JOBS, PRODUCTS
+from app.image_presets import get_image_preset
 
 
 def _tiny_png_bytes() -> bytes:
@@ -60,6 +61,7 @@ def _clear(monkeypatch):
 
 
 def _setup_job_and_product(job_id="job_test", product_id="prd_test", time_slots=("morning",)):
+    req = GenerationRequest(product_id=product_id, time_slots=list(time_slots))
     PRODUCTS[product_id] = {
         "product_name": "테스트 상품",
         "selling_points": [],
@@ -70,24 +72,52 @@ def _setup_job_and_product(job_id="job_test", product_id="prd_test", time_slots=
         "status": "processing",
         "progress": 0,
         "completed_count": 0,
-        "total_count": len(time_slots) * 4,
+        "total_count": len(time_slots) * len(req.tones) * len(req.output_formats),
         "current_step": None,
     }
-    req = GenerationRequest(product_id=product_id, time_slots=list(time_slots))
     return req, PRODUCTS[product_id]
+
+
+def test_generation_payload_includes_the_selected_native_ratio(monkeypatch):
+    monkeypatch.setattr(
+        model_server_client,
+        "BACKEND_PUBLIC_URL",
+        "http://backend.internal:8000",
+    )
+
+    payload = model_server_client._generation_payload(
+        "p-1",
+        "/files/uploads/p-1.png",
+        "modern",
+        "clean studio",
+        None,
+        "morning",
+        "sns_card",
+    )
+
+    assert payload["output_format"] == "sns_card"
 
 
 def test_model_server_generation_success(monkeypatch):
     async def fake_request_generation(**kwargs):
+        output_format = str(kwargs["output_format"])
         return {
             "status": "done",
-            "generated_image_url": "http://fake-model-server/bg.png",
+            "generated_image_url": f"http://fake-model-server/{output_format}.png",
             "product_preserved": True,
             "gen_time_sec": 1.2,
         }
 
+    async def fake_fetch_generated_image(url: str) -> Image.Image:
+        output_format = Path(url).stem
+        return Image.new("RGB", get_image_preset(output_format).composite_size, "green")
+
     monkeypatch.setattr(model_server_client, "request_generation", fake_request_generation)
-    monkeypatch.setattr(model_server_client, "httpx", type("M", (), {"AsyncClient": _FakeAsyncClient}))
+    monkeypatch.setattr(
+        model_server_client,
+        "fetch_generated_image",
+        fake_fetch_generated_image,
+    )
     monkeypatch.setattr(model_server_client, "MODEL_SERVER_URL", "http://fake-model-server")
 
     req, product = _setup_job_and_product(time_slots=("morning", "commute_pm"))
@@ -96,7 +126,6 @@ def test_model_server_generation_success(monkeypatch):
     results = asyncio.run(service.generate("job_test", req, product))
 
     assert len(results) == 8  # 시간대 2종 x 톤 4종
-    source_urls = set()
     for r in results:
         assert r.result_id.startswith("res_")
         assert len(r.images) == len(req.output_formats)
@@ -105,14 +134,62 @@ def test_model_server_generation_success(monkeypatch):
             continue
         assert r.time_slot == "commute_pm"
         assert r.source_image_url is not None
-        assert r.source_image_url not in r.images.values()
-        source_urls.add(r.source_image_url)
-        source_path = Path("data") / r.source_image_url.removeprefix("/files/")
-        with Image.open(source_path) as saved_source:
-            assert saved_source.size == (64, 64)
-            assert saved_source.getpixel((0, 0)) == (200, 100, 50)
-    assert len(source_urls) == 4
-    assert JOBS["job_test"]["completed_count"] == 8
+    assert JOBS["job_test"]["completed_count"] == 16
+    assert JOBS["job_test"]["progress"] == 100
+
+
+def test_model_server_generation_runs_two_ratios_in_order_and_saves_vertical_source(
+    monkeypatch,
+):
+    requested_formats: list[str] = []
+
+    async def fake_request_generation(**kwargs):
+        output_format = str(kwargs["output_format"])
+        requested_formats.append(output_format)
+        return {
+            "status": "done",
+            "generated_image_url": f"/files/outputs/{output_format}.png",
+            "product_preserved": True,
+            "gen_time_sec": 1.2,
+        }
+
+    async def fake_fetch_generated_image(url: str) -> Image.Image:
+        if "story_vertical" in url:
+            return Image.new("RGB", (720, 1280), (10, 20, 30))
+        return Image.new("RGB", (896, 1120), (40, 50, 60))
+
+    monkeypatch.setattr(
+        model_server_client,
+        "request_generation",
+        fake_request_generation,
+    )
+    monkeypatch.setattr(
+        model_server_client,
+        "fetch_generated_image",
+        fake_fetch_generated_image,
+    )
+
+    req, product = _setup_job_and_product(time_slots=("commute_pm",))
+    req = req.model_copy(
+        update={
+            "tones": ["modern"],
+            "output_formats": ["sns_card", "story_vertical"],
+        }
+    )
+    JOBS["job_test"]["total_count"] = 2
+
+    [result] = asyncio.run(
+        gs.ModelServerGenerationService().generate("job_test", req, product)
+    )
+
+    assert requested_formats == ["sns_card", "story_vertical"]
+    assert list(result.images) == ["sns_card", "story_vertical"]
+    assert result.source_image_url is not None
+    source_path = Path("data") / result.source_image_url.removeprefix("/files/")
+    with Image.open(source_path) as source:
+        assert source.size == (720, 1280)
+        assert source.getpixel((0, 0)) == (10, 20, 30)
+    assert JOBS["job_test"]["completed_count"] == 2
     assert JOBS["job_test"]["progress"] == 100
 
 

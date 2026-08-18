@@ -139,15 +139,22 @@ R2/R3(model_server)와 R4+R5(app/backend) 사이의 계약입니다. 이 문서�
   "product_id": "prd_001",
   "tones": ["emotional", "modern", "practical", "premium"],
   "time_slots": ["commute_am", "evening"],
-  "output_formats": ["thumbnail", "detail_banner", "sns_card"]
+  "output_formats": ["sns_card", "story_vertical"]
 }
 ```
 - `tones`는 생략하면 4종 전체가 기본값 (M2 — 항상 4종 동시 생성)
 - `time_slots`는 1개 이상, 최대 3개: `morning | commute_am | afternoon | commute_pm | evening | late_night`
+- `output_formats`는 1개 이상, 최대 2개의 서로 다른 프리셋을 요청한다. 기존 UI 호환을
+  위해 생략하면 `thumbnail`, `story_vertical` 두 종을 생성한다.
+  - `thumbnail`: 1:1, 모델 합성 1024x1024, 내보내기 1080x1080
+  - `sns_card`: 4:5, 모델 합성 896x1120, 내보내기 1080x1350
+  - `story_vertical`: 9:16, 모델 합성 720x1280, 내보내기 1080x1920
+  - `wide_banner`: 16:9, 모델 합성/내보내기 1280x720
+- 이전 `detail_banner` 이미지는 History와 다운로드에서 계속 읽지만 새 생성 요청에는 사용할 수 없다.
 
 응답 — `202`
 ```json
-{ "job_id": "job_001", "status": "queued", "estimated_seconds": 120 }
+{ "job_id": "job_001", "status": "queued", "estimated_seconds": 240 }
 ```
 
 ### GET /api/v1/jobs/{job_id}
@@ -159,11 +166,13 @@ R2/R3(model_server)와 R4+R5(app/backend) 사이의 계약입니다. 이 문서�
   "progress": 60,
   "current_step": "background_generation",
   "completed_count": 2,
-  "total_count": 8,
-  "estimated_seconds": 120
+  "total_count": 16,
+  "estimated_seconds": 240
 }
 ```
-`total_count` = 톤 수 × 선택 시간대 수 (예: 4톤 × 2시간대 = 8)
+`total_count` = 톤 수 × 선택 시간대 수 × 선택 비율 수
+(예: 4톤 × 2시간대 × 2비율 = 16). 프롬프트 문구는 톤×시간대별로 한 번 만들고,
+모델 이미지는 선택 비율별로 순차 생성한다.
 
 ### GET /api/v1/generations/{job_id}
 완료된 결과 조회
@@ -179,9 +188,8 @@ R2/R3(model_server)와 R4+R5(app/backend) 사이의 계약입니다. 이 문서�
       "subcopy": "10분이면 완성되는 아침",
       "source_image_url": "/files/outputs/job_001_emotional_commute_am_source.png",
       "images": {
-        "thumbnail": "/files/result_01_1x1.png",
-        "detail_banner": "/files/result_01_banner.png",
-        "sns_card": "/files/result_01_4x5.png"
+        "sns_card": "/files/result_01_4x5.png",
+        "story_vertical": "/files/result_01_9x16.png"
       }
     }
     // ... 선택한 톤 x 시간대 조합 수만큼 반복
@@ -189,8 +197,9 @@ R2/R3(model_server)와 R4+R5(app/backend) 사이의 계약입니다. 이 문서�
 }
 ```
 
-`source_image_url`은 모델 서버가 생성한 무자막 원본 이미지다. 쇼츠를 지원하는
-`commute_am`/`commute_pm` 결과에만 저장되며, 일반 시간대 결과에서는 `null`이다.
+`source_image_url`은 모델 서버가 생성한 무자막 9:16 원본 이미지다. `story_vertical`을
+선택한 `commute_am`/`commute_pm` 결과에만 저장되며, 다른 비율 또는 일반 시간대
+결과에서는 `null`이다.
 `images`는 헤드라인/서브카피가 포함된 규격별 광고 결과이며, 쇼츠는 자막 중복을
 막기 위해 `source_image_url`만 사용한다. 이 필드가 없는 이전 러시아워 결과는
 조회할 수 있지만 쇼츠 생성에는 사용할 수 없으므로 광고 이미지를 다시 생성해야 한다.
@@ -246,7 +255,8 @@ History에서 그 시간대 결과가 있으면 반환, 없으면 `available: fa
   "tone": "emotional",
   "image_prompt": "Create a product advertisement background for ... (영어)",
   "negative_prompt": "blurry, distorted product, extra logo, watermark",
-  "time_slot": "commute_am"
+  "time_slot": "commute_am",
+  "output_format": "story_vertical"
 }
 ```
 
@@ -269,8 +279,13 @@ History에서 그 시간대 결과가 있으면 반환, 없으면 `available: fa
   "cache_hit": true,
   "model_profile": "fast_composite",
   "num_inference_steps": 4,
-  "background_size": 768,
-  "output_size": 1024,
+  "background_size": null,
+  "output_size": null,
+  "output_format": "story_vertical",
+  "background_width": 576,
+  "background_height": 1024,
+  "output_width": 720,
+  "output_height": 1280,
   "peak_vram_gb": null
 }
 ```
@@ -278,6 +293,10 @@ History에서 그 시간대 결과가 있으면 반환, 없으면 `available: fa
 `image_prompt`/`negative_prompt`는 `app/prompt/builder.py`가 만들어서 전달합니다.
 `product_preserved`는 R2/R3가 자체 검증 후 반환 — 평가 1순위 지표(제품 보존율)와 연동됩니다.
 기존 필드는 그대로 유지하며, 성능·보존 메타데이터는 선택 필드입니다.
+`output_format`을 생략한 기존 호출은 `thumbnail`로 처리됩니다. 새 호출은 임의의
+width/height가 아니라 네 프리셋 중 하나만 보낼 수 있습니다. `background_size`와
+`output_size`는 정사각형 호환 필드라 비정사각형에서는 `null`이고, 실제 크기는
+명시적 width/height 필드를 기준으로 확인합니다.
 `gpu_queue_wait_sec`는 프로세스 내부 GPU 잠금 획득 전 대기시간이고,
 `stage_times_sec.generate`는 실제 GPU 모델 호출시간입니다. 전체 `gen_time_sec`에는
 두 시간이 모두 포함됩니다.
@@ -326,7 +345,8 @@ model_server는 `MODEL_IMAGE_ALLOWED_ORIGINS`에 등록된 origin만 내려받�
 ### R3에게 전달할 핵심 경계 (요약)
 - **모델 입력**: 제품 이미지는 model_server가 접근 가능한 절대 URL로 전달. backend가 상대 정적 경로를 `BACKEND_PUBLIC_URL`과 결합하며 바이너리 직접 전송은 안 함
 - **시간대/톤 enum**: `app/prompt/schemas.py`의 `TimeSlotLiteral`(6종) / `ToneLiteral`(4종) 그대로 사용
-- **생성 단위**: 기본 광고는 `시간대 × 톤`, 코믹 쇼츠는 선택된 결과당 추가 `/infer` 2회 순차 호출. 출력 규격과 TTS/영상 합성은 `app/backend` 소유
+- **생성 단위**: 기본 광고는 `시간대 × 톤 × 선택 비율`이며 한 L4에서 `/infer`를 순차 호출. 코믹 쇼츠는 선택된 결과당 추가 `/infer` 2회 순차 호출
+- **비율 소유권**: `model_server`는 프리셋의 네이티브 배경·합성 크기를, `app/backend`는 동일 비율 내보내기와 카피 오버레이를 소유. 임의 크기와 흰 레터박스는 허용하지 않음
 - **성공 응답**: 위 스키마 그대로 (`status: "done"`)
 - **실패 응답**: `status: "failed"`, `error_message: string` 포함해서 반환 (아래 참고)
 ```json

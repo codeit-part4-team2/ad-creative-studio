@@ -33,7 +33,7 @@ def _request(*, time_slot: str) -> GenerationRequest:
         product_id="prd_test",
         tones=["modern"],
         time_slots=[time_slot],
-        output_formats=["detail_banner", "sns_card"],
+        output_formats=["sns_card", "story_vertical"],
     )
 
 
@@ -42,7 +42,7 @@ def _prepare_job() -> None:
         "status": "processing",
         "progress": 0,
         "completed_count": 0,
-        "total_count": 1,
+        "total_count": 2,
         "current_step": None,
     }
 
@@ -73,7 +73,7 @@ def test_mock_clean_source_is_saved_only_for_rush_hour():
         product_id="prd_test",
         tones=["modern"],
         time_slots=["morning", "commute_am"],
-        output_formats=["thumbnail"],
+        output_formats=["story_vertical"],
     )
 
     results = asyncio.run(
@@ -88,6 +88,47 @@ def test_mock_clean_source_is_saved_only_for_rush_hour():
     assert by_slot["morning"].source_image_url is None
     assert by_slot["commute_am"].source_image_url is not None
     assert len(list(overlay.OUTPUT_DIR.glob("*_source_*.png"))) == 1
+
+
+def test_default_rush_hour_generation_keeps_a_shorts_source():
+    _prepare_job()
+    JOBS["job_test"]["total_count"] = 2
+
+    [result] = asyncio.run(
+        generation_service.LocalOverlayGenerationService().generate(
+            "job_test",
+            GenerationRequest(
+                product_id="prd_test",
+                tones=["modern"],
+                time_slots=["commute_am"],
+            ),
+            {"product_name": "테스트 상품", "selling_points": []},
+        )
+    )
+
+    assert list(result.images) == ["thumbnail", "story_vertical"]
+    assert result.source_image_url is not None
+
+
+def test_rush_hour_without_story_vertical_does_not_persist_a_shorts_source():
+    _prepare_job()
+    JOBS["job_test"]["total_count"] = 1
+
+    [result] = asyncio.run(
+        generation_service.LocalOverlayGenerationService().generate(
+            "job_test",
+            GenerationRequest(
+                product_id="prd_test",
+                tones=["modern"],
+                time_slots=["commute_am"],
+                output_formats=["sns_card"],
+            ),
+            {"product_name": "테스트 상품", "selling_points": []},
+        )
+    )
+
+    assert result.source_image_url is None
+    assert list(overlay.OUTPUT_DIR.glob("*_source_*.png")) == []
 
 
 def test_rush_hour_source_save_and_copy_generation_overlap(monkeypatch):
@@ -121,7 +162,7 @@ def test_rush_hour_source_save_and_copy_generation_overlap(monkeypatch):
                 product_id="prd_test",
                 tones=["modern"],
                 time_slots=["commute_pm"],
-                output_formats=["thumbnail"],
+                output_formats=["story_vertical"],
             ),
             {"product_name": "테스트 상품", "selling_points": []},
         )

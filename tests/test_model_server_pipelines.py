@@ -102,6 +102,32 @@ def test_fast_pipeline_is_lazy_and_uses_four_step_lcm_parameters() -> None:
     assert "foreground product" in background_negative
 
 
+def test_fast_pipeline_uses_native_four_by_five_dimensions() -> None:
+    fake = _FakePipeline()
+    pipeline = DiffusersGenerationPipeline(
+        InferenceConfig(),
+        loader=lambda _: LoadedPipeline(fake, "cuda"),
+        generator_factory=lambda device, seed: (device, seed),
+        reset_peak_memory=lambda: None,
+        peak_memory_reader=lambda: 3.25,
+    )
+
+    result = pipeline.generate(
+        cache_key="product:1",
+        prompt="modern studio",
+        negative_prompt="blurry",
+        artifacts=_artifacts(),
+        background_size=(672, 840),
+        output_size=(896, 1120),
+    )
+
+    assert fake.calls[0]["width"] == 672
+    assert fake.calls[0]["height"] == 840
+    assert result.image.size == (896, 1120)
+    assert (result.background_width, result.background_height) == (672, 840)
+    assert (result.output_width, result.output_height) == (896, 1120)
+
+
 def test_explicit_load_is_idempotent() -> None:
     fake = _FakePipeline()
     load_count = 0
@@ -315,3 +341,67 @@ def test_quality_pipeline_reuses_ip_adapter_embedding_for_same_product() -> None
     assert fake.calls[0]["height"] == 16
     assert fake.calls[0]["image"].mode == "RGB"
     assert fake.calls[0]["ip_adapter_image_embeds"] == ["cached-embedding"]
+
+
+def test_quality_pipeline_separates_embeddings_for_different_output_ratios() -> None:
+    config = replace(
+        InferenceConfig(),
+        profile=InferenceProfile.QUALITY_REGENERATE,
+    )
+    fake = _FakePipeline()
+    pipeline = DiffusersGenerationPipeline(
+        config,
+        loader=lambda _: LoadedPipeline(fake, "cuda"),
+        generator_factory=lambda device, seed: (device, seed),
+        reset_peak_memory=lambda: None,
+        peak_memory_reader=lambda: 4.0,
+    )
+
+    pipeline.generate(
+        cache_key="product:1",
+        prompt="premium marble",
+        negative_prompt="blurry",
+        artifacts=_artifacts(),
+        background_size=(768, 768),
+        output_size=(1024, 1024),
+    )
+    pipeline.generate(
+        cache_key="product:1",
+        prompt="premium marble",
+        negative_prompt="blurry",
+        artifacts=_artifacts(),
+        background_size=(576, 1024),
+        output_size=(720, 1280),
+    )
+
+    assert fake.embedding_calls == 2
+
+
+def test_quality_pipeline_uses_native_story_dimensions() -> None:
+    config = replace(
+        InferenceConfig(),
+        profile=InferenceProfile.QUALITY_REGENERATE,
+    )
+    fake = _FakePipeline()
+    pipeline = DiffusersGenerationPipeline(
+        config,
+        loader=lambda _: LoadedPipeline(fake, "cuda"),
+        generator_factory=lambda device, seed: (device, seed),
+        reset_peak_memory=lambda: None,
+        peak_memory_reader=lambda: 4.0,
+    )
+
+    result = pipeline.generate(
+        cache_key="product:1",
+        prompt="premium studio",
+        negative_prompt="blurry",
+        artifacts=_artifacts(),
+        background_size=(576, 1024),
+        output_size=(720, 1280),
+    )
+
+    assert fake.calls[0]["width"] == 720
+    assert fake.calls[0]["height"] == 1280
+    assert result.image.size == (720, 1280)
+    assert (result.background_width, result.background_height) == (720, 1280)
+    assert (result.output_width, result.output_height) == (720, 1280)

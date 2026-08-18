@@ -8,9 +8,6 @@ TimeSlotLiteral = Literal[
     "morning", "commute_am", "afternoon", "commute_pm", "evening", "late_night"
 ]
 
-OutputFormatLiteral = Literal["thumbnail", "detail_banner", "sns_card"]
-
-
 class PromotionInfo(BaseModel):
     """
     사용자가 실제로 입력한 프로모션 정보만 반영한다.
@@ -23,8 +20,8 @@ class PromotionInfo(BaseModel):
 
 
 class PromptRequest(BaseModel):
-    # output_format은 여기서 제거 - 이미지 생성 조건이 아니라 후처리(리사이즈/오버레이) 조건이므로
-    # backend/services/overlay.py 에서 OUTPUT_FORMATS 를 순회하며 적용한다.
+    # output_format은 문구 생성 조건이 아니므로 PromptRequest에는 넣지 않는다.
+    # 네이티브 비율 선택은 GenerationRequest와 model_server /infer 계약이 담당한다.
     product_name: str
     category: Optional[str] = None
     price: Optional[int] = None
@@ -39,4 +36,3 @@ class PromptResult(BaseModel):
     headline: str
     subcopy: str
     negative_prompt: Optional[str] = None
-

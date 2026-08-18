@@ -13,6 +13,9 @@ from model_server.cache import TTLCache
 from model_server.compositing import fit_product_rgba
 
 
+MAX_CACHED_SEGMENTATION_EDGE = 1280
+
+
 class _HttpResponse(Protocol):
     headers: dict[str, str]
     status_code: int
@@ -28,6 +31,7 @@ class ProductArtifacts:
     product_on_white: Image.Image
     alpha_mask: Image.Image
     canny_image: Image.Image | None
+    segmented_product: Image.Image | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,6 +179,59 @@ def make_canny_rgb(image: Image.Image) -> Image.Image:
     return Image.fromarray(edges_rgb, mode="RGB")
 
 
+def _bounded_segmented_product(image: Image.Image) -> Image.Image:
+    rgba = image.convert("RGBA")
+    visible_bounds = rgba.getchannel("A").getbbox()
+    if visible_bounds is not None:
+        rgba = rgba.crop(visible_bounds)
+    if max(rgba.size) > MAX_CACHED_SEGMENTATION_EDGE:
+        rgba.thumbnail(
+            (MAX_CACHED_SEGMENTATION_EDGE, MAX_CACHED_SEGMENTATION_EDGE),
+            Image.Resampling.LANCZOS,
+        )
+    return rgba
+
+
+def derive_product_artifacts(
+    artifacts: ProductArtifacts,
+    *,
+    canvas_size: tuple[int, int],
+    fill_ratio: float,
+    include_canny: bool,
+    canny_builder: Callable[[Image.Image], Image.Image] = make_canny_rgb,
+) -> ProductArtifacts:
+    """Build a ratio-specific canvas without repeating download or segmentation."""
+    if (
+        artifacts.product_rgba.size == canvas_size
+        and (not include_canny or artifacts.canny_image is not None)
+    ):
+        return artifacts
+
+    segmented = artifacts.segmented_product or artifacts.product_rgba
+    product_rgba = fit_product_rgba(
+        segmented,
+        canvas_size=canvas_size,
+        fill_ratio=fill_ratio,
+    )
+    alpha_mask = product_rgba.getchannel("A")
+    product_on_white = Image.new("RGB", canvas_size, "white")
+    product_on_white.paste(product_rgba, mask=alpha_mask)
+    canny_image = (
+        canny_builder(product_on_white).convert("RGB")
+        if include_canny
+        else None
+    )
+    if canny_image is not None and canny_image.size != canvas_size:
+        canny_image = canny_image.resize(canvas_size, Image.Resampling.BILINEAR)
+    return ProductArtifacts(
+        product_rgba=product_rgba,
+        product_on_white=product_on_white,
+        alpha_mask=alpha_mask,
+        canny_image=canny_image,
+        segmented_product=segmented,
+    )
+
+
 class ProductPreprocessor:
     def __init__(
         self,
@@ -204,7 +261,7 @@ class ProductPreprocessor:
 
     def _build_artifacts(self, image_url: str) -> ProductArtifacts:
         original = self._downloader(image_url)
-        segmented = self._segmenter(original)
+        segmented = _bounded_segmented_product(self._segmenter(original))
         product_rgba = fit_product_rgba(
             segmented,
             canvas_size=(self._image_size, self._image_size),
@@ -226,4 +283,5 @@ class ProductPreprocessor:
             product_on_white=product_on_white,
             alpha_mask=alpha_mask,
             canny_image=canny_image,
+            segmented_product=segmented,
         )

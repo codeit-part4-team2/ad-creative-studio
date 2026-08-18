@@ -20,8 +20,8 @@ router = APIRouter(prefix="/api/v1/generations", tags=["generations"])
 
 def build_generation_plan(req: GenerationRequest, product: dict) -> list[PromptRequest]:
     """
-    모델이 실제로 생성해야 하는 단위 = 시간대 x 톤 (출력 규격은 후처리 조건이라 여기 안 곱한다).
-    시간대 3개 x 톤 4개 = 12개가 생성 대상이고, 각 결과에서 규격 3종을 PIL로 파생한다.
+    문구 프롬프트 단위 = 시간대 x 톤. 이미지 생성 작업량은 이 계획의 각 항목에서
+    선택 비율 수만큼 별도로 증가하며, 같은 문구를 비율별 네이티브 생성에 재사용한다.
     """
     plan = []
     for time_slot in req.time_slots:
@@ -67,8 +67,9 @@ async def create_generation(req: GenerationRequest, background_tasks: Background
             )
 
     job_id = f"job_{uuid.uuid4().hex[:6]}"
-    total = len(req.tones) * len(req.time_slots)  # 시간대 x 톤만 (규격 곱하지 않음)
-    est = estimate_seconds(len(req.tones), len(req.time_slots))
+    format_count = len(req.output_formats)
+    total = len(req.tones) * len(req.time_slots) * format_count
+    est = estimate_seconds(len(req.tones), len(req.time_slots), format_count)
     JOBS[job_id] = {
         "customer_id": customer["customer_id"],  # multi-tenant 데이터 격리
         "status": "queued",

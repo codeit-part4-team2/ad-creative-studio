@@ -17,9 +17,9 @@ model_server 연동 후에는 배경만 실제 생성 이미지로 교체하면 
 import uuid
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFont
 
-from app.prompt.templates import OUTPUT_FORMATS
+from app.image_presets import get_image_preset
 
 FONT_PATH = str(Path(__file__).resolve().parents[3] / "assets" / "fonts" / "NanumGothic-Regular.ttf")
 # CWD 상대경로가 아니라 이 파일 위치 기준 절대경로로 고정 - uvicorn을 레포 루트가 아닌 곳에서
@@ -92,29 +92,32 @@ def save_source_image(
     return _output_url(file_path)
 
 
-def _fit_and_pad(image: Image.Image, size: tuple[int, int]) -> Image.Image:
-    """
-    단순 resize()는 비율을 무시하고 강제로 규격에 맞춰서, 정사각형이 아닌 실제 생성
-    이미지(모델에서 받은 배경)를 규격이 다른 3종(1:1/가로형/세로형)으로 뽑을 때
-    제품이 눌리거나 늘어난다. 이 프로젝트의 평가 1순위 지표가 제품 보존율이라
-    후처리 단계에서 비율을 깨면 안 된다 - 비율은 유지한 채 캔버스 중앙에 배치하고
-    남는 부분은 흰색으로 채운다(레터박스). placeholder(단색) 배경일 때도 결과는
-    기존 resize()와 사실상 동일하므로 Mock 경로에는 영향 없다.
-    """
-    fitted = ImageOps.contain(image.convert("RGB"), size, method=Image.Resampling.LANCZOS)
-    canvas = Image.new("RGB", size, "white")
-    x = (size[0] - fitted.width) // 2
-    y = (size[1] - fitted.height) // 2
-    canvas.paste(fitted, (x, y))
-    return canvas
+def _resize_same_aspect_ratio(
+    image: Image.Image,
+    size: tuple[int, int],
+) -> Image.Image:
+    expected_width = image.height * size[0] / size[1]
+    expected_height = image.width * size[1] / size[0]
+    within_one_pixel = (
+        abs(image.width - expected_width) <= 1
+        or abs(image.height - expected_height) <= 1
+    )
+    if not within_one_pixel:
+        raise ValueError(
+            f"source aspect ratio {image.width}:{image.height} does not match "
+            f"target aspect ratio {size[0]}:{size[1]}"
+        )
+    if image.size == size:
+        return image.convert("RGB")
+    return image.convert("RGB").resize(size, Image.Resampling.LANCZOS)
 
 
 def overlay_copy(background_image: Image.Image, headline: str, subcopy: str,
                   output_format: str, tone: str = "modern") -> Image.Image:
-    spec = OUTPUT_FORMATS[output_format]
-    img = _fit_and_pad(background_image, spec["size"])
+    preset = get_image_preset(output_format)
+    img = _resize_same_aspect_ratio(background_image, preset.export_size)
     draw = ImageDraw.Draw(img)
-    w, h = spec["size"]
+    w, h = preset.export_size
 
     try:
         headline_font = ImageFont.truetype(FONT_PATH, max(28, w // 22))
@@ -172,8 +175,12 @@ def generate_and_save(job_id: str, tone: str, time_slot: str, headline: str, sub
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     urls: dict[str, str] = {}
     for fmt in output_formats:
-        spec = OUTPUT_FORMATS[fmt]
-        background = background_image if background_image is not None else create_placeholder_background(tone, spec["size"])
+        preset = get_image_preset(fmt)
+        background = (
+            background_image
+            if background_image is not None
+            else create_placeholder_background(tone, preset.composite_size)
+        )
         final_image = overlay_copy(background, headline, subcopy, fmt, tone=tone)
 
         filename = f"{job_id}_{tone}_{time_slot}_{fmt}_{uuid.uuid4().hex[:6]}.png"

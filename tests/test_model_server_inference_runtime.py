@@ -104,6 +104,8 @@ def test_fast_inference_composites_source_and_returns_stage_metadata() -> None:
         "save",
     }
     assert result.stage_times_sec["gpu_queue_wait"] == result.gpu_queue_wait_sec
+    assert pipeline.calls[0]["background_size"] == (8, 8)
+    assert pipeline.calls[0]["output_size"] == (16, 16)
     assert store.saved[0].getpixel((8, 8)) == (220, 10, 20)
     assert store.saved[0].getpixel((0, 0)) == (0, 128, 0)
 
@@ -136,6 +138,97 @@ def test_quality_result_does_not_claim_unmeasured_product_preservation() -> None
     assert result.preservation_method == "not_evaluated"
     assert result.background_size == 16
     assert result.output_size == 16
+
+
+def test_non_square_inference_forwards_preset_dimensions_and_reports_metadata() -> None:
+    class RatioPipeline(_FakePipeline):
+        def generate(self, **kwargs: object) -> GenerationResult:
+            self.calls.append(kwargs)
+            return GenerationResult(
+                image=Image.new("RGB", (896, 1120), "green"),
+                requires_composite=False,
+                peak_vram_gb=4.0,
+                background_width=672,
+                background_height=840,
+                output_width=896,
+                output_height=1120,
+            )
+
+    pipeline = RatioPipeline(requires_composite=False)
+    engine = InferenceEngine(
+        config=InferenceConfig(),
+        preprocessor=_FakePreprocessor(),
+        pipeline=pipeline,
+        output_store=_CaptureStore(),
+        synchronize=lambda: None,
+    )
+
+    result = engine.run(
+        product_id="p-1",
+        product_image_url="https://images.example/product.png",
+        tone="modern",
+        image_prompt="modern studio",
+        negative_prompt="blurry",
+        output_format="sns_card",
+    )
+
+    assert pipeline.calls[0]["background_size"] == (672, 840)
+    assert pipeline.calls[0]["output_size"] == (896, 1120)
+    ratio_artifacts = pipeline.calls[0]["artifacts"]
+    assert isinstance(ratio_artifacts, ProductArtifacts)
+    assert ratio_artifacts.product_rgba.size == (896, 1120)
+    assert ratio_artifacts.product_on_white.size == (896, 1120)
+    assert result.output_format == "sns_card"
+    assert result.background_size is None
+    assert result.output_size is None
+    assert (result.background_width, result.background_height) == (672, 840)
+    assert (result.output_width, result.output_height) == (896, 1120)
+
+
+def test_non_square_preset_scales_with_runtime_size_configuration() -> None:
+    class ConfigAwarePipeline(_FakePipeline):
+        def generate(self, **kwargs: object) -> GenerationResult:
+            self.calls.append(kwargs)
+            background_size = kwargs["background_size"]
+            output_size = kwargs["output_size"]
+            assert isinstance(background_size, tuple)
+            assert isinstance(output_size, tuple)
+            return GenerationResult(
+                image=Image.new("RGB", output_size, "green"),
+                requires_composite=False,
+                peak_vram_gb=4.0,
+                background_width=background_size[0],
+                background_height=background_size[1],
+                output_width=output_size[0],
+                output_height=output_size[1],
+            )
+
+    pipeline = ConfigAwarePipeline(requires_composite=False)
+    engine = InferenceEngine(
+        config=replace(
+            InferenceConfig(),
+            fast_background_size=512,
+            image_size=768,
+        ),
+        preprocessor=_FakePreprocessor(),
+        pipeline=pipeline,
+        output_store=_CaptureStore(),
+        synchronize=lambda: None,
+    )
+
+    result = engine.run(
+        product_id="p-1",
+        product_image_url="https://images.example/product.png",
+        tone="modern",
+        image_prompt="modern studio",
+        negative_prompt="blurry",
+        output_format="sns_card",
+    )
+
+    assert pipeline.calls[0]["background_size"] == (448, 560)
+    assert pipeline.calls[0]["output_size"] == (672, 840)
+    assert (result.background_width, result.background_height) == (448, 560)
+    assert (result.output_width, result.output_height) == (672, 840)
 
 
 def test_inference_engine_serializes_pipeline_generation() -> None:
