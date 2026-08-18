@@ -1,10 +1,9 @@
 from __future__ import annotations
-from contextlib import asynccontextmanager
-from deploy.monitoring import start_gpu_watcher
 
+from contextlib import asynccontextmanager
+from collections.abc import Mapping
 import logging
 import os
-from collections.abc import Mapping
 from pathlib import Path
 from threading import Lock
 from typing import Annotated
@@ -12,6 +11,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from deploy.monitoring import start_gpu_watcher
 from model_server.cache import TTLCache
 from model_server.config import InferenceConfig, InferenceProfile
 from model_server.inference import FileOutputStore, InferenceEngine
