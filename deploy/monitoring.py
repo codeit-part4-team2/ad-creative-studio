@@ -23,8 +23,19 @@ def get_gpu_snapshot() -> dict | None:
             ],
             timeout=3,  # nvidia-smi가 3초 넘게 응답 없으면 예외 발생 -> 서버가 무한정 멈추는 것 방지
         )
+        text = raw.decode().strip()
+        # 멀티 GPU 환경이면 줄이 여러 개 나올 수 있으니, 첫 줄(GPU 0)만 사용
+        first_line = text.splitlines()[0]
+        parts = first_line.split(",")
+        util, vram_used, vram_total = [int(p.strip()) for p in parts]
     except Exception:
         return None
+    
+    return {
+        "util_pct": util,
+        "vram_used_mb": vram_used,
+        "vram_total_mb": vram_total,
+    }
 
     # bytes를 문자열로 디코딩하고, 앞뒤 공백/줄바꿈 제거
     text = raw.decode().strip()
@@ -45,12 +56,15 @@ def _watch_loop():
     이 함수 자체는 절대 return하지 않음 - 서버가 살아있는 한 계속 돎.
     """
     while True:
-        snapshot = get_gpu_snapshot()
-        if snapshot is not None:
-            snapshot["timestamp"] = time.time()
-            # "a" 모드 = append, 파일 끝에 한 줄 추가(기존 내용은 안 건드림)
-            with open(LOG_PATH, "a", encoding="utf-8") as f:
-                f.write(json.dumps(snapshot) + "\n")
+        try:
+            snapshot = get_gpu_snapshot()
+            if snapshot is not None:
+                snapshot["timestamp"] = time.time()
+                with open(LOG_PATH, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(snapshot) + "\n")
+        except Exception:
+            # 예상치 못한 예외(디스크 풀, 권한 문제 등)로도 감시 스레드가 죽으면 안됨
+            pass
         time.sleep(2)   # 2초 대기 후 다시 반복
 
 def start_gpu_watcher():
