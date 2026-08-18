@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { resolveAssetUrl } from "@/lib/api/client";
-import { TONE_LABEL, RUSH_HOUR_SLOTS } from "@/lib/constants";
+import { TONE_LABEL, FORMAT_LABEL, RUSH_HOUR_SLOTS, TIME_SLOT_OPTIONS } from "@/lib/constants";
 import type { ToneResult } from "@/lib/types/api";
 import { Play, Download, Film, Layers } from "lucide-react";
 
@@ -19,6 +19,7 @@ export function ResultReceiptCard({
 }) {
   const isRushHour = result.time_slot && RUSH_HOUR_SLOTS.includes(result.time_slot);
   const firstImageUrl = Object.values(result.images)[0];
+  const timeSlotLabel = TIME_SLOT_OPTIONS.find((o) => o.value === result.time_slot)?.label;
 
   return (
     <div className="creative-card">
@@ -38,7 +39,7 @@ export function ResultReceiptCard({
         <div>
           <p className="text-sm font-semibold">
             {TONE_LABEL[result.tone]}
-            {result.time_slot ? ` · ${result.time_slot}` : ""}
+            {timeSlotLabel ? ` · ${timeSlotLabel}` : ""}
           </p>
           <p className="mt-0.5 text-sm text-muted-foreground">{result.headline}</p>
         </div>
@@ -47,7 +48,7 @@ export function ResultReceiptCard({
           {Object.entries(result.images).map(([fmt, url]) => (
             <Button key={fmt} asChild variant="outline" size="sm">
               <a href={resolveAssetUrl(url)} download>
-                <Download /> {fmt}
+                <Download /> {FORMAT_LABEL[fmt] ?? fmt}
               </a>
             </Button>
           ))}

@@ -63,7 +63,17 @@ function HistoryContent() {
                   <Star className={entry.favorite ? "h-4 w-4 fill-current" : "h-4 w-4"} />
                 </button>
                 <p className="font-mono text-sm">
-                  {entry.job_id} · {entry.results.length}개 결과
+                  {(entry.results[0]?.headline.replace(/^\[[^\]]+\]\s*/, "")) || "광고"}
+                  {entry.created_at
+                    ? ` · ${new Date(entry.created_at * 1000).toLocaleString("ko-KR", {
+                        year: "numeric",
+                        month: "2-digit",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}`
+                    : ""}{" "}
+                  · {entry.results.length}개 결과
                 </p>
               </div>
               <Button asChild variant="outline" size="sm">
