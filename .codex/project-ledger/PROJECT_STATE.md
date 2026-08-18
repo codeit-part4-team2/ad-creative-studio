@@ -61,4 +61,4 @@
 - Root and branch: `[VERIFIED] G:\Codex\projects\상급프로젝트\worktrees\ad-creative-studio-shorts-review-followups` on `codex/shorts-review-followups`.
 - Base reconciliation: `[VERIFIED]` the branch was refreshed from `806e4ca` through current `origin/main @ 9a938f6` after preserving the local diff in named recovery stashes; the saved changes reapplied without conflicts after both main updates.
 - Current validation: `[VERIFIED]` clean-main baseline 324 passed, focused follow-up suite 50 passed, and the final full suite on `origin/main @ 9a938f6` passed 329 tests in 40.98 seconds. Changed-file Ruff, compileall, pip check, and `git diff --check` exited 0.
-- Publication state: `[VERIFIED]` the refreshed changes remain local and unstaged, with no commit, push, PR, deployment, or VM mutation.
+- Publication state: `[VERIFIED]` implementation commit `2b8587f` is pushed to the team remote and Draft PR #35 is open against `main`. At the latest live read, GitHub pytest is `IN_PROGRESS`, review is `REVIEW_REQUIRED`, and merge is `BLOCKED`; no merge, deployment, or VM mutation occurred.
