@@ -11,6 +11,7 @@ import {
   getAdminInquiries,
   getAdminKey,
 } from "@/lib/api/admin-inquiries";
+import { formatCreatedAt } from "@/lib/utils";
 
 function AdminInquiryContent({ inquiryId }: { inquiryId: string }) {
   const [adminKey, setAdminKey] = useState<string | null>(null);
@@ -150,7 +151,7 @@ function AdminInquiryContent({ inquiryId }: { inquiryId: string }) {
             </span>
 
             <span className="text-xs text-muted-foreground">
-              {new Date(inquiry.created_at * 1000).toLocaleString("ko-KR")}
+              {formatCreatedAt(inquiry.created_at)}
             </span>
           </div>
 
@@ -177,8 +178,7 @@ function AdminInquiryContent({ inquiryId }: { inquiryId: string }) {
 
             {inquiry.answered_at && (
               <p className="mt-4 text-xs text-muted-foreground">
-                답변일{" "}
-                {new Date(inquiry.answered_at * 1000).toLocaleString("ko-KR")}
+                답변일 {formatCreatedAt(inquiry.answered_at)}
               </p>
             )}
           </div>

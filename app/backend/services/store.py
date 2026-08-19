@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from transformers import data
+
 
 from app.backend.services.auth import CUSTOMERS, SESSIONS
 

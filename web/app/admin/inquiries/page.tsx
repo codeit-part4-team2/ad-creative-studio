@@ -11,6 +11,7 @@ import {
 } from "@/lib/api/admin-inquiries";
 
 import Link from "next/link";
+import { formatCreatedAt } from "@/lib/utils";
 
 export default function AdminInquiriesPage() {
   const [adminKeyInput, setAdminKeyInput] = useState("");
@@ -163,9 +164,7 @@ export default function AdminInquiriesPage() {
                 </span>
 
                 <span className="text-xs text-muted-foreground">
-                  {new Date(inquiry.created_at * 1000).toLocaleDateString(
-                    "ko-KR",
-                  )}
+                  {formatCreatedAt(inquiry.created_at)}
                 </span>
               </Link>
             ))

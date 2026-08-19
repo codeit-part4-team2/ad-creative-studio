@@ -8,6 +8,7 @@ import { ArrowLeft, MessageSquare } from "lucide-react";
 import { RequireAuth } from "@/components/auth/require-auth";
 import { Button } from "@/components/ui/button";
 import { createCommunityComment, getCommunityPost } from "@/lib/api/community";
+import { formatCreatedAt } from "@/lib/utils";
 
 function CommunityPostContent({ postId }: { postId: string }) {
   const [comment, setComment] = useState("");
@@ -75,9 +76,7 @@ function CommunityPostContent({ postId }: { postId: string }) {
           <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
             <span>{post.company_name}</span>
             <span>·</span>
-            <span>
-              {new Date(post.created_at * 1000).toLocaleString("ko-KR")}
-            </span>
+            <span>{formatCreatedAt(post.created_at)}</span>
           </div>
         </div>
 
@@ -109,7 +108,7 @@ function CommunityPostContent({ postId }: { postId: string }) {
                   </span>
 
                   <span className="text-xs text-muted-foreground">
-                    {new Date(item.created_at * 1000).toLocaleString("ko-KR")}
+                    {formatCreatedAt(item.created_at)}
                   </span>
                 </div>
 

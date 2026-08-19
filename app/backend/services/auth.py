@@ -19,6 +19,9 @@ import time
 CUSTOMERS: dict[str, dict] = {}  # customer_id -> {company_name, pin_hash, pin_salt, status, plan, created_at}
 SESSIONS: dict[str, str] = {}  # session_token -> customer_id (인메모리 전용, 서버 재시작 시 초기화)
 FAILED_LOGIN_ATTEMPTS: dict[str, list[float]] = {}  # customer_id -> 최근 실패 타임스탬프들
+ADMIN_FAILED_ATTEMPTS: list[float] = []
+ADMIN_RATE_LIMIT_MAX_ATTEMPTS = 5
+ADMIN_RATE_LIMIT_WINDOW_SECONDS = 60
 
 PBKDF2_ITERATIONS = 260_000  # OWASP 2023 권장 최소치 근사
 RATE_LIMIT_MAX_ATTEMPTS = 5
@@ -117,9 +120,33 @@ def verify_admin_key(provided_key: str | None) -> bool:
     로그인 시스템까지 만드는 건 과함."""
     expected = os.getenv("ADMIN_API_KEY")
     if not expected:
+        _record_admin_failed_attempt()
         return False  # 키를 설정 안 했으면 기본적으로 막는다 (열어두는 쪽으로 fail하지 않음)
-    return secrets.compare_digest(provided_key or "", expected)
+
+    valid = secrets.compare_digest(provided_key or "", expected)
+    if not valid:
+        _record_admin_failed_attempt()
+    return valid
+
+def is_admin_rate_limited() -> bool:
+    now = time.time()
+
+    recent_attempts = [
+        attempt
+        for attempt in ADMIN_FAILED_ATTEMPTS
+        if now - attempt < ADMIN_RATE_LIMIT_WINDOW_SECONDS
+    ]
+
+    ADMIN_FAILED_ATTEMPTS.clear()
+    ADMIN_FAILED_ATTEMPTS.extend(recent_attempts)
+
+    return len(recent_attempts) >= ADMIN_RATE_LIMIT_MAX_ATTEMPTS
+
+
+def _record_admin_failed_attempt() -> None:
+    ADMIN_FAILED_ATTEMPTS.append(time.time())
 
 
 def reset_rate_limit_for_tests() -> None:
     FAILED_LOGIN_ATTEMPTS.clear()
+    ADMIN_FAILED_ATTEMPTS.clear()

@@ -11,6 +11,7 @@ client = TestClient(app)
 
 def setup_function():
     store.reset_for_tests()
+    auth.reset_rate_limit_for_tests()
 
     auth.create_customer(
         "CUS-0001",
@@ -132,6 +133,43 @@ def test_admin_key_required_to_list_all_inquiries():
 
     assert response.status_code == 403
 
+def test_admin_key_required_to_answer_inquiry():
+    headers = _login_headers("CUS-0001", "1234")
+
+    create_response = client.post(
+        "/api/v1/inquiries",
+        headers=headers,
+        json={
+            "title": "관리자 권한 테스트",
+            "content": "관리자 키 없이 답변하면 안 됩니다.",
+        },
+    )
+
+    inquiry_id = create_response.json()["inquiry_id"]
+
+    response = client.post(
+        f"/api/v1/admin/inquiries/{inquiry_id}/answer",
+        json={
+            "answer": "권한 없는 답변",
+        },
+    )
+
+    assert response.status_code == 403
+
+def test_admin_key_rate_limit():
+    for _ in range(auth.ADMIN_RATE_LIMIT_MAX_ATTEMPTS):
+        response = client.get(
+            "/api/v1/admin/inquiries",
+            headers={"X-Admin-Key": "wrong-key"},
+        )
+        assert response.status_code == 403
+
+    response = client.get(
+        "/api/v1/admin/inquiries",
+        headers={"X-Admin-Key": "wrong-key"},
+    )
+
+    assert response.status_code == 429
 
 def test_admin_can_answer_inquiry():
     headers = _login_headers("CUS-0001", "1234")

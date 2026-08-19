@@ -4,7 +4,7 @@ import { use } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, CheckCircle2, Clock3 } from "lucide-react";
-
+import { formatCreatedAt } from "@/lib/utils";
 import { RequireAuth } from "@/components/auth/require-auth";
 import { getInquiry } from "@/lib/api/inquiries";
 
@@ -62,7 +62,7 @@ function InquiryDetailContent({ inquiryId }: { inquiryId: string }) {
             </span>
 
             <span className="text-xs text-muted-foreground">
-              {new Date(inquiry.created_at * 1000).toLocaleString("ko-KR")}
+              {formatCreatedAt(inquiry.created_at)}
             </span>
           </div>
 
@@ -89,8 +89,7 @@ function InquiryDetailContent({ inquiryId }: { inquiryId: string }) {
 
             {inquiry.answered_at && (
               <p className="mt-4 text-xs text-muted-foreground">
-                답변일{" "}
-                {new Date(inquiry.answered_at * 1000).toLocaleString("ko-KR")}
+                답변일 {formatCreatedAt(inquiry.answered_at)}
               </p>
             )}
           </div>

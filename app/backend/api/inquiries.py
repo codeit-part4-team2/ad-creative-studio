@@ -12,6 +12,20 @@ from app.backend.schemas.inquiry import (
 from app.backend.services import auth, store
 from app.backend.services.store import INQUIRIES
 
+def require_admin(
+    x_admin_key: str | None = Header(None),
+) -> None:
+    if auth.is_admin_rate_limited():
+        raise HTTPException(
+            status_code=429,
+            detail="관리자 인증 시도가 너무 많습니다. 잠시 후 다시 시도해주세요",
+        )
+
+    if not auth.verify_admin_key(x_admin_key):
+        raise HTTPException(
+            status_code=403,
+            detail="관리자 권한이 필요합니다",
+        )
 
 router = APIRouter(prefix="/api/v1/inquiries", tags=["inquiries"])
 
@@ -91,20 +105,14 @@ async def get_inquiry(
     response_model=list[InquiryResponse],
 )
 async def get_all_inquiries(
-    x_admin_key: str | None = Header(None),
+    _: None = Depends(require_admin),
 ):
-    """운영자는 ADMIN_API_KEY를 통해 전체 문의를 조회한다."""
-    if not auth.verify_admin_key(x_admin_key):
-        raise HTTPException(
-            status_code=403,
-            detail="관리자 권한이 필요합니다",
-        )
-
     return sorted(
         INQUIRIES,
         key=lambda inquiry: inquiry["created_at"],
         reverse=True,
     )
+
 
 
 @admin_router.post(
@@ -114,15 +122,8 @@ async def get_all_inquiries(
 async def answer_inquiry(
     inquiry_id: str,
     body: InquiryAnswerCreate,
-    x_admin_key: str | None = Header(None),
+    _: None = Depends(require_admin),
 ):
-    """운영자만 문의에 답변할 수 있다."""
-    if not auth.verify_admin_key(x_admin_key):
-        raise HTTPException(
-            status_code=403,
-            detail="관리자 권한이 필요합니다",
-        )
-
     for inquiry in INQUIRIES:
         if inquiry["inquiry_id"] != inquiry_id:
             continue
@@ -132,7 +133,6 @@ async def answer_inquiry(
         inquiry["answered_at"] = time.time()
 
         store.save()
-
         return inquiry
 
     raise HTTPException(

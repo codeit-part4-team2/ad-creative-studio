@@ -12,7 +12,7 @@ import {
   getCommunityPosts,
   type CommunityPost,
 } from "@/lib/api/community";
-import { cn } from "@/lib/utils";
+import { cn, formatCreatedAt } from "@/lib/utils";
 import { createInquiry, getInquiries, type Inquiry } from "@/lib/api/inquiries";
 
 type CommunityTab = "board" | "inquiry";
@@ -292,7 +292,7 @@ function CommunityContent() {
                 </span>
 
                 <span className="text-xs text-muted-foreground">
-                  {new Date(post.created_at * 1000).toLocaleDateString("ko-KR")}
+                  {formatCreatedAt(post.created_at)}
                 </span>
               </Link>
             ))}
@@ -449,9 +449,7 @@ function CommunityContent() {
                 <span className="text-sm font-medium">{inquiry.title}</span>
 
                 <span className="text-xs text-muted-foreground">
-                  {new Date(inquiry.created_at * 1000).toLocaleDateString(
-                    "ko-KR",
-                  )}
+                  {formatCreatedAt(inquiry.created_at)}
                 </span>
               </Link>
             ))}
