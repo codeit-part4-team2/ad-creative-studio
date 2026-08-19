@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: "/create", label: "CREATE" },
   { href: "/history", label: "HISTORY" },
   { href: "/publishing", label: "PUBLISH" },
+  { href: "/community", label: "COMMUNITY" },
 ];
 
 export function TopNav() {
