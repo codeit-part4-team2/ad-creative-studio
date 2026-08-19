@@ -48,8 +48,11 @@ def summarize_runs(runs: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     configuration_keys = (
         "model_profile",
         "num_inference_steps",
-        "background_size",
-        "output_size",
+        "output_format",
+        "background_width",
+        "background_height",
+        "output_width",
+        "output_height",
     )
     configurations = {
         tuple(run.get(key) for key in configuration_keys)

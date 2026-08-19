@@ -91,6 +91,8 @@ class InferenceConfig:
     product_fill_ratio: float = 0.5
     cache_max_entries: int = 16
     cache_ttl_seconds: float = 3600.0
+    artifact_cache_max_entries: int = 4
+    artifact_cache_ttl_seconds: float = 300.0
     image_allowed_origins: tuple[str, ...] = ("http://localhost:8000",)
     enable_torch_compile: bool = False
     enable_vae_tiling: bool = False
@@ -180,6 +182,20 @@ class InferenceConfig:
                 "PRODUCT_CACHE_TTL_SECONDS",
                 environ.get(
                     "PRODUCT_CACHE_TTL_SECONDS", str(defaults.cache_ttl_seconds)
+                ),
+            ),
+            artifact_cache_max_entries=_positive_int(
+                "ARTIFACT_CACHE_MAX_ENTRIES",
+                environ.get(
+                    "ARTIFACT_CACHE_MAX_ENTRIES",
+                    str(defaults.artifact_cache_max_entries),
+                ),
+            ),
+            artifact_cache_ttl_seconds=_positive_float(
+                "ARTIFACT_CACHE_TTL_SECONDS",
+                environ.get(
+                    "ARTIFACT_CACHE_TTL_SECONDS",
+                    str(defaults.artifact_cache_ttl_seconds),
                 ),
             ),
             image_allowed_origins=_image_allowed_origins(environ),

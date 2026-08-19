@@ -5,9 +5,11 @@ USE_MOCK_GENERATION=false -> ModelServerGenerationService (R3 model_server 실�
 파일 맨 아래 한 줄 조건으로 선택되며, UI/API 구조는 어느 쪽이든 동일하다.
 """
 import asyncio
+import logging
 import os
 import uuid
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable, Sequence
 
 from PIL import Image
 
@@ -19,6 +21,8 @@ from app.prompt.schemas import PromptRequest
 
 
 RUSH_HOUR_SLOTS = frozenset({"commute_am", "commute_pm"})
+BackgroundLoader = Callable[[str], Awaitable[Image.Image]]
+LOGGER = logging.getLogger(__name__)
 
 
 async def _prepare_copy_and_source(
@@ -48,6 +52,90 @@ async def _prepare_copy_and_source(
     return headline, subcopy, source_image_url
 
 
+async def _settle_task(task: asyncio.Task[object] | None) -> None:
+    if task is None:
+        return
+    if not task.done():
+        task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        return
+    except Exception:
+        LOGGER.exception("background task failed during cleanup")
+
+
+async def _generate_plan_item(
+    *,
+    job_id: str,
+    item: PromptRequest,
+    output_formats: Sequence[str],
+    load_background: BackgroundLoader,
+) -> ToneResult:
+    """Generate all selected ratios while sharing copy and overlay behavior."""
+    if not output_formats:
+        raise ValueError("at least one output format is required")
+
+    job = JOBS[job_id]
+    time_slot = item.time_slot or "default"
+    copy_task = asyncio.create_task(
+        asyncio.to_thread(copy_generator.build_ad_copy, item)
+    )
+    images: dict[str, str] = {}
+    source_image_url: str | None = None
+    headline = ""
+    subcopy = ""
+
+    try:
+        for output_format in output_formats:
+            job["current_step"] = (
+                f"{item.time_slot}/{item.tone}/{output_format} 생성 중"
+            )
+            background_image = await load_background(output_format)
+
+            source_image = (
+                background_image
+                if item.time_slot in RUSH_HOUR_SLOTS
+                and output_format == "story_vertical"
+                else None
+            )
+            headline, subcopy, saved_source_url = await _prepare_copy_and_source(
+                job_id=job_id,
+                item=item,
+                copy_task=copy_task,
+                source_image=source_image,
+            )
+            if saved_source_url is not None:
+                source_image_url = saved_source_url
+            rendered = await asyncio.to_thread(
+                overlay.generate_and_save,
+                job_id=job_id,
+                tone=item.tone,
+                time_slot=time_slot,
+                headline=headline,
+                subcopy=subcopy,
+                output_formats=[output_format],
+                background_image=background_image,
+            )
+            images.update(rendered)
+            job["completed_count"] += 1
+            job["progress"] = int(
+                job["completed_count"] / job["total_count"] * 100
+            )
+    finally:
+        await _settle_task(copy_task)
+
+    return ToneResult(
+        result_id=f"res_{uuid.uuid4().hex[:8]}",
+        tone=item.tone,
+        time_slot=item.time_slot,
+        headline=headline,
+        subcopy=subcopy,
+        source_image_url=source_image_url,
+        images=images,
+    )
+
+
 class GenerationService(ABC):
     @abstractmethod
     async def generate(self, job_id: str, req: GenerationRequest, product: dict) -> list[ToneResult]:
@@ -72,68 +160,26 @@ class LocalOverlayGenerationService(GenerationService):
     async def generate(self, job_id: str, req: GenerationRequest, product: dict) -> list[ToneResult]:
         from app.backend.api.generations import build_generation_plan  # 순환 import 방지용 지연 import
 
-        job = JOBS[job_id]
         plan = build_generation_plan(req, product)
         results: list[ToneResult] = []
 
         for item in plan:
-            time_slot = item.time_slot or "default"
-            copy_task = asyncio.create_task(
-                asyncio.to_thread(copy_generator.build_ad_copy, item)
-            )
-            images: dict[str, str] = {}
-            source_image_url: str | None = None
-
-            for output_format in req.output_formats:
-                job["current_step"] = (
-                    f"{item.time_slot}/{item.tone}/{output_format} 생성 중"
-                )
+            async def load_background(output_format: str) -> Image.Image:
                 preset = get_image_preset(output_format)
-                background_image = overlay.create_placeholder_background(
+                return await asyncio.to_thread(
+                    overlay.create_placeholder_background,
                     item.tone,
                     preset.composite_size,
                 )
-                source_image = (
-                    background_image
-                    if item.time_slot in RUSH_HOUR_SLOTS
-                    and output_format == "story_vertical"
-                    else None
-                )
-                headline, subcopy, saved_source_url = (
-                    await _prepare_copy_and_source(
-                        job_id=job_id,
-                        item=item,
-                        copy_task=copy_task,
-                        source_image=source_image,
-                    )
-                )
-                if saved_source_url is not None:
-                    source_image_url = saved_source_url
-                rendered = await asyncio.to_thread(
-                    overlay.generate_and_save,
-                    job_id=job_id,
-                    tone=item.tone,
-                    time_slot=time_slot,
-                    headline=headline,
-                    subcopy=subcopy,
-                    output_formats=[output_format],
-                    background_image=background_image,
-                )
-                images.update(rendered)
-                job["completed_count"] += 1
-                job["progress"] = int(
-                    job["completed_count"] / job["total_count"] * 100
-                )
 
-            results.append(ToneResult(
-                result_id=f"res_{uuid.uuid4().hex[:8]}",
-                tone=item.tone,
-                time_slot=item.time_slot,
-                headline=headline,
-                subcopy=subcopy,
-                source_image_url=source_image_url,
-                images=images,
-            ))
+            results.append(
+                await _generate_plan_item(
+                    job_id=job_id,
+                    item=item,
+                    output_formats=req.output_formats,
+                    load_background=load_background,
+                )
+            )
 
         return results
 
@@ -156,87 +202,44 @@ class ModelServerGenerationService(GenerationService):
         from app.backend.services import model_server_client
         from app.prompt import builder as prompt_builder
 
-        job = JOBS[job_id]
         plan = build_generation_plan(req, product)
         results: list[ToneResult] = []
 
-        for item in plan:
-            time_slot = item.time_slot or "default"
+        async with model_server_client.open_async_client() as client:
+            for item in plan:
+                prompt_result = prompt_builder.build(item)
 
-            prompt_result = prompt_builder.build(item)  # image_prompt(영어)/negative_prompt
-            copy_task = asyncio.create_task(
-                asyncio.to_thread(copy_generator.build_ad_copy, item)
-            )
-            images: dict[str, str] = {}
-            source_image_url: str | None = None
-
-            for output_format in req.output_formats:
-                job["current_step"] = (
-                    f"{item.time_slot}/{item.tone}/{output_format} 생성 중"
-                )
-                response = await model_server_client.request_generation(
-                    product_id=req.product_id,
-                    # client가 backend 기준 상대경로를 BACKEND_PUBLIC_URL과 결합해
-                    # model_server에서 접근 가능한 절대 URL로 변환한다.
-                    product_image_url=product["image_url"],
-                    tone=item.tone,
-                    image_prompt=prompt_result.image_prompt,
-                    negative_prompt=prompt_result.negative_prompt,
-                    time_slot=item.time_slot,
-                    output_format=output_format,
-                )
-
-                if response.get("status") != "done":
-                    raise RuntimeError(
-                        "model_server 생성 실패 "
-                        f"({item.tone}/{item.time_slot}/{output_format}): "
-                        f"{response.get('error_message', '알 수 없는 오류')}"
+                async def load_background(output_format: str) -> Image.Image:
+                    response = await model_server_client.request_generation(
+                        product_id=req.product_id,
+                        # backend 상대경로를 model_server가 접근 가능한 URL로 변환한다.
+                        product_image_url=product["image_url"],
+                        tone=item.tone,
+                        image_prompt=prompt_result.image_prompt,
+                        negative_prompt=prompt_result.negative_prompt,
+                        time_slot=item.time_slot,
+                        output_format=output_format,
+                        client=client,
+                    )
+                    if response.get("status") != "done":
+                        raise RuntimeError(
+                            "model_server 생성 실패 "
+                            f"({item.tone}/{item.time_slot}/{output_format}): "
+                            f"{response.get('error_message', '알 수 없는 오류')}"
+                        )
+                    return await model_server_client.fetch_generated_image(
+                        response["generated_image_url"],
+                        client=client,
                     )
 
-                background_image = await model_server_client.fetch_generated_image(
-                    response["generated_image_url"]
-                )
-                source_image = (
-                    background_image
-                    if item.time_slot in RUSH_HOUR_SLOTS
-                    and output_format == "story_vertical"
-                    else None
-                )
-                headline, subcopy, saved_source_url = (
-                    await _prepare_copy_and_source(
+                results.append(
+                    await _generate_plan_item(
                         job_id=job_id,
                         item=item,
-                        copy_task=copy_task,
-                        source_image=source_image,
+                        output_formats=req.output_formats,
+                        load_background=load_background,
                     )
                 )
-                if saved_source_url is not None:
-                    source_image_url = saved_source_url
-                rendered = await asyncio.to_thread(
-                    overlay.generate_and_save,
-                    job_id=job_id,
-                    tone=item.tone,
-                    time_slot=time_slot,
-                    headline=headline,
-                    subcopy=subcopy,
-                    output_formats=[output_format],
-                    background_image=background_image,
-                )
-                images.update(rendered)
-                job["completed_count"] += 1
-                job["progress"] = int(
-                    job["completed_count"] / job["total_count"] * 100
-                )
-
-            results.append(ToneResult(
-                result_id=f"res_{uuid.uuid4().hex[:8]}",
-                tone=item.tone,
-                time_slot=item.time_slot,
-                headline=headline,
-                subcopy=subcopy,
-                source_image_url=source_image_url,
-                images=images,
-            ))
 
         return results
 

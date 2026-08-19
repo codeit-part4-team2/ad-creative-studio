@@ -1,6 +1,8 @@
 import asyncio
 import io
+import logging
 import shutil
+import threading
 import uuid
 from pathlib import Path
 
@@ -40,7 +42,7 @@ class _FakeAsyncClient:
     async def __aexit__(self, *a):
         return False
 
-    async def get(self, url):
+    async def get(self, url, **kwargs):
         return _FakeResponse(_tiny_png_bytes())
 
 
@@ -98,6 +100,58 @@ def test_generation_payload_includes_the_selected_native_ratio(monkeypatch):
     assert payload["output_format"] == "sns_card"
 
 
+def test_request_generation_builds_payload_once_without_an_existing_client(
+    monkeypatch,
+):
+    payload_calls = 0
+    original_payload_builder = model_server_client._generation_payload
+
+    def counting_payload_builder(*args, **kwargs):
+        nonlocal payload_calls
+        payload_calls += 1
+        return original_payload_builder(*args, **kwargs)
+
+    class JsonResponse(_FakeResponse):
+        def json(self) -> dict:
+            return {
+                "status": "done",
+                "generated_image_url": "/files/outputs/thumbnail.png",
+                "product_preserved": True,
+                "gen_time_sec": 1.2,
+            }
+
+    class PostingClient(_FakeAsyncClient):
+        async def post(self, url: str, *, json: dict):
+            return JsonResponse(b"")
+
+    monkeypatch.setattr(
+        model_server_client,
+        "_generation_payload",
+        counting_payload_builder,
+    )
+    monkeypatch.setattr(
+        model_server_client,
+        "httpx",
+        type("M", (), {"AsyncClient": PostingClient}),
+    )
+    monkeypatch.setattr(
+        model_server_client,
+        "BACKEND_PUBLIC_URL",
+        "http://backend.internal:8000",
+    )
+
+    asyncio.run(model_server_client.request_generation(
+        product_id="p-1",
+        product_image_url="/files/uploads/p-1.png",
+        tone="modern",
+        image_prompt="clean studio",
+        negative_prompt="blurry",
+        time_slot="morning",
+    ))
+
+    assert payload_calls == 1
+
+
 def test_model_server_generation_success(monkeypatch):
     async def fake_request_generation(**kwargs):
         output_format = str(kwargs["output_format"])
@@ -108,7 +162,7 @@ def test_model_server_generation_success(monkeypatch):
             "gen_time_sec": 1.2,
         }
 
-    async def fake_fetch_generated_image(url: str) -> Image.Image:
+    async def fake_fetch_generated_image(url: str, **_: object) -> Image.Image:
         output_format = Path(url).stem
         return Image.new("RGB", get_image_preset(output_format).composite_size, "green")
 
@@ -153,7 +207,7 @@ def test_model_server_generation_runs_two_ratios_in_order_and_saves_vertical_sou
             "gen_time_sec": 1.2,
         }
 
-    async def fake_fetch_generated_image(url: str) -> Image.Image:
+    async def fake_fetch_generated_image(url: str, **_: object) -> Image.Image:
         if "story_vertical" in url:
             return Image.new("RGB", (720, 1280), (10, 20, 30))
         return Image.new("RGB", (896, 1120), (40, 50, 60))
@@ -193,6 +247,238 @@ def test_model_server_generation_runs_two_ratios_in_order_and_saves_vertical_sou
     assert JOBS["job_test"]["progress"] == 100
 
 
+def test_model_server_generation_reuses_one_http_client_for_all_selected_ratios(
+    monkeypatch,
+):
+    created_clients: list[object] = []
+
+    class FakeSessionResponse(_FakeResponse):
+        def __init__(self, *, content: bytes = b"", payload: dict | None = None):
+            super().__init__(content)
+            self._payload = payload
+
+        def json(self) -> dict:
+            assert self._payload is not None
+            return self._payload
+
+    class CountingAsyncClient:
+        def __init__(self, *args, **kwargs):
+            created_clients.append(self)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url: str, *, json: dict):
+            output_format = str(json["output_format"])
+            return FakeSessionResponse(
+                payload={
+                    "status": "done",
+                    "generated_image_url": f"/files/outputs/{output_format}.png",
+                    "product_preserved": True,
+                    "gen_time_sec": 1.2,
+                }
+            )
+
+        async def get(self, url: str, **kwargs):
+            return FakeSessionResponse(content=_tiny_png_bytes())
+
+    def fake_generate_and_save(**kwargs):
+        output_format = kwargs["output_formats"][0]
+        return {output_format: f"/files/outputs/{output_format}-overlay.png"}
+
+    monkeypatch.setattr(
+        model_server_client,
+        "httpx",
+        type("M", (), {"AsyncClient": CountingAsyncClient}),
+    )
+    monkeypatch.setattr(
+        model_server_client,
+        "MODEL_SERVER_URL",
+        "http://model.internal:8001",
+    )
+    monkeypatch.setattr(
+        model_server_client,
+        "BACKEND_PUBLIC_URL",
+        "http://backend.internal:8000",
+    )
+    monkeypatch.setattr(overlay, "generate_and_save", fake_generate_and_save)
+
+    req, product = _setup_job_and_product(time_slots=("morning",))
+    req = req.model_copy(
+        update={
+            "tones": ["modern"],
+            "output_formats": ["sns_card", "story_vertical"],
+        }
+    )
+    JOBS["job_test"]["total_count"] = 2
+
+    asyncio.run(gs.ModelServerGenerationService().generate("job_test", req, product))
+
+    assert len(created_clients) == 1
+
+
+def test_model_server_reports_ratio_being_postprocessed_as_current_step(
+    monkeypatch,
+):
+    first_overlay_started = threading.Event()
+    release_first_overlay = threading.Event()
+    requested_formats: list[str] = []
+
+    async def fake_request_generation(**kwargs):
+        output_format = str(kwargs["output_format"])
+        requested_formats.append(output_format)
+        return {
+            "status": "done",
+            "generated_image_url": f"/files/outputs/{output_format}.png",
+            "product_preserved": True,
+            "gen_time_sec": 1.2,
+        }
+
+    async def fake_fetch_generated_image(
+        url: str,
+        **_: object,
+    ) -> Image.Image:
+        return Image.new("RGB", (64, 64), "green")
+
+    def blocking_generate_and_save(**kwargs):
+        output_format = kwargs["output_formats"][0]
+        if output_format == "sns_card":
+            first_overlay_started.set()
+            release_first_overlay.wait(timeout=2)
+        return {output_format: f"/files/outputs/{output_format}-overlay.png"}
+
+    monkeypatch.setattr(
+        model_server_client,
+        "request_generation",
+        fake_request_generation,
+    )
+    monkeypatch.setattr(
+        model_server_client,
+        "fetch_generated_image",
+        fake_fetch_generated_image,
+    )
+    monkeypatch.setattr(overlay, "generate_and_save", blocking_generate_and_save)
+    monkeypatch.setattr(
+        model_server_client,
+        "httpx",
+        type("M", (), {"AsyncClient": _FakeAsyncClient}),
+    )
+
+    req, product = _setup_job_and_product(time_slots=("morning",))
+    req = req.model_copy(
+        update={
+            "tones": ["modern"],
+            "output_formats": ["sns_card", "story_vertical"],
+        }
+    )
+    JOBS["job_test"]["total_count"] = 2
+
+    async def exercise() -> str:
+        generation = asyncio.create_task(
+            gs.ModelServerGenerationService().generate("job_test", req, product)
+        )
+        assert await asyncio.to_thread(first_overlay_started.wait, 1)
+        current_step = str(JOBS["job_test"]["current_step"])
+        release_first_overlay.set()
+        await generation
+        return current_step
+
+    assert asyncio.run(exercise()).endswith("/sns_card 생성 중")
+    assert requested_formats == ["sns_card", "story_vertical"]
+
+
+def test_model_server_waits_for_current_overlay_before_requesting_next_ratio(
+    monkeypatch,
+):
+    first_overlay_started = threading.Event()
+    release_first_overlay = threading.Event()
+    second_request_started = threading.Event()
+
+    async def fake_request_generation(**kwargs):
+        output_format = str(kwargs["output_format"])
+        if output_format == "story_vertical":
+            second_request_started.set()
+        return {
+            "status": "done",
+            "generated_image_url": f"/files/outputs/{output_format}.png",
+            "product_preserved": True,
+            "gen_time_sec": 1.2,
+        }
+
+    async def fake_fetch_generated_image(
+        url: str,
+        **_: object,
+    ) -> Image.Image:
+        return Image.new("RGB", (64, 64), "green")
+
+    def blocking_generate_and_save(**kwargs):
+        output_format = kwargs["output_formats"][0]
+        if output_format == "sns_card":
+            first_overlay_started.set()
+            release_first_overlay.wait(timeout=2)
+        return {output_format: f"/files/outputs/{output_format}-overlay.png"}
+
+    monkeypatch.setattr(
+        model_server_client,
+        "request_generation",
+        fake_request_generation,
+    )
+    monkeypatch.setattr(
+        model_server_client,
+        "fetch_generated_image",
+        fake_fetch_generated_image,
+    )
+    monkeypatch.setattr(overlay, "generate_and_save", blocking_generate_and_save)
+    monkeypatch.setattr(
+        model_server_client,
+        "httpx",
+        type("M", (), {"AsyncClient": _FakeAsyncClient}),
+    )
+
+    req, product = _setup_job_and_product(time_slots=("morning",))
+    req = req.model_copy(
+        update={
+            "tones": ["modern"],
+            "output_formats": ["sns_card", "story_vertical"],
+        }
+    )
+    JOBS["job_test"]["total_count"] = 2
+
+    async def exercise() -> bool:
+        generation = asyncio.create_task(
+            gs.ModelServerGenerationService().generate("job_test", req, product)
+        )
+        assert await asyncio.to_thread(first_overlay_started.wait, 1)
+        started_early = await asyncio.to_thread(second_request_started.wait, 0.2)
+        release_first_overlay.set()
+        await generation
+        return started_early
+
+    assert asyncio.run(exercise()) is False
+
+
+def test_task_cleanup_logs_an_unobserved_failure(caplog):
+    async def fail() -> None:
+        raise RuntimeError("copy generation failed")
+
+    async def exercise() -> None:
+        task = asyncio.create_task(fail())
+        await asyncio.sleep(0)
+        await gs._settle_task(task)
+
+    with caplog.at_level(
+        logging.ERROR,
+        logger="app.backend.services.generation_service",
+    ):
+        asyncio.run(exercise())
+
+    assert "background task failed during cleanup" in caplog.text
+    assert "copy generation failed" in caplog.text
+
+
 def test_model_server_generation_raises_on_failed_status(monkeypatch):
     async def fake_request_generation(**kwargs):
         return {"status": "failed", "error_message": "CUDA OOM", "generated_image_url": None}
@@ -229,7 +515,7 @@ def test_fetch_generated_image_joins_relative_url_with_model_server_base(monkeyp
     captured_urls = []
 
     class _CapturingClient(_FakeAsyncClient):
-        async def get(self, url):
+        async def get(self, url, **kwargs):
             captured_urls.append(url)
             return _FakeResponse(_tiny_png_bytes())
 

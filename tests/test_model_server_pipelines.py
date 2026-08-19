@@ -324,13 +324,14 @@ def test_quality_pipeline_reuses_ip_adapter_embedding_for_same_product() -> None
         reset_peak_memory=lambda: None,
         peak_memory_reader=lambda: 4.0,
     )
+    artifacts = _artifacts()
 
     for _ in range(2):
         pipeline.generate(
             cache_key="product:1",
             prompt="premium marble",
             negative_prompt="blurry",
-            artifacts=_artifacts(),
+            artifacts=artifacts,
         )
 
     assert fake.embedding_calls == 1
@@ -343,7 +344,42 @@ def test_quality_pipeline_reuses_ip_adapter_embedding_for_same_product() -> None
     assert fake.calls[0]["ip_adapter_image_embeds"] == ["cached-embedding"]
 
 
-def test_quality_pipeline_separates_embeddings_for_different_output_ratios() -> None:
+def test_quality_pipeline_reuses_embedding_for_different_output_ratios() -> None:
+    config = replace(
+        InferenceConfig(),
+        profile=InferenceProfile.QUALITY_REGENERATE,
+    )
+    fake = _FakePipeline()
+    pipeline = DiffusersGenerationPipeline(
+        config,
+        loader=lambda _: LoadedPipeline(fake, "cuda"),
+        generator_factory=lambda device, seed: (device, seed),
+        reset_peak_memory=lambda: None,
+        peak_memory_reader=lambda: 4.0,
+    )
+    artifacts = _artifacts()
+
+    pipeline.generate(
+        cache_key="product:1",
+        prompt="premium marble",
+        negative_prompt="blurry",
+        artifacts=artifacts,
+        background_size=(768, 768),
+        output_size=(1024, 1024),
+    )
+    pipeline.generate(
+        cache_key="product:1",
+        prompt="premium marble",
+        negative_prompt="blurry",
+        artifacts=artifacts,
+        background_size=(576, 1024),
+        output_size=(720, 1280),
+    )
+
+    assert fake.embedding_calls == 1
+
+
+def test_quality_pipeline_refreshes_embedding_when_source_cache_changes() -> None:
     config = replace(
         InferenceConfig(),
         profile=InferenceProfile.QUALITY_REGENERATE,
@@ -357,22 +393,13 @@ def test_quality_pipeline_separates_embeddings_for_different_output_ratios() -> 
         peak_memory_reader=lambda: 4.0,
     )
 
-    pipeline.generate(
-        cache_key="product:1",
-        prompt="premium marble",
-        negative_prompt="blurry",
-        artifacts=_artifacts(),
-        background_size=(768, 768),
-        output_size=(1024, 1024),
-    )
-    pipeline.generate(
-        cache_key="product:1",
-        prompt="premium marble",
-        negative_prompt="blurry",
-        artifacts=_artifacts(),
-        background_size=(576, 1024),
-        output_size=(720, 1280),
-    )
+    for artifacts in (_artifacts(), _artifacts()):
+        pipeline.generate(
+            cache_key="product:1",
+            prompt="premium marble",
+            negative_prompt="blurry",
+            artifacts=artifacts,
+        )
 
     assert fake.embedding_calls == 2
 
