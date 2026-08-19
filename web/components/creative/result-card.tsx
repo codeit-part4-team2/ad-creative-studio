@@ -30,7 +30,7 @@ export function ResultReceiptCard({
             alt={`${TONE_LABEL[result.tone]} 대표 이미지`}
             fill
             unoptimized
-            className="object-cover"
+            className="object-contain"
           />
         </div>
       )}

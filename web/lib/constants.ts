@@ -20,10 +20,39 @@ export const TONE_LABEL: Record<Tone, string> = {
 // 알기 어렵다는 디자인 피드백 반영 - 화면 표시용 한글 라벨만 매핑, API 요청/응답
 // 값 자체는 절대 안 바꾼다.
 export const FORMAT_LABEL: Record<string, string> = {
-  thumbnail: "정사각형 광고 (1:1)",
+  thumbnail: "정사각형 (1:1)",
+  sns_card: "SNS 피드 (4:5)",
+  story_vertical: "쇼츠·스토리 (9:16)",
+  wide_banner: "웹 배너 (16:9)",
+
+  // Legacy History 호환용
   detail_banner: "상세페이지용",
-  sns_card: "SNS 게시용",
 };
+
+export const OUTPUT_FORMAT_OPTIONS = [
+  {
+    value: "thumbnail",
+    label: "정사각형",
+    ratio: "1:1",
+  },
+  {
+    value: "sns_card",
+    label: "SNS 피드",
+    ratio: "4:5",
+  },
+  {
+    value: "story_vertical",
+    label: "쇼츠·스토리",
+    ratio: "9:16",
+  },
+  {
+    value: "wide_banner",
+    label: "웹 배너",
+    ratio: "16:9",
+  },
+] as const;
+
+export const MAX_OUTPUT_FORMATS = 2;
 
 export const MAX_TIME_SLOTS = 3;
 

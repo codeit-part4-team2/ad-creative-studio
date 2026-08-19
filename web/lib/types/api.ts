@@ -13,6 +13,13 @@ export type TimeSlot =
 
 export const RUSH_HOUR_SLOTS: TimeSlot[] = ["commute_am", "commute_pm"];
 
+export type OutputFormat =
+  | "thumbnail"
+  | "sns_card"
+  | "story_vertical"
+  | "wide_banner";
+
+
 export interface Product {
   product_id: string;
   image_url: string;
@@ -24,7 +31,8 @@ export interface ToneResult {
   time_slot: TimeSlot | null;
   headline: string;
   subcopy: string;
-  images: Record<string, string>; // output_format -> url
+  source_image_url?: string | null;
+  images: Partial<Record<OutputFormat | "detail_banner", string>>;
   video_url: string | null;
   video_job_id?: string | null;
 }
