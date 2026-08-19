@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+import sys
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,6 +19,7 @@ from model_server.pipelines import (
 from model_server.preprocessing import (
     PreparationResult,
     ProductArtifacts,
+    derive_product_artifacts,
 )
 
 
@@ -29,6 +31,29 @@ def _artifacts() -> ProductArtifacts:
         product_on_white=Image.new("RGB", (16, 16), "white"),
         alpha_mask=product.getchannel("A"),
         canny_image=Image.new("RGB", (16, 16), "black"),
+    )
+
+
+def _replace_optional_canny_dependency(monkeypatch) -> None:
+    def derive_with_test_canny(
+        artifacts: ProductArtifacts,
+        *,
+        canvas_size: tuple[int, int],
+        fill_ratio: float,
+        include_canny: bool,
+    ) -> ProductArtifacts:
+        return derive_product_artifacts(
+            artifacts,
+            canvas_size=canvas_size,
+            fill_ratio=fill_ratio,
+            include_canny=include_canny,
+            canny_builder=lambda image: Image.new("RGB", image.size, "black"),
+        )
+
+    monkeypatch.setitem(sys.modules, "cv2", None)
+    monkeypatch.setattr(
+        "model_server.inference.derive_product_artifacts",
+        derive_with_test_canny,
     )
 
 
@@ -236,7 +261,8 @@ def test_non_square_preset_scales_with_runtime_size_configuration() -> None:
     assert (result.output_width, result.output_height) == (672, 840)
 
 
-def test_quality_inference_reuses_ratio_specific_canny_artifacts() -> None:
+def test_quality_inference_reuses_ratio_specific_canny_artifacts(monkeypatch) -> None:
+    _replace_optional_canny_dependency(monkeypatch)
     artifacts = _artifacts()
 
     class StablePreprocessor(_FakePreprocessor):
@@ -277,7 +303,107 @@ def test_quality_inference_reuses_ratio_specific_canny_artifacts() -> None:
     assert first_artifacts.canny_image.size == (32, 40)
 
 
-def test_quality_inference_reuses_one_canonical_ip_adapter_embedding_across_ratios() -> None:
+def test_ratio_artifact_cache_uses_its_smaller_entry_limit() -> None:
+    artifacts = _artifacts()
+
+    class StablePreprocessor(_FakePreprocessor):
+        def prepare(self, cache_key: str, image_url: str) -> PreparationResult:
+            self.calls.append((cache_key, image_url))
+            return PreparationResult(artifacts=artifacts, cache_hit=True)
+
+    class RatioPipeline(_FakePipeline):
+        def generate(self, **kwargs: object) -> GenerationResult:
+            self.calls.append(kwargs)
+            output_size = kwargs["output_size"]
+            assert isinstance(output_size, tuple)
+            return GenerationResult(
+                image=Image.new("RGB", output_size, "green"),
+                requires_composite=True,
+                peak_vram_gb=1.0,
+            )
+
+    pipeline = RatioPipeline()
+    engine = InferenceEngine(
+        config=replace(
+            InferenceConfig(),
+            image_size=16,
+            fast_background_size=8,
+            artifact_cache_max_entries=1,
+            artifact_cache_ttl_seconds=60.0,
+        ),
+        preprocessor=StablePreprocessor(),
+        pipeline=pipeline,
+        output_store=_CaptureStore(),
+        synchronize=lambda: None,
+        empty_cache=lambda: None,
+    )
+
+    for output_format in ("sns_card", "story_vertical", "sns_card"):
+        engine.run(
+            product_id="p-1",
+            product_image_url="https://images.example/product.png",
+            tone="modern",
+            image_prompt="modern studio",
+            negative_prompt="blurry",
+            output_format=output_format,
+        )
+
+    assert pipeline.calls[0]["artifacts"] is not pipeline.calls[2]["artifacts"]
+
+
+def test_ratio_artifact_cache_refreshes_when_product_source_changes() -> None:
+    prepared_artifacts = iter((_artifacts(), _artifacts()))
+
+    class ReplacingPreprocessor(_FakePreprocessor):
+        def prepare(self, cache_key: str, image_url: str) -> PreparationResult:
+            self.calls.append((cache_key, image_url))
+            return PreparationResult(
+                artifacts=next(prepared_artifacts),
+                cache_hit=False,
+            )
+
+    class RatioPipeline(_FakePipeline):
+        def generate(self, **kwargs: object) -> GenerationResult:
+            self.calls.append(kwargs)
+            output_size = kwargs["output_size"]
+            assert isinstance(output_size, tuple)
+            return GenerationResult(
+                image=Image.new("RGB", output_size, "green"),
+                requires_composite=True,
+                peak_vram_gb=1.0,
+            )
+
+    pipeline = RatioPipeline()
+    engine = InferenceEngine(
+        config=replace(
+            InferenceConfig(),
+            image_size=16,
+            fast_background_size=8,
+        ),
+        preprocessor=ReplacingPreprocessor(),
+        pipeline=pipeline,
+        output_store=_CaptureStore(),
+        synchronize=lambda: None,
+        empty_cache=lambda: None,
+    )
+
+    for _ in range(2):
+        engine.run(
+            product_id="p-1",
+            product_image_url="https://images.example/product.png",
+            tone="modern",
+            image_prompt="modern studio",
+            negative_prompt="blurry",
+            output_format="sns_card",
+        )
+
+    assert pipeline.calls[0]["artifacts"] is not pipeline.calls[1]["artifacts"]
+
+
+def test_quality_inference_reuses_one_canonical_ip_adapter_embedding_across_ratios(
+    monkeypatch,
+) -> None:
+    _replace_optional_canny_dependency(monkeypatch)
     class RecordingDiffusersPipeline:
         def __init__(self) -> None:
             self.embedding_image_sizes: list[tuple[int, int]] = []

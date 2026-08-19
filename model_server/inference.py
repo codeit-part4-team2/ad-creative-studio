@@ -136,8 +136,8 @@ class InferenceEngine:
         self._synchronize = synchronize
         self._empty_cache = empty_cache
         self._artifact_cache = artifact_cache or TTLCache(
-            max_entries=config.cache_max_entries,
-            ttl_seconds=config.cache_ttl_seconds,
+            max_entries=config.artifact_cache_max_entries,
+            ttl_seconds=config.artifact_cache_ttl_seconds,
         )
         self._gpu_lock = Lock()
 

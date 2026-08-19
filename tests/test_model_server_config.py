@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import asdict
+
 import pytest
 
 from model_server.config import InferenceConfig, InferenceProfile
@@ -31,6 +33,16 @@ def test_config_parses_explicit_fast_background_size() -> None:
     config = InferenceConfig.from_env({"FAST_BACKGROUND_SIZE": "512"})
 
     assert config.fast_background_size == 512
+
+
+def test_config_parses_separate_artifact_cache_limits() -> None:
+    values = asdict(InferenceConfig.from_env({
+        "ARTIFACT_CACHE_MAX_ENTRIES": "3",
+        "ARTIFACT_CACHE_TTL_SECONDS": "120",
+    }))
+
+    assert values["artifact_cache_max_entries"] == 3
+    assert values["artifact_cache_ttl_seconds"] == 120.0
 
 
 @pytest.mark.parametrize("value", ["0", "770", "1032"])

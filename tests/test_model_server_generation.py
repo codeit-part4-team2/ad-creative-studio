@@ -1,5 +1,6 @@
 import asyncio
 import io
+import logging
 import shutil
 import threading
 import uuid
@@ -97,6 +98,58 @@ def test_generation_payload_includes_the_selected_native_ratio(monkeypatch):
     )
 
     assert payload["output_format"] == "sns_card"
+
+
+def test_request_generation_builds_payload_once_without_an_existing_client(
+    monkeypatch,
+):
+    payload_calls = 0
+    original_payload_builder = model_server_client._generation_payload
+
+    def counting_payload_builder(*args, **kwargs):
+        nonlocal payload_calls
+        payload_calls += 1
+        return original_payload_builder(*args, **kwargs)
+
+    class JsonResponse(_FakeResponse):
+        def json(self) -> dict:
+            return {
+                "status": "done",
+                "generated_image_url": "/files/outputs/thumbnail.png",
+                "product_preserved": True,
+                "gen_time_sec": 1.2,
+            }
+
+    class PostingClient(_FakeAsyncClient):
+        async def post(self, url: str, *, json: dict):
+            return JsonResponse(b"")
+
+    monkeypatch.setattr(
+        model_server_client,
+        "_generation_payload",
+        counting_payload_builder,
+    )
+    monkeypatch.setattr(
+        model_server_client,
+        "httpx",
+        type("M", (), {"AsyncClient": PostingClient}),
+    )
+    monkeypatch.setattr(
+        model_server_client,
+        "BACKEND_PUBLIC_URL",
+        "http://backend.internal:8000",
+    )
+
+    asyncio.run(model_server_client.request_generation(
+        product_id="p-1",
+        product_image_url="/files/uploads/p-1.png",
+        tone="modern",
+        image_prompt="clean studio",
+        negative_prompt="blurry",
+        time_slot="morning",
+    ))
+
+    assert payload_calls == 1
 
 
 def test_model_server_generation_success(monkeypatch):
@@ -267,18 +320,86 @@ def test_model_server_generation_reuses_one_http_client_for_all_selected_ratios(
     assert len(created_clients) == 1
 
 
-def test_model_server_starts_next_ratio_while_previous_overlay_is_running(
+def test_model_server_reports_ratio_being_postprocessed_as_current_step(
     monkeypatch,
 ):
     first_overlay_started = threading.Event()
     release_first_overlay = threading.Event()
-    second_request_started = threading.Event()
     requested_formats: list[str] = []
 
     async def fake_request_generation(**kwargs):
         output_format = str(kwargs["output_format"])
         requested_formats.append(output_format)
-        if len(requested_formats) == 2:
+        return {
+            "status": "done",
+            "generated_image_url": f"/files/outputs/{output_format}.png",
+            "product_preserved": True,
+            "gen_time_sec": 1.2,
+        }
+
+    async def fake_fetch_generated_image(
+        url: str,
+        **_: object,
+    ) -> Image.Image:
+        return Image.new("RGB", (64, 64), "green")
+
+    def blocking_generate_and_save(**kwargs):
+        output_format = kwargs["output_formats"][0]
+        if output_format == "sns_card":
+            first_overlay_started.set()
+            release_first_overlay.wait(timeout=2)
+        return {output_format: f"/files/outputs/{output_format}-overlay.png"}
+
+    monkeypatch.setattr(
+        model_server_client,
+        "request_generation",
+        fake_request_generation,
+    )
+    monkeypatch.setattr(
+        model_server_client,
+        "fetch_generated_image",
+        fake_fetch_generated_image,
+    )
+    monkeypatch.setattr(overlay, "generate_and_save", blocking_generate_and_save)
+    monkeypatch.setattr(
+        model_server_client,
+        "httpx",
+        type("M", (), {"AsyncClient": _FakeAsyncClient}),
+    )
+
+    req, product = _setup_job_and_product(time_slots=("morning",))
+    req = req.model_copy(
+        update={
+            "tones": ["modern"],
+            "output_formats": ["sns_card", "story_vertical"],
+        }
+    )
+    JOBS["job_test"]["total_count"] = 2
+
+    async def exercise() -> str:
+        generation = asyncio.create_task(
+            gs.ModelServerGenerationService().generate("job_test", req, product)
+        )
+        assert await asyncio.to_thread(first_overlay_started.wait, 1)
+        current_step = str(JOBS["job_test"]["current_step"])
+        release_first_overlay.set()
+        await generation
+        return current_step
+
+    assert asyncio.run(exercise()).endswith("/sns_card 생성 중")
+    assert requested_formats == ["sns_card", "story_vertical"]
+
+
+def test_model_server_waits_for_current_overlay_before_requesting_next_ratio(
+    monkeypatch,
+):
+    first_overlay_started = threading.Event()
+    release_first_overlay = threading.Event()
+    second_request_started = threading.Event()
+
+    async def fake_request_generation(**kwargs):
+        output_format = str(kwargs["output_format"])
+        if output_format == "story_vertical":
             second_request_started.set()
         return {
             "status": "done",
@@ -331,13 +452,31 @@ def test_model_server_starts_next_ratio_while_previous_overlay_is_running(
             gs.ModelServerGenerationService().generate("job_test", req, product)
         )
         assert await asyncio.to_thread(first_overlay_started.wait, 1)
-        overlapped = await asyncio.to_thread(second_request_started.wait, 0.2)
+        started_early = await asyncio.to_thread(second_request_started.wait, 0.2)
         release_first_overlay.set()
         await generation
-        return overlapped
+        return started_early
 
-    assert asyncio.run(exercise()) is True
-    assert requested_formats == ["sns_card", "story_vertical"]
+    assert asyncio.run(exercise()) is False
+
+
+def test_task_cleanup_logs_an_unobserved_failure(caplog):
+    async def fail() -> None:
+        raise RuntimeError("copy generation failed")
+
+    async def exercise() -> None:
+        task = asyncio.create_task(fail())
+        await asyncio.sleep(0)
+        await gs._settle_task(task)
+
+    with caplog.at_level(
+        logging.ERROR,
+        logger="app.backend.services.generation_service",
+    ):
+        asyncio.run(exercise())
+
+    assert "background task failed during cleanup" in caplog.text
+    assert "copy generation failed" in caplog.text
 
 
 def test_model_server_generation_raises_on_failed_status(monkeypatch):

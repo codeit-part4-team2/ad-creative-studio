@@ -5,11 +5,11 @@ USE_MOCK_GENERATION=false -> ModelServerGenerationService (R3 model_server 실�
 파일 맨 아래 한 줄 조건으로 선택되며, UI/API 구조는 어느 쪽이든 동일하다.
 """
 import asyncio
+import logging
 import os
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Sequence
-from contextlib import suppress
 
 from PIL import Image
 
@@ -22,6 +22,7 @@ from app.prompt.schemas import PromptRequest
 
 RUSH_HOUR_SLOTS = frozenset({"commute_am", "commute_pm"})
 BackgroundLoader = Callable[[str], Awaitable[Image.Image]]
+LOGGER = logging.getLogger(__name__)
 
 
 async def _prepare_copy_and_source(
@@ -56,8 +57,12 @@ async def _settle_task(task: asyncio.Task[object] | None) -> None:
         return
     if not task.done():
         task.cancel()
-    with suppress(asyncio.CancelledError, Exception):
+    try:
         await task
+    except asyncio.CancelledError:
+        return
+    except Exception:
+        LOGGER.exception("background task failed during cleanup")
 
 
 async def _generate_plan_item(
@@ -76,32 +81,17 @@ async def _generate_plan_item(
     copy_task = asyncio.create_task(
         asyncio.to_thread(copy_generator.build_ad_copy, item)
     )
-    background_task: asyncio.Task[Image.Image] | None = None
     images: dict[str, str] = {}
     source_image_url: str | None = None
     headline = ""
     subcopy = ""
 
     try:
-        first_format = output_formats[0]
-        job["current_step"] = (
-            f"{item.time_slot}/{item.tone}/{first_format} 생성 중"
-        )
-        background_task = asyncio.create_task(load_background(first_format))
-
-        for index, output_format in enumerate(output_formats):
-            background_image = await background_task
-            background_task = None
-
-            next_index = index + 1
-            if next_index < len(output_formats):
-                next_format = output_formats[next_index]
-                job["current_step"] = (
-                    f"{item.time_slot}/{item.tone}/{next_format} 생성 중"
-                )
-                background_task = asyncio.create_task(
-                    load_background(next_format)
-                )
+        for output_format in output_formats:
+            job["current_step"] = (
+                f"{item.time_slot}/{item.tone}/{output_format} 생성 중"
+            )
+            background_image = await load_background(output_format)
 
             source_image = (
                 background_image
@@ -133,7 +123,6 @@ async def _generate_plan_item(
                 job["completed_count"] / job["total_count"] * 100
             )
     finally:
-        await _settle_task(background_task)
         await _settle_task(copy_task)
 
     return ToneResult(
