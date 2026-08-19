@@ -94,7 +94,7 @@ function DashboardContent() {
                           alt={result.headline}
                           fill
                           unoptimized
-                          className="object-cover transition-transform hover:scale-[1.02]"
+                          className="object-contain transition-transform hover:scale-[1.02]"
                         />
                       )}
                     </div>

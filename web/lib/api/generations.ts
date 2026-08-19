@@ -1,13 +1,23 @@
 import { apiFetch } from "./client";
-import type { GenerationResultResponse, JobStatusResponse, TimeSlot } from "@/lib/types/api";
+import type {
+  GenerationResultResponse,
+  JobStatusResponse,
+  OutputFormat,
+  TimeSlot,
+} from "@/lib/types/api";
 
 export async function createGeneration(input: {
   productId: string;
   timeSlots: TimeSlot[];
+  outputFormats: OutputFormat[];
 }): Promise<{ job_id: string; status: string }> {
   return apiFetch("/api/v1/generations", {
     method: "POST",
-    body: JSON.stringify({ product_id: input.productId, time_slots: input.timeSlots }),
+    body: JSON.stringify({
+      product_id: input.productId,
+      time_slots: input.timeSlots,
+      output_formats: input.outputFormats,
+    }),
   });
 }
 
