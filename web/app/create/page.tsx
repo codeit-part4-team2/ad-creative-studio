@@ -77,11 +77,11 @@ function CreatePageContent() {
   }
 
   function toggleSlot(slot: TimeSlot) {
-    setSelectedSlots((prev) =>
-      prev.includes(slot)
-        ? prev.filter((item) => item !== slot)
-        : [...prev, slot],
-    );
+    setSelectedSlots((prev) => {
+      if (prev.includes(slot)) return prev.filter((item) => item !== slot);
+      if (prev.length >= MAX_TIME_SLOTS) return prev;
+      return [...prev, slot];
+    });
   }
 
   function toggleFormat(format: OutputFormat) {
@@ -249,33 +249,35 @@ function CreatePageContent() {
                 </p>
 
                 <div className="flex flex-wrap gap-2">
-                  {TIME_SLOT_OPTIONS.map((option) => {
-                    const active = selectedSlots.includes(option.value);
+                  {TIME_SLOT_OPTIONS.map((opt) => {
+                    const active = selectedSlots.includes(opt.value);
+                    const disabled =
+                      step > 2 ||
+                      (!active && selectedSlots.length >= MAX_TIME_SLOTS);
 
                     return (
                       <button
-                        key={option.value}
+                        key={opt.value}
                         type="button"
-                        disabled={step > 2}
-                        onClick={() => toggleSlot(option.value)}
+                        disabled={disabled}
+                        onClick={() => toggleSlot(opt.value)}
                         className={cn(
                           "rounded-full border px-4 py-2 text-sm transition-colors",
                           active
                             ? "border-foreground bg-foreground text-background"
                             : "border-border bg-card hover:bg-muted",
+                          disabled && "cursor-not-allowed opacity-40",
                         )}
                       >
-                        {option.label}
+                        {opt.label}
                       </button>
                     );
                   })}
                 </div>
 
-                {selectedSlots.length > MAX_TIME_SLOTS && (
-                  <p className="text-sm text-destructive">
-                    최대 {MAX_TIME_SLOTS}개까지만 선택할 수 있어요.
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground">
+                  최대 {MAX_TIME_SLOTS}개까지 선택할 수 있어요.
+                </p>
 
                 {step === 2 && (
                   <Button
@@ -287,7 +289,6 @@ function CreatePageContent() {
                 )}
               </div>
             )}
-
             {/* STEP 3 - STYLE + OUTPUT FORMAT + GENERATE */}
             {step === 3 && (
               <div className="space-y-6">
