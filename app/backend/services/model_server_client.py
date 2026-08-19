@@ -2,8 +2,12 @@
 model_server/(R2·R3)를 호출하는 래퍼. R3가 이 스펙대로 Mock 서버부터 띄우면
 UI 완성 전에도 통합 테스트가 가능하다. 계약 상세는 docs/api_contract.md 참고.
 """
+from __future__ import annotations
+
 import os
 import io
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -13,6 +17,13 @@ MODEL_SERVER_URL = os.getenv("MODEL_SERVER_URL", "http://localhost:8001")
 BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "http://localhost:8000")
 MAX_GENERATED_IMAGE_BYTES = 25 * 1024 * 1024
 MAX_GENERATED_IMAGE_PIXELS = 20_000_000
+
+
+@asynccontextmanager
+async def open_async_client(*, timeout: float = 120) -> AsyncIterator[httpx.AsyncClient]:
+    """Open one keep-alive session for a complete generation job."""
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        yield client
 
 
 def _http_origin(url: str) -> tuple[str, str, int]:
@@ -64,7 +75,8 @@ def _generation_payload(
 async def request_generation(product_id: str, product_image_url: str, tone: str,
                               image_prompt: str, negative_prompt: str | None,
                               time_slot: str | None,
-                              output_format: str = "thumbnail") -> dict:
+                              output_format: str = "thumbnail", *,
+                              client: httpx.AsyncClient | None = None) -> dict:
     payload = _generation_payload(
         product_id,
         product_image_url,
@@ -74,10 +86,21 @@ async def request_generation(product_id: str, product_image_url: str, tone: str,
         time_slot,
         output_format,
     )
-    async with httpx.AsyncClient(timeout=120) as client:
-        resp = await client.post(f"{MODEL_SERVER_URL}/infer", json=payload)
-        resp.raise_for_status()
-        return resp.json()
+    if client is None:
+        async with open_async_client() as owned_client:
+            return await request_generation(
+                product_id,
+                product_image_url,
+                tone,
+                image_prompt,
+                negative_prompt,
+                time_slot,
+                output_format,
+                client=owned_client,
+            )
+    resp = await client.post(f"{MODEL_SERVER_URL}/infer", json=payload)
+    resp.raise_for_status()
+    return resp.json()
 
 
 def request_generation_sync(product_id: str, product_image_url: str, tone: str,
@@ -123,7 +146,11 @@ def _decode_generated_image(content: bytes) -> Image.Image:
         return source_image.convert("RGB")
 
 
-async def fetch_generated_image(generated_image_url: str) -> Image.Image:
+async def fetch_generated_image(
+    generated_image_url: str,
+    *,
+    client: httpx.AsyncClient | None = None,
+) -> Image.Image:
     """
     /infer 응답의 generated_image_url(배경 이미지, 제품 보존 처리는 R2/R3가 완료한 상태)을
     실제로 내려받아 PIL Image로 반환한다. 절대 URL("https://...")이면 그대로,
@@ -131,10 +158,15 @@ async def fetch_generated_image(generated_image_url: str) -> Image.Image:
     """
     url = _resolve_generated_image_url(generated_image_url)
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        return _decode_generated_image(resp.content)
+    if client is None:
+        async with open_async_client(timeout=30) as owned_client:
+            return await fetch_generated_image(
+                generated_image_url,
+                client=owned_client,
+            )
+    resp = await client.get(url, timeout=30)
+    resp.raise_for_status()
+    return _decode_generated_image(resp.content)
 
 
 def fetch_generated_image_sync(generated_image_url: str) -> Image.Image:

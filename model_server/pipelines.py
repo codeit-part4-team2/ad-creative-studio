@@ -171,7 +171,7 @@ class DiffusersGenerationPipeline:
         self._peak_memory_reader = peak_memory_reader
         self._loaded: LoadedPipeline | None = None
         self._load_lock = Lock()
-        self._embedding_cache: TTLCache[str, object] = TTLCache(
+        self._embedding_cache: TTLCache[tuple[str, object], object] = TTLCache(
             max_entries=config.cache_max_entries,
             ttl_seconds=config.cache_ttl_seconds,
         )
@@ -194,7 +194,7 @@ class DiffusersGenerationPipeline:
     def _quality_embedding(
         self,
         *,
-        cache_key: str,
+        cache_key: tuple[str, object],
         loaded: LoadedPipeline,
         product_image: Image.Image,
     ) -> object:
@@ -257,12 +257,13 @@ class DiffusersGenerationPipeline:
             if artifacts.canny_image is None:
                 raise ValueError("quality profile requires a Canny control image")
             image_embeds = self._quality_embedding(
-                cache_key=(
-                    f"{cache_key}:"
-                    f"{resolved_output_size[0]}x{resolved_output_size[1]}"
-                ),
+                cache_key=(cache_key, artifacts.source_cache_token),
                 loaded=loaded,
-                product_image=artifacts.product_on_white,
+                product_image=(
+                    artifacts.ip_adapter_image
+                    if artifacts.ip_adapter_image is not None
+                    else artifacts.product_on_white
+                ),
             )
             output = loaded.pipeline(
                 prompt=prompt,

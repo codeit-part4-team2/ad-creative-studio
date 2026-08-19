@@ -14,8 +14,11 @@ def test_summarize_runs_reports_nearest_rank_p95_and_stage_medians() -> None:
                 },
                 "model_profile": "fast_composite",
                 "num_inference_steps": 4,
-                "background_size": 768,
-                "output_size": 1024,
+                "output_format": "sns_card",
+                "background_width": 672,
+                "background_height": 840,
+                "output_width": 896,
+                "output_height": 1120,
             }
             for value in [1.0, 2.0, 3.0, 4.0, 5.0]
         ]
@@ -33,8 +36,11 @@ def test_summarize_runs_reports_nearest_rank_p95_and_stage_medians() -> None:
         "configuration": {
             "model_profile": "fast_composite",
             "num_inference_steps": 4,
-            "background_size": 768,
-            "output_size": 1024,
+            "output_format": "sns_card",
+            "background_width": 672,
+            "background_height": 840,
+            "output_width": 896,
+            "output_height": 1120,
         },
     }
 
@@ -45,15 +51,21 @@ def test_summarize_runs_rejects_mixed_configurations() -> None:
             "gen_time_sec": 1.0,
             "model_profile": "fast_composite",
             "num_inference_steps": 4,
-            "background_size": 768,
-            "output_size": 1024,
+            "output_format": "sns_card",
+            "background_width": 672,
+            "background_height": 840,
+            "output_width": 896,
+            "output_height": 1120,
         },
         {
             "gen_time_sec": 1.1,
             "model_profile": "fast_composite",
             "num_inference_steps": 4,
-            "background_size": 1024,
-            "output_size": 1024,
+            "output_format": "sns_card",
+            "background_width": 680,
+            "background_height": 840,
+            "output_width": 896,
+            "output_height": 1120,
         },
     ]
 

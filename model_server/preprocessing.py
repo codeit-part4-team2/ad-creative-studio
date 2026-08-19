@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from threading import Lock
 from typing import Any, Protocol
 from urllib.parse import urlparse
@@ -32,6 +32,12 @@ class ProductArtifacts:
     alpha_mask: Image.Image
     canny_image: Image.Image | None
     segmented_product: Image.Image | None = None
+    ip_adapter_image: Image.Image | None = None
+    source_cache_token: object = field(
+        default_factory=object,
+        compare=False,
+        repr=False,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,6 +235,12 @@ def derive_product_artifacts(
         alpha_mask=alpha_mask,
         canny_image=canny_image,
         segmented_product=segmented,
+        ip_adapter_image=(
+            artifacts.ip_adapter_image
+            if artifacts.ip_adapter_image is not None
+            else artifacts.product_on_white
+        ),
+        source_cache_token=artifacts.source_cache_token,
     )
 
 
@@ -284,4 +296,5 @@ class ProductPreprocessor:
             alpha_mask=alpha_mask,
             canny_image=canny_image,
             segmented_product=segmented,
+            ip_adapter_image=product_on_white,
         )

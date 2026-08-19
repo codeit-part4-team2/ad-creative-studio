@@ -14,10 +14,15 @@ from typing import Protocol
 from PIL import Image
 
 from app.image_presets import OutputFormatLiteral, resolve_runtime_image_preset
+from model_server.cache import TTLCache
 from model_server.compositing import composite_product
 from model_server.config import InferenceConfig, InferenceProfile
 from model_server.pipelines import GenerationResult
-from model_server.preprocessing import PreparationResult, derive_product_artifacts
+from model_server.preprocessing import (
+    PreparationResult,
+    ProductArtifacts,
+    derive_product_artifacts,
+)
 from model_server.timing import StageTimings
 
 LOGGER = logging.getLogger(__name__)
@@ -118,6 +123,10 @@ class InferenceEngine:
         compositor: Callable[..., Image.Image] = composite_product,
         synchronize: Callable[[], None] = _cuda_synchronize,
         empty_cache: Callable[[], None] = _cuda_empty_cache,
+        artifact_cache: TTLCache[
+            tuple[str, object, tuple[int, int], float, bool], ProductArtifacts
+        ]
+        | None = None,
     ) -> None:
         self._config = config
         self._preprocessor = preprocessor
@@ -126,6 +135,10 @@ class InferenceEngine:
         self._compositor = compositor
         self._synchronize = synchronize
         self._empty_cache = empty_cache
+        self._artifact_cache = artifact_cache or TTLCache(
+            max_entries=config.cache_max_entries,
+            ttl_seconds=config.cache_ttl_seconds,
+        )
         self._gpu_lock = Lock()
 
     @property
@@ -159,12 +172,22 @@ class InferenceEngine:
                 cache_key,
                 product_image_url,
             )
-            artifacts = derive_product_artifacts(
-                preparation.artifacts,
-                canvas_size=preset.composite_size,
-                fill_ratio=self._config.product_fill_ratio,
-                include_canny=(
-                    self._config.profile is InferenceProfile.QUALITY_REGENERATE
+            include_canny = (
+                self._config.profile is InferenceProfile.QUALITY_REGENERATE
+            )
+            artifacts, _ = self._artifact_cache.get_or_create(
+                (
+                    cache_key,
+                    preparation.artifacts.source_cache_token,
+                    preset.composite_size,
+                    self._config.product_fill_ratio,
+                    include_canny,
+                ),
+                lambda: derive_product_artifacts(
+                    preparation.artifacts,
+                    canvas_size=preset.composite_size,
+                    fill_ratio=self._config.product_fill_ratio,
+                    include_canny=include_canny,
                 ),
             )
 

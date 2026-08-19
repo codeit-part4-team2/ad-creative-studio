@@ -4,12 +4,17 @@ import threading
 import time
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 from PIL import Image
 
 from model_server.config import InferenceConfig, InferenceProfile
 from model_server.inference import FileOutputStore, InferenceEngine
-from model_server.pipelines import GenerationResult
+from model_server.pipelines import (
+    DiffusersGenerationPipeline,
+    GenerationResult,
+    LoadedPipeline,
+)
 from model_server.preprocessing import (
     PreparationResult,
     ProductArtifacts,
@@ -229,6 +234,112 @@ def test_non_square_preset_scales_with_runtime_size_configuration() -> None:
     assert pipeline.calls[0]["output_size"] == (672, 840)
     assert (result.background_width, result.background_height) == (448, 560)
     assert (result.output_width, result.output_height) == (672, 840)
+
+
+def test_quality_inference_reuses_ratio_specific_canny_artifacts() -> None:
+    artifacts = _artifacts()
+
+    class StablePreprocessor(_FakePreprocessor):
+        def prepare(self, cache_key: str, image_url: str) -> PreparationResult:
+            self.calls.append((cache_key, image_url))
+            return PreparationResult(artifacts=artifacts, cache_hit=True)
+
+    pipeline = _FakePipeline(requires_composite=False)
+    engine = InferenceEngine(
+        config=replace(
+            InferenceConfig(),
+            profile=InferenceProfile.QUALITY_REGENERATE,
+            image_size=16,
+            fast_background_size=8,
+        ),
+        preprocessor=StablePreprocessor(),
+        pipeline=pipeline,
+        output_store=_CaptureStore(),
+        synchronize=lambda: None,
+        empty_cache=lambda: None,
+    )
+
+    for _ in range(2):
+        engine.run(
+            product_id="p-1",
+            product_image_url="https://images.example/product.png",
+            tone="modern",
+            image_prompt="modern studio",
+            negative_prompt="blurry",
+            output_format="sns_card",
+        )
+
+    first_artifacts = pipeline.calls[0]["artifacts"]
+    second_artifacts = pipeline.calls[1]["artifacts"]
+    assert first_artifacts is second_artifacts
+    assert isinstance(first_artifacts, ProductArtifacts)
+    assert first_artifacts.canny_image is not None
+    assert first_artifacts.canny_image.size == (32, 40)
+
+
+def test_quality_inference_reuses_one_canonical_ip_adapter_embedding_across_ratios() -> None:
+    class RecordingDiffusersPipeline:
+        def __init__(self) -> None:
+            self.embedding_image_sizes: list[tuple[int, int]] = []
+
+        def prepare_ip_adapter_image_embeds(self, **kwargs: object) -> list[str]:
+            image = kwargs["ip_adapter_image"]
+            assert isinstance(image, Image.Image)
+            self.embedding_image_sizes.append(image.size)
+            return ["cached-embedding"]
+
+        def __call__(self, **kwargs: object) -> SimpleNamespace:
+            return SimpleNamespace(
+                images=[
+                    Image.new(
+                        "RGB",
+                        (int(kwargs["width"]), int(kwargs["height"])),
+                        "green",
+                    )
+                ]
+            )
+
+    config = replace(
+        InferenceConfig(),
+        profile=InferenceProfile.QUALITY_REGENERATE,
+        image_size=16,
+        fast_background_size=8,
+    )
+    loaded_pipeline = RecordingDiffusersPipeline()
+    artifacts = _artifacts()
+
+    class StablePreprocessor(_FakePreprocessor):
+        def prepare(self, cache_key: str, image_url: str) -> PreparationResult:
+            self.calls.append((cache_key, image_url))
+            return PreparationResult(artifacts=artifacts, cache_hit=True)
+
+    pipeline = DiffusersGenerationPipeline(
+        config,
+        loader=lambda _: LoadedPipeline(loaded_pipeline, "cuda"),
+        generator_factory=lambda device, seed: (device, seed),
+        reset_peak_memory=lambda: None,
+        peak_memory_reader=lambda: 4.0,
+    )
+    engine = InferenceEngine(
+        config=config,
+        preprocessor=StablePreprocessor(),
+        pipeline=pipeline,
+        output_store=_CaptureStore(),
+        synchronize=lambda: None,
+        empty_cache=lambda: None,
+    )
+
+    for output_format in ("sns_card", "story_vertical"):
+        engine.run(
+            product_id="p-1",
+            product_image_url="https://images.example/product.png",
+            tone="modern",
+            image_prompt="modern studio",
+            negative_prompt="blurry",
+            output_format=output_format,
+        )
+
+    assert loaded_pipeline.embedding_image_sizes == [(16, 16)]
 
 
 def test_inference_engine_serializes_pipeline_generation() -> None:
