@@ -156,6 +156,7 @@ async def infer(
                 negative_prompt=request.negative_prompt,
                 output_format=request.output_format,
             )
+        queue_manager.record_gpu_duration(result.stage_times_sec["generate"])
         response.headers["X-Gen-Time-Sec"] = str(ctx.duration_sec)
     except Exception:
         LOGGER.exception("inference failed for product_id=%s", request.product_id)

@@ -311,6 +311,17 @@ model_server는 `MODEL_IMAGE_ALLOWED_ORIGINS`에 등록된 origin만 내려받�
 요청을 정확히 2번 **순차 호출**해 자기인식·소구점 장면을 만듭니다. `product_preserved=true`인
 응답만 사용합니다. TTS와 FFmpeg 렌더링은 CPU 백엔드 소유이며 모델 서버 GPU/VRAM을 사용하지 않습니다.
 
+### 응답 헤더 (S1 — 큐 대기 안내)
+
+`/infer` 응답에는 위 바디 외에 다음 헤더가 함께 내려갑니다. 실제 GPU 직렬화(FIFO 보장 없음)는
+model_server 내부 `threading.Lock`이 담당하며, 아래 헤더는 요청 도착 순서 기준 예측치입니다.
+
+| 헤더 | 의미 |
+|---|---|
+| `X-Queue-Position` | 요청 도착 시점 기준 대기 순번 (1부터 시작) |
+| `X-Estimated-Wait-Sec` | 앞선 요청 수 × 최근 GPU 생성시간(generate 단계) 평균으로 계산한 예상 대기시간(초). 실측치가 아닌 예측치이며, 동시 도착한 요청들끼리는 서로의 실측치를 반영하지 못하는 한계가 있음 |
+| `X-Gen-Time-Sec` | 이번 요청의 실제 총 처리 시간(초, 다운로드~저장 전체). 실측 `gen_time_sec`(바디)과 동일 |
+
 ### GET {MODEL_SERVER_URL}/health
 
 모델 가중치를 로드하지 않고 프로세스 상태를 확인합니다.
