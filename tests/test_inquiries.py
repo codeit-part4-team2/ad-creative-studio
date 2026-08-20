@@ -171,6 +171,16 @@ def test_admin_key_rate_limit():
 
     assert response.status_code == 429
 
+def test_admin_rate_limit_is_scoped_by_source():
+    attacker = "192.0.2.10"
+    admin = "192.0.2.20"
+
+    for _ in range(auth.ADMIN_RATE_LIMIT_MAX_ATTEMPTS):
+        auth.record_admin_failed_attempt(attacker)
+
+    assert auth.is_admin_rate_limited(attacker) is True
+    assert auth.is_admin_rate_limited(admin) is False
+
 def test_admin_can_answer_inquiry():
     headers = _login_headers("CUS-0001", "1234")
 

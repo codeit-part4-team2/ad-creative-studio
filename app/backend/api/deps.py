@@ -1,7 +1,9 @@
 from fastapi import Header, HTTPException
 
 from app.backend.services import auth
+from fastapi import Header, HTTPException, Request
 
+from app.backend.services import auth
 
 async def get_current_customer(authorization: str | None = Header(None)) -> dict:
     """
@@ -16,3 +18,21 @@ async def get_current_customer(authorization: str | None = Header(None)) -> dict
     if not customer:
         raise HTTPException(401, "세션이 만료됐거나 유효하지 않습니다. 다시 로그인해주세요")
     return customer
+
+async def require_admin(
+    request: Request,
+    x_admin_key: str | None = Header(None),
+) -> None:
+    source = request.client.host if request.client else "unknown"
+
+    if auth.is_admin_rate_limited(source):
+        raise HTTPException(
+            status_code=429,
+            detail="관리자 인증 시도가 너무 많습니다. 잠시 후 다시 시도해주세요",
+        )
+
+    if not auth.verify_admin_key(x_admin_key, source):
+        raise HTTPException(
+            status_code=403,
+            detail="관리자 권한이 필요합니다",
+        )

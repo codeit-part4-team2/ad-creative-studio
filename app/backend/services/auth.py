@@ -19,7 +19,7 @@ import time
 CUSTOMERS: dict[str, dict] = {}  # customer_id -> {company_name, pin_hash, pin_salt, status, plan, created_at}
 SESSIONS: dict[str, str] = {}  # session_token -> customer_id (인메모리 전용, 서버 재시작 시 초기화)
 FAILED_LOGIN_ATTEMPTS: dict[str, list[float]] = {}  # customer_id -> 최근 실패 타임스탬프들
-ADMIN_FAILED_ATTEMPTS: list[float] = []
+ADMIN_FAILED_ATTEMPTS: dict[str, list[float]] = {}
 ADMIN_RATE_LIMIT_MAX_ATTEMPTS = 5
 ADMIN_RATE_LIMIT_WINDOW_SECONDS = 60
 
@@ -114,38 +114,39 @@ def logout(token: str) -> None:
     SESSIONS.pop(token, None)
 
 
-def verify_admin_key(provided_key: str | None) -> bool:
-    """고객사 생성(admin)은 로그인 사용자가 아니라 팀 내부 관리 도구가 호출하는 것을
-    전제로, 별도 ADMIN_API_KEY 하나로만 막는다 - 이 프로젝트 규모에서 별도 관리자
-    로그인 시스템까지 만드는 건 과함."""
+def verify_admin_key(provided_key: str | None, source: str) -> bool:
+    """관리자 API 키를 검증하고 실패 시 요청 출처별로 실패 횟수를 기록한다."""
     expected = os.getenv("ADMIN_API_KEY")
+
     if not expected:
-        _record_admin_failed_attempt()
-        return False  # 키를 설정 안 했으면 기본적으로 막는다 (열어두는 쪽으로 fail하지 않음)
+        record_admin_failed_attempt(source)
+        return False
 
     valid = secrets.compare_digest(provided_key or "", expected)
+
     if not valid:
-        _record_admin_failed_attempt()
+        record_admin_failed_attempt(source)
+
     return valid
 
-def is_admin_rate_limited() -> bool:
+def is_admin_rate_limited(source: str) -> bool:
+    """관리자 인증 실패 횟수를 요청 출처별로 제한한다."""
     now = time.time()
 
     recent_attempts = [
         attempt
-        for attempt in ADMIN_FAILED_ATTEMPTS
+        for attempt in ADMIN_FAILED_ATTEMPTS.get(source, [])
         if now - attempt < ADMIN_RATE_LIMIT_WINDOW_SECONDS
     ]
 
-    ADMIN_FAILED_ATTEMPTS.clear()
-    ADMIN_FAILED_ATTEMPTS.extend(recent_attempts)
+    ADMIN_FAILED_ATTEMPTS[source] = recent_attempts
 
     return len(recent_attempts) >= ADMIN_RATE_LIMIT_MAX_ATTEMPTS
 
 
-def _record_admin_failed_attempt() -> None:
-    ADMIN_FAILED_ATTEMPTS.append(time.time())
-
+def record_admin_failed_attempt(source: str) -> None:
+    """관리자 인증 실패를 요청 출처별로 기록한다."""
+    ADMIN_FAILED_ATTEMPTS.setdefault(source, []).append(time.time())
 
 def reset_rate_limit_for_tests() -> None:
     FAILED_LOGIN_ATTEMPTS.clear()

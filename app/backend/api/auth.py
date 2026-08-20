@@ -1,6 +1,6 @@
 import asyncio
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
 from app.backend.schemas.auth import (
     CustomerCreateRequest,
@@ -9,10 +9,14 @@ from app.backend.schemas.auth import (
     LoginResponse,
 )
 from app.backend.services import auth, store
-from app.backend.api.deps import get_current_customer
+from app.backend.api.deps import get_current_customer, require_admin
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
-admin_router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
+admin_router = APIRouter(
+    prefix="/api/v1/admin",
+    tags=["admin"],
+    dependencies=[Depends(require_admin)],
+)
 
 
 def _to_response(customer: dict) -> CustomerResponse:
@@ -25,14 +29,32 @@ def _to_response(customer: dict) -> CustomerResponse:
 
 
 @admin_router.post("/customers", response_model=CustomerResponse, status_code=201)
-async def create_customer(req: CustomerCreateRequest, x_admin_key: str | None = Header(None)):
-    """계약된 고객사를 관리자가 등록 - ADMIN_API_KEY 헤더로만 보호 (팀 내부 도구 전용)."""
-    if not auth.verify_admin_key(x_admin_key):
+async def create_customer(
+    req: CustomerCreateRequest,
+    request: Request,
+    x_admin_key: str | None = Header(None),
+):
+    source = request.client.host if request.client else "unknown"
+
+    if auth.is_admin_rate_limited(source):
+        raise HTTPException(
+            429,
+            "관리자 인증 시도가 너무 많습니다. 잠시 후 다시 시도해주세요",
+        )
+
+    if not auth.verify_admin_key(x_admin_key, source):
         raise HTTPException(403, "관리자 권한이 필요합니다")
+
     try:
-        customer = auth.create_customer(req.customer_id, req.company_name, req.pin, req.plan)
+        customer = auth.create_customer(
+            req.customer_id,
+            req.company_name,
+            req.pin,
+            req.plan,
+        )
     except ValueError as e:
         raise HTTPException(409, str(e))
+
     store.save()
     return _to_response(customer)
 

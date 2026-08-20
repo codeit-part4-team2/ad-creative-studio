@@ -1,9 +1,9 @@
 import time
 import uuid
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
-from app.backend.api.deps import get_current_customer
+from app.backend.api.deps import get_current_customer, require_admin
 from app.backend.schemas.inquiry import (
     InquiryAnswerCreate,
     InquiryCreate,
@@ -13,15 +13,17 @@ from app.backend.services import auth, store
 from app.backend.services.store import INQUIRIES
 
 def require_admin(
+    request: Request,
     x_admin_key: str | None = Header(None),
 ) -> None:
-    if auth.is_admin_rate_limited():
+    source = request.client.host if request.client else "unknown"
+    if auth.is_admin_rate_limited(source):
         raise HTTPException(
             status_code=429,
             detail="관리자 인증 시도가 너무 많습니다. 잠시 후 다시 시도해주세요",
         )
 
-    if not auth.verify_admin_key(x_admin_key):
+    if not auth.verify_admin_key(x_admin_key, source):
         raise HTTPException(
             status_code=403,
             detail="관리자 권한이 필요합니다",
@@ -32,6 +34,7 @@ router = APIRouter(prefix="/api/v1/inquiries", tags=["inquiries"])
 admin_router = APIRouter(
     prefix="/api/v1/admin/inquiries",
     tags=["admin-inquiries"],
+    dependencies=[Depends(require_admin)],
 )
 
 
@@ -104,15 +107,12 @@ async def get_inquiry(
     "",
     response_model=list[InquiryResponse],
 )
-async def get_all_inquiries(
-    _: None = Depends(require_admin),
-):
+async def get_all_inquiries():
     return sorted(
         INQUIRIES,
         key=lambda inquiry: inquiry["created_at"],
         reverse=True,
     )
-
 
 
 @admin_router.post(
@@ -122,7 +122,6 @@ async def get_all_inquiries(
 async def answer_inquiry(
     inquiry_id: str,
     body: InquiryAnswerCreate,
-    _: None = Depends(require_admin),
 ):
     for inquiry in INQUIRIES:
         if inquiry["inquiry_id"] != inquiry_id:
