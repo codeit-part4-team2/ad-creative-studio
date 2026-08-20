@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: "/create", label: "CREATE" },
   { href: "/history", label: "HISTORY" },
   { href: "/publishing", label: "PUBLISH" },
+  { href: "/community", label: "COMMUNITY" },
 ];
 
 export function TopNav() {
@@ -22,7 +23,10 @@ export function TopNav() {
         <span className="text-lg font-bold tracking-tight">AD STUDIO</span>
         <nav className="flex items-center gap-6">
           {NAV_ITEMS.map((item) => {
-            const active = pathname === item.href;
+            const active =
+              item.href === "/"
+                ? pathname === "/"
+                : pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link
                 key={item.href}

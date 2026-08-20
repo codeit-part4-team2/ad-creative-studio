@@ -14,6 +14,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+
+
 from app.backend.services.auth import CUSTOMERS, SESSIONS
 
 STORE_PATH = Path("var/store.json")
@@ -25,7 +27,8 @@ PRODUCTS: dict[str, dict] = {}
 JOBS: dict[str, dict] = {}
 HISTORY: list[dict] = []
 VIDEO_JOBS: dict[str, dict] = {}
-
+COMMUNITY_POSTS: list[dict] = []
+INQUIRIES: list[dict] = []
 
 def save() -> None:
     STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -38,6 +41,8 @@ def save() -> None:
                 "history": HISTORY,
                 "video_jobs": VIDEO_JOBS,
                 "customers": CUSTOMERS,
+                "community_posts": COMMUNITY_POSTS,
+                "inquiries": INQUIRIES,
             },
             ensure_ascii=False,
         ),
@@ -65,12 +70,23 @@ def load() -> None:
     VIDEO_JOBS.update(data.get("video_jobs", {}))
     CUSTOMERS.clear()
     CUSTOMERS.update(data.get("customers", {}))
+    COMMUNITY_POSTS.clear()
+    COMMUNITY_POSTS.extend(data.get("community_posts", []))
+    INQUIRIES.clear()
+    INQUIRIES.extend(data.get("inquiries", []))
+
+
 
     # 인증 도입 전(customer_id 개념이 없던 시절) 만들어진 상품/작업/이력은 그대로 두면
     # 배포 즉시 "어느 고객사 것도 아닌" 상태가 되어 영구 404가 된다 - LEGACY라는
     # 특수 고객사로 일괄 배정해서, 최소한 관리자가 LEGACY 계정으로 로그인하면
     # 예전 데이터를 계속 볼 수 있게 한다 (PR 리뷰에서 지적됨). LEGACY 계정 자체는
     # main.py의 lifespan에서 서버 시작 시 자동 생성된다.
+
+    for post in COMMUNITY_POSTS:
+        post.setdefault("comments", [])
+        post["comment_count"] = len(post["comments"])
+
     for product in PRODUCTS.values():
         product.setdefault("customer_id", "LEGACY")
     for job in JOBS.values():
@@ -145,6 +161,8 @@ def reset_for_tests() -> None:
     JOBS.clear()
     HISTORY.clear()
     VIDEO_JOBS.clear()
+    COMMUNITY_POSTS.clear()
+    INQUIRIES.clear()
     CUSTOMERS.clear()
     SESSIONS.clear()
     if STORE_PATH.exists():

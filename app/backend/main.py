@@ -7,10 +7,12 @@ from fastapi.staticfiles import StaticFiles
 from app.backend.logging_config import configure_application_logging
 from app.backend.api import (
     auth,
+    community,
     download,
     exposure,
     generations,
     history,
+    inquiries,
     jobs,
     products,
     usage,
@@ -81,6 +83,9 @@ app.include_router(products.router)
 app.include_router(generations.router)
 app.include_router(jobs.router)
 app.include_router(history.router)
+app.include_router(community.router)
+app.include_router(inquiries.router)
+app.include_router(inquiries.admin_router)
 app.include_router(usage.router)
 app.include_router(exposure.router)
 app.include_router(download.router)
