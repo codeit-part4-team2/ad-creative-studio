@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import uuid
 from contextlib import asynccontextmanager
 from collections.abc import Mapping
 import logging
@@ -8,10 +10,11 @@ from pathlib import Path
 from threading import Lock
 from typing import Annotated
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 
 from deploy.monitoring import start_gpu_watcher
+from deploy.queue_manager import QueueManager
 from model_server.cache import TTLCache
 from model_server.config import InferenceConfig
 from model_server.inference import FileOutputStore, InferenceEngine
@@ -62,6 +65,7 @@ app = FastAPI(title="Team 2 Advertisement Model Server", version="0.2.0", lifesp
 app.mount("/files/outputs", StaticFiles(directory=OUTPUT_DIR), name="model-outputs")
 _engine: InferenceEngine | None = None
 _engine_lock = Lock()
+queue_manager = QueueManager()
 
 
 def _build_engine() -> InferenceEngine:
@@ -132,20 +136,30 @@ def warmup(
 
 
 @app.post("/infer", response_model=InferResponse)
-def infer(
+async def infer(
     request: InferRequest,
+    response: Response,
     engine: Annotated[InferenceEngine, Depends(get_engine)],
 ) -> InferResponse:
+    request_id = str(uuid.uuid4())
+    response.headers["X-Queue-Position"] = str(queue_manager.queue_position(request_id))
+    response.headers["X-Estimated-Wait-Sec"] = str(queue_manager.estimated_wait_sec(request_id))
+
     try:
-        result = engine.run(
-            product_id=request.product_id,
-            product_image_url=request.product_image_url,
-            tone=request.tone,
-            image_prompt=request.image_prompt,
-            negative_prompt=request.negative_prompt,
-            output_format=request.output_format,
-        )
+        async with queue_manager.slot(request_id) as ctx:
+            result = await asyncio.to_thread(
+                engine.run,
+                product_id=request.product_id,
+                product_image_url=request.product_image_url,
+                tone=request.tone,
+                image_prompt=request.image_prompt,
+                negative_prompt=request.negative_prompt,
+                output_format=request.output_format,
+            )
+        queue_manager.record_gpu_duration(result.stage_times_sec["generate"])
+        response.headers["X-Gen-Time-Sec"] = str(ctx.duration_sec)
     except Exception:
         LOGGER.exception("inference failed for product_id=%s", request.product_id)
         return InferResponse(status="failed", error_message="inference_failed")
+
     return InferResponse.model_validate(result)
