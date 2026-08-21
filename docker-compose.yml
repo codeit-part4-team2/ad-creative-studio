@@ -15,6 +15,7 @@ services:
     gpus: all
     volumes:
       - ./var:/app/var
+      - /home/spai1024/.cache/huggingface:/root/.cache/huggingface
     restart: unless-stopped
 
   backend:
@@ -35,6 +36,7 @@ services:
       - ./var:/app/var
       - ./data:/app/data
       - /home/spai1024/ad-studio-runtime:/home/spai1024/ad-studio-runtime:ro
+      - /home/spai1024/.cache/huggingface:/root/.cache/huggingface
     depends_on:
       - model_server
     restart: unless-stopped
