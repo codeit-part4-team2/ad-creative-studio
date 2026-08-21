@@ -355,13 +355,13 @@ class VideoWorkflowService:
             self._next_work_cleanup_at = now + timedelta(
                 seconds=self._work_cleanup_interval_seconds
             )
-            expired_jobs: list[tuple[str, RenderStatus]] = []
+            expired_jobs: list[tuple[str, RenderStatus, datetime]] = []
             if self._failed_work_ttl_seconds > 0:
                 failed_cutoff = now - timedelta(
                     seconds=self._failed_work_ttl_seconds
                 )
                 expired_jobs.extend(
-                    (video_job_id, RenderStatus.FAILED)
+                    (video_job_id, RenderStatus.FAILED, updated_at)
                     for video_job_id, updated_at in self._failed_job_updated_at.items()
                     if updated_at < failed_cutoff
                 )
@@ -370,15 +370,37 @@ class VideoWorkflowService:
                     seconds=self._completed_work_ttl_seconds
                 )
                 expired_jobs.extend(
-                    (video_job_id, RenderStatus.COMPLETED)
+                    (video_job_id, RenderStatus.COMPLETED, updated_at)
                     for video_job_id, updated_at in self._completed_job_updated_at.items()
                     if updated_at < completed_cutoff
                 )
 
-        for video_job_id, render_status in expired_jobs:
+        for video_job_id, render_status, expected_updated_at in expired_jobs:
             try:
                 candidate = self._safe_job_work_path(video_job_id)
             except WorkflowValidation:
+                continue
+            if render_status is RenderStatus.COMPLETED:
+                try:
+                    with self._state_lock:
+                        if (
+                            self._completed_job_updated_at.get(video_job_id)
+                            != expected_updated_at
+                        ):
+                            continue
+                        if candidate.is_dir():
+                            self._remove_completed_intermediates(candidate)
+                        self._remove_terminal_work_index_locked(
+                            video_job_id,
+                            render_status,
+                        )
+                except OSError:
+                    LOGGER.warning(
+                        "failed to remove expired %s video work directory for %s",
+                        render_status.value,
+                        video_job_id,
+                        exc_info=True,
+                    )
                 continue
             if not candidate.is_dir():
                 with self._state_lock:
@@ -388,10 +410,7 @@ class VideoWorkflowService:
                     )
                 continue
             try:
-                if render_status is RenderStatus.FAILED:
-                    shutil.rmtree(candidate)
-                else:
-                    self._remove_completed_intermediates(candidate)
+                shutil.rmtree(candidate)
             except OSError:
                 LOGGER.warning(
                     "failed to remove expired %s video work directory for %s",

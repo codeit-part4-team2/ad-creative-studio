@@ -825,6 +825,77 @@ def test_create_removes_expired_completed_work_but_keeps_final_video(
     assert final_video.read_bytes() == b"final-video"
 
 
+def test_completed_cleanup_skips_job_approved_after_candidate_selection(
+    tmp_path,
+    board,
+    monkeypatch,
+):
+    setup_service = _service(
+        tmp_path,
+        board,
+        failed_work_ttl_seconds=0,
+        completed_work_ttl_seconds=0,
+    )
+    completed = _rendered_job(setup_service, "res_old_completed")
+    store.VIDEO_JOBS[completed.video_job_id]["updated_at"] = (
+        NOW - timedelta(days=8)
+    ).isoformat()
+
+    work_dir = tmp_path / "video-work" / completed.video_job_id
+    scene_path = work_dir / "images" / "scene_hero.png"
+    scene_path.write_bytes(b"managed-scene")
+    audio_path = work_dir / "audio" / "line-00.wav"
+    assert audio_path.is_file()
+
+    service = _service(
+        tmp_path,
+        board,
+        failed_work_ttl_seconds=0,
+        completed_work_ttl_seconds=7 * 24 * 60 * 60,
+        failed_work_cleanup_interval_seconds=0,
+    )
+    candidate_selected = threading.Event()
+    continue_cleanup = threading.Event()
+    original_safe_job_work_path = service._safe_job_work_path
+
+    def pause_after_candidate_selection(video_job_id: str) -> Path:
+        if video_job_id == completed.video_job_id:
+            candidate_selected.set()
+            assert continue_cleanup.wait(timeout=3)
+        return original_safe_job_work_path(video_job_id)
+
+    monkeypatch.setattr(
+        service,
+        "_safe_job_work_path",
+        pause_after_candidate_selection,
+    )
+    errors: list[Exception] = []
+
+    def trigger_cleanup() -> None:
+        try:
+            service.create("res_cleanup_trigger")
+        except Exception as exc:
+            errors.append(exc)
+
+    cleanup_thread = threading.Thread(target=trigger_cleanup)
+    cleanup_thread.start()
+    assert candidate_selected.wait(timeout=1)
+
+    approved = service.approve(
+        completed.video_job_id,
+        activation_at=_next_commute_am(),
+        publish_to_youtube=False,
+    )
+    continue_cleanup.set()
+    cleanup_thread.join(timeout=5)
+
+    assert not cleanup_thread.is_alive()
+    assert errors == []
+    assert approved.approval_status is ApprovalStatus.APPROVED
+    assert scene_path.read_bytes() == b"managed-scene"
+    assert audio_path.is_file()
+
+
 def test_create_uses_active_result_index_instead_of_rescanning_all_jobs(
     tmp_path,
     board,
