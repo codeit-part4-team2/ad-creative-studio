@@ -33,7 +33,7 @@ services:
       - BACKEND_PUBLIC_URL=http://backend:8000
     volumes:
       - ./var:/app/var
-      - ./data:/app/data
+      - /home/spai1024/ad-studio-runtime:/home/spai1024/ad-studio-runtime:ro
     depends_on:
       - model_server
     restart: unless-stopped

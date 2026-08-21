@@ -15,6 +15,7 @@ COPY requirements-tts.txt ./requirements-tts.txt
 RUN pip install --no-cache-dir -r requirements.txt -r requirements-tts.txt
 
 COPY app/ ./app/
+COPY assets/ ./assets
 
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8000

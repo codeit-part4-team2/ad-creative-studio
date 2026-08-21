@@ -1,0 +1,32 @@
+# git 이력 전체 (레포 크기만큼 빌드 컨텍스트에 딸려 들어감)
+.git
+.gitignore
+
+# 비밀번호/API 키 (이미지에 절대 구워 넣으면 안 됨)
+.env
+.env.*
+!.env.example
+
+# 런타임에 볼륨으로 마운트하는 것들 — 이미지 빌드 시점엔 불필요
+var/
+data/
+
+# 파이썬 캐시/가상환경
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+venv/
+.venv/
+
+# 에디터/IDE
+.vscode/
+.idea/
+
+# 로그, 노트북 체크포인트
+logs/
+*.log
+.ipynb_checkpoints/
+
+# 실험/디버그용 산출물 (모델 배포 이미지에 불필요)
+model_server/experiments/
