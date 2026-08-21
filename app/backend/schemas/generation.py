@@ -73,5 +73,6 @@ class GenerationResultResponse(BaseModel):
 
 
 class CopyUpdateRequest(BaseModel):
+    result_id: str
     headline: str
     subcopy: str

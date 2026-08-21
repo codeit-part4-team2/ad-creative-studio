@@ -214,23 +214,114 @@ def test_full_flow_populates_history():
     assert any(h["job_id"] == job_id for h in history)
 
 
-def test_copy_patch_uses_job_id_consistently():
-    """
-    PATCH /copy는 아직 실제로 구현되지 않았음을 솔직하게 501로 알린다
-    (문구가 이미 PNG에 구워져 있어서, 지금 200을 주면 프론트가 잘못 믿고 붙을 수 있음).
-    job_id 자체는 일관되게 처리되는지(존재하는 job은 501, 없는 job은 404)만 확인한다.
-    """
+def test_copy_patch_updates_job_and_history():
     pid = _upload_product()
-    r = client.post("/api/v1/generations", json={"product_id": pid, "time_slots": ["morning"]})
+
+    r = client.post(
+        "/api/v1/generations",
+        json={
+            "product_id": pid,
+            "time_slots": ["morning"],
+        },
+    )
     job_id = r.json()["job_id"]
 
-    patch = client.patch(f"/api/v1/generations/{job_id}/copy",
-                          json={"headline": "새 헤드라인", "subcopy": "새 서브카피"})
-    assert patch.status_code == 501
+    time.sleep(0.5)
 
-    patch_missing = client.patch("/api/v1/generations/job_doesnotexist/copy",
-                                  json={"headline": "x", "subcopy": "y"})
-    assert patch_missing.status_code == 404
+    result_response = client.get(f"/api/v1/generations/{job_id}")
+    assert result_response.status_code == 200
+
+    results = result_response.json()["results"]
+    assert results
+
+    target = results[0]
+    result_id = target["result_id"]
+
+    patch = client.patch(
+        f"/api/v1/generations/{job_id}/copy",
+        json={
+            "result_id": result_id,
+            "headline": "새 헤드라인",
+            "subcopy": "새 서브카피",
+        },
+    )
+
+    assert patch.status_code == 200
+    assert patch.json()["job_id"] == job_id
+    assert patch.json()["result_id"] == result_id
+    assert patch.json()["headline"] == "새 헤드라인"
+    assert patch.json()["subcopy"] == "새 서브카피"
+
+    # JOBS 쪽 결과가 실제로 수정됐는지 확인
+    updated_result = client.get(f"/api/v1/generations/{job_id}")
+    assert updated_result.status_code == 200
+
+    updated_target = next(
+        item
+        for item in updated_result.json()["results"]
+        if item["result_id"] == result_id
+    )
+
+    assert updated_target["headline"] == "새 헤드라인"
+    assert updated_target["subcopy"] == "새 서브카피"
+
+    # HISTORY에도 동일한 수정이 반영됐는지 확인
+    history = client.get("/api/v1/history")
+    assert history.status_code == 200
+
+    history_entry = next(
+        item
+        for item in history.json()
+        if item["job_id"] == job_id
+    )
+
+    history_target = next(
+        item
+        for item in history_entry["results"]
+        if item["result_id"] == result_id
+    )
+
+    assert history_target["headline"] == "새 헤드라인"
+    assert history_target["subcopy"] == "새 서브카피"
+
+
+def test_copy_patch_rejects_missing_result():
+    pid = _upload_product()
+
+    r = client.post(
+        "/api/v1/generations",
+        json={
+            "product_id": pid,
+            "time_slots": ["morning"],
+        },
+    )
+    job_id = r.json()["job_id"]
+
+    time.sleep(0.5)
+
+    patch = client.patch(
+        f"/api/v1/generations/{job_id}/copy",
+        json={
+            "result_id": "res_doesnotexist",
+            "headline": "새 헤드라인",
+            "subcopy": "새 서브카피",
+        },
+    )
+
+    assert patch.status_code == 404
+
+
+def test_copy_patch_rejects_missing_job():
+    patch = client.patch(
+        "/api/v1/generations/job_doesnotexist/copy",
+        json={
+            "result_id": "res_doesnotexist",
+            "headline": "x",
+            "subcopy": "y",
+        },
+    )
+
+    assert patch.status_code == 404
 
 
 def test_favorite_toggle_flow():
