@@ -18,9 +18,9 @@ from app.backend.services import copy_generator, overlay
 from app.backend.services.store import JOBS
 from app.image_presets import get_image_preset
 from app.prompt.schemas import PromptRequest
+from app.time_slots import DEFAULT_TIME_SLOT, is_rush_hour_slot
 
 
-RUSH_HOUR_SLOTS = frozenset({"commute_am", "commute_pm"})
 BackgroundLoader = Callable[[str], Awaitable[Image.Image]]
 LOGGER = logging.getLogger(__name__)
 
@@ -28,7 +28,8 @@ LOGGER = logging.getLogger(__name__)
 async def _prepare_copy_and_source(
     *,
     job_id: str,
-    item: PromptRequest,
+    tone: str,
+    time_slot: str,
     copy_task: asyncio.Task[tuple[str, str]],
     source_image: Image.Image | None,
 ) -> tuple[str, str, str | None]:
@@ -37,13 +38,12 @@ async def _prepare_copy_and_source(
         headline, subcopy = await copy_task
         return headline, subcopy, None
 
-    time_slot = item.time_slot or "default"
     copy_result, source_image_url = await asyncio.gather(
         copy_task,
         asyncio.to_thread(
             overlay.save_source_image,
             job_id=job_id,
-            tone=item.tone,
+            tone=tone,
             time_slot=time_slot,
             image=source_image,
         ),
@@ -77,7 +77,7 @@ async def _generate_plan_item(
         raise ValueError("at least one output format is required")
 
     job = JOBS[job_id]
-    time_slot = item.time_slot or "default"
+    time_slot = item.time_slot or DEFAULT_TIME_SLOT
     copy_task = asyncio.create_task(
         asyncio.to_thread(copy_generator.build_ad_copy, item)
     )
@@ -95,13 +95,14 @@ async def _generate_plan_item(
 
             source_image = (
                 background_image
-                if item.time_slot in RUSH_HOUR_SLOTS
+                if is_rush_hour_slot(item.time_slot)
                 and output_format == "story_vertical"
                 else None
             )
             headline, subcopy, saved_source_url = await _prepare_copy_and_source(
                 job_id=job_id,
-                item=item,
+                tone=item.tone,
+                time_slot=time_slot,
                 copy_task=copy_task,
                 source_image=source_image,
             )

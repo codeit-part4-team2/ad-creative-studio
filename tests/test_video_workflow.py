@@ -18,6 +18,7 @@ from app.backend.services.storyboard import Storyboard, StoryboardNotFound, Stor
 from app.backend.services.tts_provider import TTSAudio, TTSRuntimeUnavailable
 from app.backend.services.video_renderer import RenderResult
 from app.backend.services.video_workflow import (
+    DEFAULT_COMPLETED_WORK_TTL_SECONDS,
     DEFAULT_FAILED_WORK_TTL_SECONDS,
     LOGGER,
     VideoWorkflowService,
@@ -222,6 +223,7 @@ def _service(
     scene_provider=None,
     tts_provider=None,
     failed_work_ttl_seconds=None,
+    completed_work_ttl_seconds=None,
     failed_work_cleanup_interval_seconds=None,
 ):
     renderer = renderer or FakeRenderer()
@@ -231,6 +233,8 @@ def _service(
     optional_config = {}
     if failed_work_ttl_seconds is not None:
         optional_config["failed_work_ttl_seconds"] = failed_work_ttl_seconds
+    if completed_work_ttl_seconds is not None:
+        optional_config["completed_work_ttl_seconds"] = completed_work_ttl_seconds
     if failed_work_cleanup_interval_seconds is not None:
         optional_config["failed_work_cleanup_interval_seconds"] = (
             failed_work_cleanup_interval_seconds
@@ -748,6 +752,7 @@ def test_create_removes_only_expired_failed_work_directories(tmp_path, board):
         tmp_path,
         board,
         failed_work_ttl_seconds=7 * 24 * 60 * 60,
+        completed_work_ttl_seconds=0,
         failed_work_cleanup_interval_seconds=0,
     )
     service.create("res_cleanup_trigger")
@@ -757,6 +762,138 @@ def test_create_removes_only_expired_failed_work_directories(tmp_path, board):
     assert paths["completed"].is_dir()
     assert paths["active"].is_dir()
     assert paths["untracked"].is_dir()
+
+
+def test_create_removes_expired_completed_work_but_keeps_final_video(
+    tmp_path,
+    board,
+):
+    setup_service = _service(
+        tmp_path,
+        board,
+        failed_work_ttl_seconds=0,
+    )
+    old_completed = setup_service.create("res_old_completed")
+    recent_completed = setup_service.create("res_recent_completed")
+    store.VIDEO_JOBS[old_completed.video_job_id].update(
+        render_status="completed",
+        updated_at=(NOW - timedelta(days=8)).isoformat(),
+    )
+    store.VIDEO_JOBS[recent_completed.video_job_id].update(
+        render_status="completed",
+        updated_at=NOW.isoformat(),
+    )
+
+    work_root = tmp_path / "video-work"
+    old_work_dir = work_root / old_completed.video_job_id
+    recent_work_dir = work_root / recent_completed.video_job_id
+    for path in (old_work_dir, recent_work_dir):
+        (path / "images").mkdir(parents=True)
+        (path / "images" / "scene_hero.png").write_bytes(b"scene")
+        (path / "audio").mkdir()
+        (path / "audio" / "line-00.wav").write_bytes(b"audio")
+    operator_notes = (
+        old_work_dir / "operator-note.txt",
+        old_work_dir / "images" / "operator-note.txt",
+        old_work_dir / "audio" / "operator-note.txt",
+    )
+    for note in operator_notes:
+        note.write_text("preserve unknown evidence", encoding="utf-8")
+
+    final_video = tmp_path / "videos" / f"{old_completed.video_job_id}.mp4"
+    final_video.parent.mkdir(parents=True)
+    final_video.write_bytes(b"final-video")
+
+    service = _service(
+        tmp_path,
+        board,
+        failed_work_ttl_seconds=0,
+        completed_work_ttl_seconds=7 * 24 * 60 * 60,
+        failed_work_cleanup_interval_seconds=0,
+    )
+    service.create("res_cleanup_trigger")
+
+    assert old_work_dir.is_dir()
+    assert not (old_work_dir / "images" / "scene_hero.png").exists()
+    assert not (old_work_dir / "audio" / "line-00.wav").exists()
+    assert all(
+        note.read_text(encoding="utf-8") == "preserve unknown evidence"
+        for note in operator_notes
+    )
+    assert (recent_work_dir / "images" / "scene_hero.png").is_file()
+    assert (recent_work_dir / "audio" / "line-00.wav").is_file()
+    assert final_video.read_bytes() == b"final-video"
+
+
+def test_completed_cleanup_skips_job_approved_after_candidate_selection(
+    tmp_path,
+    board,
+    monkeypatch,
+):
+    setup_service = _service(
+        tmp_path,
+        board,
+        failed_work_ttl_seconds=0,
+        completed_work_ttl_seconds=0,
+    )
+    completed = _rendered_job(setup_service, "res_old_completed")
+    store.VIDEO_JOBS[completed.video_job_id]["updated_at"] = (
+        NOW - timedelta(days=8)
+    ).isoformat()
+
+    work_dir = tmp_path / "video-work" / completed.video_job_id
+    scene_path = work_dir / "images" / "scene_hero.png"
+    scene_path.write_bytes(b"managed-scene")
+    audio_path = work_dir / "audio" / "line-00.wav"
+    assert audio_path.is_file()
+
+    service = _service(
+        tmp_path,
+        board,
+        failed_work_ttl_seconds=0,
+        completed_work_ttl_seconds=7 * 24 * 60 * 60,
+        failed_work_cleanup_interval_seconds=0,
+    )
+    candidate_selected = threading.Event()
+    continue_cleanup = threading.Event()
+    original_safe_job_work_path = service._safe_job_work_path
+
+    def pause_after_candidate_selection(video_job_id: str) -> Path:
+        if video_job_id == completed.video_job_id:
+            candidate_selected.set()
+            assert continue_cleanup.wait(timeout=3)
+        return original_safe_job_work_path(video_job_id)
+
+    monkeypatch.setattr(
+        service,
+        "_safe_job_work_path",
+        pause_after_candidate_selection,
+    )
+    errors: list[Exception] = []
+
+    def trigger_cleanup() -> None:
+        try:
+            service.create("res_cleanup_trigger")
+        except Exception as exc:
+            errors.append(exc)
+
+    cleanup_thread = threading.Thread(target=trigger_cleanup)
+    cleanup_thread.start()
+    assert candidate_selected.wait(timeout=1)
+
+    approved = service.approve(
+        completed.video_job_id,
+        activation_at=_next_commute_am(),
+        publish_to_youtube=False,
+    )
+    continue_cleanup.set()
+    cleanup_thread.join(timeout=5)
+
+    assert not cleanup_thread.is_alive()
+    assert errors == []
+    assert approved.approval_status is ApprovalStatus.APPROVED
+    assert scene_path.read_bytes() == b"managed-scene"
+    assert audio_path.is_file()
 
 
 def test_create_uses_active_result_index_instead_of_rescanning_all_jobs(
@@ -950,15 +1087,45 @@ def test_default_workflow_is_safe_without_external_credentials(tmp_path, monkeyp
     }
 
 
+@pytest.mark.parametrize(
+    ("environment_name", "attribute_name", "default_value"),
+    [
+        (
+            "VIDEO_FAILED_WORK_TTL_SECONDS",
+            "_failed_work_ttl_seconds",
+            DEFAULT_FAILED_WORK_TTL_SECONDS,
+        ),
+        (
+            "VIDEO_COMPLETED_WORK_TTL_SECONDS",
+            "_completed_work_ttl_seconds",
+            DEFAULT_COMPLETED_WORK_TTL_SECONDS,
+        ),
+    ],
+)
 @pytest.mark.parametrize("invalid_ttl", ["", "seven-days", "-1"])
 def test_default_workflow_uses_safe_ttl_when_environment_is_invalid(
     tmp_path,
     monkeypatch,
+    environment_name,
+    attribute_name,
+    default_value,
     invalid_ttl,
 ):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("VIDEO_FAILED_WORK_TTL_SECONDS", invalid_ttl)
+    monkeypatch.setenv(environment_name, invalid_ttl)
 
     service = build_default_video_workflow()
 
-    assert service._failed_work_ttl_seconds == DEFAULT_FAILED_WORK_TTL_SECONDS
+    assert getattr(service, attribute_name) == default_value
+
+
+def test_default_workflow_reads_completed_work_ttl_from_environment(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("VIDEO_COMPLETED_WORK_TTL_SECONDS", "120")
+
+    service = build_default_video_workflow()
+
+    assert service._completed_work_ttl_seconds == 120

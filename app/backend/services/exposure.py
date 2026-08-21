@@ -3,6 +3,7 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 from app.prompt.templates import TIME_SLOT_TEMPLATES
+from app.time_slots import is_rush_hour_slot
 
 
 KST = ZoneInfo("Asia/Seoul")
@@ -55,7 +56,7 @@ def pick_video_exposure(
     now: datetime,
 ) -> dict | None:
     """Select the latest eligible approved video independently of YouTube."""
-    if time_slot not in {"commute_am", "commute_pm"}:
+    if not is_rush_hour_slot(time_slot):
         return None
 
     local_now = _as_kst(now)

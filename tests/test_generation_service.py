@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from app.backend.schemas.generation import GenerationRequest
+from app.backend.schemas.generation import GenerationRequest, ToneResult
 from app.backend.services import copy_generator, generation_service, overlay
 from app.backend.services.store import JOBS
 
@@ -45,6 +45,22 @@ def _prepare_job() -> None:
         "total_count": 2,
         "current_step": None,
     }
+
+
+def test_tone_result_normalizes_source_image_url_before_storage():
+    result = ToneResult(
+        result_id="res_test",
+        tone="modern",
+        time_slot="commute_am",
+        headline="테스트 헤드라인",
+        subcopy="테스트 서브카피",
+        source_image_url="  /files/outputs/source.png  ",
+        images={"story_vertical": "/files/outputs/story.png"},
+    )
+    blank = result.model_copy(update={"source_image_url": "   "})
+
+    assert result.source_image_url == "/files/outputs/source.png"
+    assert ToneResult.model_validate(blank.model_dump()).source_image_url is None
 
 
 def test_mock_formatted_exports_keep_tone_color_at_non_square_edges():

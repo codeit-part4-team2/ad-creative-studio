@@ -11,9 +11,8 @@ from app.backend.services.comic_script import (
     build_comic_script,
 )
 from app.backend.services.store import HISTORY, PRODUCTS
-
-
-RUSH_HOUR_SLOTS = {"commute_am", "commute_pm"}
+from app.media_urls import normalize_optional_url
+from app.time_slots import is_rush_hour_slot
 
 
 class StoryboardNotFound(ValueError):
@@ -68,11 +67,11 @@ def _selling_points(product: dict) -> tuple[str, ...]:
 
 
 def _select_source_image_url(source_image_url: object) -> str:
-    if not isinstance(source_image_url, str) or not source_image_url.strip():
+    normalized_url = normalize_optional_url(source_image_url)
+    if not isinstance(normalized_url, str):
         raise ValueError(
             "쇼츠용 무자막 원본 이미지가 없어 광고를 다시 생성해야 합니다"
         )
-    normalized_url = source_image_url.strip()
     if not normalized_url.startswith("/files/outputs/"):
         raise ValueError("허용된 출력 경로의 광고 이미지가 필요합니다")
     return normalized_url
@@ -142,7 +141,7 @@ def build_storyboard(
         raise StoryboardNotFound("result_id에 해당하는 생성 결과를 찾을 수 없습니다")
 
     time_slot = tone_result.get("time_slot")
-    if time_slot not in RUSH_HOUR_SLOTS:
+    if not is_rush_hour_slot(time_slot):
         raise ValueError("쇼츠는 출근·퇴근 시간대 결과만 지원합니다")
 
     product = PRODUCTS.get(entry["product_id"], {})

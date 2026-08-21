@@ -11,7 +11,10 @@ export type TimeSlot =
   | "evening"
   | "late_night";
 
-export const RUSH_HOUR_SLOTS: TimeSlot[] = ["commute_am", "commute_pm"];
+export const RUSH_HOUR_SLOTS: readonly TimeSlot[] = [
+  "commute_am",
+  "commute_pm",
+];
 
 export type OutputFormat =
   | "thumbnail"

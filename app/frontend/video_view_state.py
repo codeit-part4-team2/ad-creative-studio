@@ -5,8 +5,9 @@ from datetime import datetime, time, timedelta
 from enum import Enum
 from zoneinfo import ZoneInfo
 
+from app.media_urls import normalize_optional_url
+from app.time_slots import is_rush_hour_slot
 
-RUSH_HOUR_SLOTS = {"commute_am", "commute_pm"}
 KST = ZoneInfo("Asia/Seoul")
 
 
@@ -30,32 +31,42 @@ class VideoViewState:
     can_confirm_pronunciation: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class ShortCreationEligibility:
+    can_create: bool
+    unavailable_reason: str | None = None
+
+
+def rush_hour_short_eligibility(
+    result: dict[str, object],
+) -> ShortCreationEligibility:
+    if not bool(result.get("result_id")) or not is_rush_hour_slot(
+        result.get("time_slot")
+    ):
+        return ShortCreationEligibility(can_create=False)
+
+    source_image_url = normalize_optional_url(result.get("source_image_url"))
+    if isinstance(source_image_url, str) and source_image_url.startswith(
+        "/files/outputs/"
+    ):
+        return ShortCreationEligibility(can_create=True)
+    return ShortCreationEligibility(
+        can_create=False,
+        unavailable_reason=(
+            "이 결과에는 쇼츠용 무자막 원본이 없습니다. "
+            "광고를 다시 생성해 주세요."
+        ),
+    )
+
+
 def can_create_rush_hour_short(result: dict[str, object]) -> bool:
-    source_image_url = result.get("source_image_url")
-    has_clean_source = (
-        isinstance(source_image_url, str)
-        and source_image_url.strip().startswith("/files/outputs/")
-    )
-    return (
-        bool(result.get("result_id"))
-        and result.get("time_slot") in RUSH_HOUR_SLOTS
-        and has_clean_source
-    )
+    return rush_hour_short_eligibility(result).can_create
 
 
 def short_creation_unavailable_reason(
     result: dict[str, object],
 ) -> str | None:
-    is_rush_hour_result = (
-        bool(result.get("result_id"))
-        and result.get("time_slot") in RUSH_HOUR_SLOTS
-    )
-    if is_rush_hour_result and not can_create_rush_hour_short(result):
-        return (
-            "이 결과에는 쇼츠용 무자막 원본이 없습니다. "
-            "광고를 다시 생성해 주세요."
-        )
-    return None
+    return rush_hour_short_eligibility(result).unavailable_reason
 
 
 def default_activation_at(time_slot: str, now: datetime) -> datetime:

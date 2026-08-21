@@ -2,6 +2,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 from app.image_presets import OutputFormatLiteral
+from app.media_urls import normalize_optional_url
 from app.prompt.schemas import ToneLiteral, TimeSlotLiteral
 
 
@@ -64,6 +65,11 @@ class ToneResult(BaseModel):
     source_image_url: Optional[str] = None
     images: dict[str, str]  # output_format -> url
     video_url: Optional[str] = None  # 러시아워 쇼츠 생성 완료 시 채워짐
+
+    @field_validator("source_image_url", mode="before")
+    @classmethod
+    def normalize_source_image_url(cls, value: object) -> object:
+        return normalize_optional_url(value)
 
 
 class GenerationResultResponse(BaseModel):
