@@ -7,9 +7,8 @@ from app.frontend.video_view_state import (
     KST,
     VideoViewKind,
     build_video_view_state,
-    can_create_rush_hour_short,
     default_activation_at,
-    short_creation_unavailable_reason,
+    rush_hour_short_eligibility,
 )
 
 API_BASE = "http://localhost:8000"
@@ -49,11 +48,11 @@ def _create_video(result_id: str) -> str | None:
 
 
 def render_video_workflow(result: dict) -> None:
-    unavailable_reason = short_creation_unavailable_reason(result)
-    if unavailable_reason:
-        st.info(unavailable_reason)
+    eligibility = rush_hour_short_eligibility(result)
+    if eligibility.unavailable_reason is not None:
+        st.info(eligibility.unavailable_reason)
         return
-    if not can_create_rush_hour_short(result):
+    if not eligibility.can_create:
         return
 
     result_id = result.get("result_id")

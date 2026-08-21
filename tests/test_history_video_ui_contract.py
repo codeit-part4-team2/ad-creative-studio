@@ -1,6 +1,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from app.frontend import video_view_state
 from app.frontend.video_view_state import (
     VideoViewKind,
     build_video_view_state,
@@ -11,6 +12,29 @@ from app.frontend.video_view_state import (
 
 
 KST = ZoneInfo("Asia/Seoul")
+
+
+def test_short_creation_eligibility_distinguishes_ready_legacy_and_daytime():
+    eligible = video_view_state.rush_hour_short_eligibility(
+        {
+            "result_id": "res_ready",
+            "time_slot": "commute_am",
+            "source_image_url": "/files/outputs/source.png",
+        }
+    )
+    legacy = video_view_state.rush_hour_short_eligibility(
+        {"result_id": "res_legacy", "time_slot": "commute_pm"}
+    )
+    daytime = video_view_state.rush_hour_short_eligibility(
+        {"result_id": "res_day", "time_slot": "afternoon"}
+    )
+
+    assert (eligible.can_create, eligible.unavailable_reason) == (True, None)
+    assert (legacy.can_create, legacy.unavailable_reason) == (
+        False,
+        "이 결과에는 쇼츠용 무자막 원본이 없습니다. 광고를 다시 생성해 주세요.",
+    )
+    assert (daytime.can_create, daytime.unavailable_reason) == (False, None)
 
 
 def test_only_rush_hour_results_can_create_comic_short():

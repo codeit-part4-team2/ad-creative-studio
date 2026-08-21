@@ -51,7 +51,21 @@ SLOT_WINDOWS = {
     "commute_pm": (time(18, 0), time(19, 30)),
 }
 DEFAULT_FAILED_WORK_TTL_SECONDS = 7 * 24 * 60 * 60
+DEFAULT_COMPLETED_WORK_TTL_SECONDS = 7 * 24 * 60 * 60
 DEFAULT_FAILED_WORK_CLEANUP_INTERVAL_SECONDS = 60 * 60
+COMPLETED_INTERMEDIATE_FILES = {
+    "images": (
+        "scene_hero.png",
+        "scene_self_aware.png",
+        "scene_benefit.png",
+    ),
+    "audio": (
+        "line-00.wav",
+        "line-01.wav",
+        "line-02.wav",
+        "line-03.wav",
+    ),
+}
 LOGGER = logging.getLogger("ad_creative_studio.video_workflow")
 
 
@@ -165,12 +179,15 @@ class VideoWorkflowService:
         fingerprint_builder: Callable[[str], str] = current_source_fingerprint,
         product_image_url_builder: Callable[[str], str] = _stored_product_image_url,
         failed_work_ttl_seconds: int = DEFAULT_FAILED_WORK_TTL_SECONDS,
+        completed_work_ttl_seconds: int = DEFAULT_COMPLETED_WORK_TTL_SECONDS,
         failed_work_cleanup_interval_seconds: int = (
             DEFAULT_FAILED_WORK_CLEANUP_INTERVAL_SECONDS
         ),
     ) -> None:
         if failed_work_ttl_seconds < 0:
             raise ValueError("failed work TTL must not be negative")
+        if completed_work_ttl_seconds < 0:
+            raise ValueError("completed work TTL must not be negative")
         if failed_work_cleanup_interval_seconds < 0:
             raise ValueError("failed work cleanup interval must not be negative")
         self._renderer = renderer
@@ -184,15 +201,15 @@ class VideoWorkflowService:
         self._fingerprint_builder = fingerprint_builder
         self._product_image_url_builder = product_image_url_builder
         self._failed_work_ttl_seconds = failed_work_ttl_seconds
-        self._failed_work_cleanup_interval_seconds = (
-            failed_work_cleanup_interval_seconds
-        )
+        self._completed_work_ttl_seconds = completed_work_ttl_seconds
+        self._work_cleanup_interval_seconds = failed_work_cleanup_interval_seconds
         self._state_lock = threading.Lock()
         self._render_lock = threading.Lock()
         self._publish_lock = threading.Lock()
         self._active_job_ids_by_result: dict[str, set[str]] = {}
         self._failed_job_updated_at: dict[str, datetime] = {}
-        self._next_failed_work_cleanup_at: datetime | None = None
+        self._completed_job_updated_at: dict[str, datetime] = {}
+        self._next_work_cleanup_at: datetime | None = None
         self._job_index_complete = True
         self._initialize_job_indexes()
 
@@ -265,6 +282,15 @@ class VideoWorkflowService:
         else:
             self._failed_job_updated_at.pop(job.video_job_id, None)
 
+        if (
+            job.render_status is RenderStatus.COMPLETED
+            and job.updated_at.tzinfo is not None
+            and job.updated_at.utcoffset() is not None
+        ):
+            self._completed_job_updated_at[job.video_job_id] = job.updated_at
+        else:
+            self._completed_job_updated_at.pop(job.video_job_id, None)
+
     def _persist_locked(self, job: VideoJob) -> VideoJob:
         store.VIDEO_JOBS[job.video_job_id] = self._stored(job)
         store.save()
@@ -290,7 +316,7 @@ class VideoWorkflowService:
             raise WorkflowValidation(str(exc)) from exc
 
         now = self._clock()
-        self._cleanup_stale_failed_work_dirs(now=now)
+        self._cleanup_stale_work_dirs(now=now)
         with self._state_lock:
             if not self._job_index_complete:
                 raise WorkflowConflict("저장된 영상 작업을 먼저 복구해야 합니다")
@@ -314,45 +340,121 @@ class VideoWorkflowService:
                 tone_result["video_job_id"] = job.video_job_id
             return self._persist_locked(job)
 
-    def _cleanup_stale_failed_work_dirs(self, *, now: datetime) -> None:
-        if self._failed_work_ttl_seconds == 0:
+    def _cleanup_stale_work_dirs(self, *, now: datetime) -> None:
+        if (
+            self._failed_work_ttl_seconds == 0
+            and self._completed_work_ttl_seconds == 0
+        ):
             return
         with self._state_lock:
             if (
-                self._next_failed_work_cleanup_at is not None
-                and now < self._next_failed_work_cleanup_at
+                self._next_work_cleanup_at is not None
+                and now < self._next_work_cleanup_at
             ):
                 return
-            self._next_failed_work_cleanup_at = now + timedelta(
-                seconds=self._failed_work_cleanup_interval_seconds
+            self._next_work_cleanup_at = now + timedelta(
+                seconds=self._work_cleanup_interval_seconds
             )
-            cutoff = now - timedelta(seconds=self._failed_work_ttl_seconds)
-            failed_job_ids = [
-                video_job_id
-                for video_job_id, updated_at in self._failed_job_updated_at.items()
-                if updated_at < cutoff
-            ]
+            expired_jobs: list[tuple[str, RenderStatus]] = []
+            if self._failed_work_ttl_seconds > 0:
+                failed_cutoff = now - timedelta(
+                    seconds=self._failed_work_ttl_seconds
+                )
+                expired_jobs.extend(
+                    (video_job_id, RenderStatus.FAILED)
+                    for video_job_id, updated_at in self._failed_job_updated_at.items()
+                    if updated_at < failed_cutoff
+                )
+            if self._completed_work_ttl_seconds > 0:
+                completed_cutoff = now - timedelta(
+                    seconds=self._completed_work_ttl_seconds
+                )
+                expired_jobs.extend(
+                    (video_job_id, RenderStatus.COMPLETED)
+                    for video_job_id, updated_at in self._completed_job_updated_at.items()
+                    if updated_at < completed_cutoff
+                )
 
-        for video_job_id in failed_job_ids:
+        for video_job_id, render_status in expired_jobs:
             try:
                 candidate = self._safe_job_work_path(video_job_id)
             except WorkflowValidation:
                 continue
             if not candidate.is_dir():
                 with self._state_lock:
-                    self._failed_job_updated_at.pop(video_job_id, None)
+                    self._remove_terminal_work_index_locked(
+                        video_job_id,
+                        render_status,
+                    )
                 continue
             try:
-                shutil.rmtree(candidate)
+                if render_status is RenderStatus.FAILED:
+                    shutil.rmtree(candidate)
+                else:
+                    self._remove_completed_intermediates(candidate)
             except OSError:
                 LOGGER.warning(
-                    "failed to remove expired video work directory for %s",
+                    "failed to remove expired %s video work directory for %s",
+                    render_status.value,
                     video_job_id,
                     exc_info=True,
                 )
             else:
                 with self._state_lock:
-                    self._failed_job_updated_at.pop(video_job_id, None)
+                    self._remove_terminal_work_index_locked(
+                        video_job_id,
+                        render_status,
+                    )
+
+    @staticmethod
+    def _remove_completed_intermediates(job_dir: Path) -> None:
+        resolved_job_dir = job_dir.resolve()
+        for directory_name, managed_filenames in COMPLETED_INTERMEDIATE_FILES.items():
+            intermediate_dir = job_dir / directory_name
+            if intermediate_dir.is_symlink():
+                raise OSError(
+                    f"refusing to remove symlinked intermediate {directory_name}"
+                )
+            if not intermediate_dir.is_dir():
+                continue
+
+            resolved_intermediate_dir = intermediate_dir.resolve()
+            if not resolved_intermediate_dir.is_relative_to(resolved_job_dir):
+                raise OSError(
+                    f"refusing to remove escaped intermediate {directory_name}"
+                )
+
+            for filename in managed_filenames:
+                candidate = intermediate_dir / filename
+                if candidate.is_symlink():
+                    raise OSError(
+                        f"refusing to remove symlinked intermediate file {filename}"
+                    )
+                if not candidate.exists():
+                    continue
+                resolved_candidate = candidate.resolve()
+                if not resolved_candidate.is_relative_to(resolved_intermediate_dir):
+                    raise OSError(
+                        f"refusing to remove escaped intermediate file {filename}"
+                    )
+                if not candidate.is_file():
+                    raise OSError(
+                        f"refusing to remove non-file intermediate {filename}"
+                    )
+                candidate.unlink()
+
+            if next(intermediate_dir.iterdir(), None) is None:
+                intermediate_dir.rmdir()
+
+    def _remove_terminal_work_index_locked(
+        self,
+        video_job_id: str,
+        render_status: RenderStatus,
+    ) -> None:
+        if render_status is RenderStatus.FAILED:
+            self._failed_job_updated_at.pop(video_job_id, None)
+        elif render_status is RenderStatus.COMPLETED:
+            self._completed_job_updated_at.pop(video_job_id, None)
 
     def _safe_job_work_path(self, video_job_id: str) -> Path:
         root = self._work_dir.expanduser().resolve()
@@ -761,6 +863,10 @@ def build_default_video_workflow() -> VideoWorkflowService:
         failed_work_ttl_seconds=_nonnegative_int_env(
             "VIDEO_FAILED_WORK_TTL_SECONDS",
             DEFAULT_FAILED_WORK_TTL_SECONDS,
+        ),
+        completed_work_ttl_seconds=_nonnegative_int_env(
+            "VIDEO_COMPLETED_WORK_TTL_SECONDS",
+            DEFAULT_COMPLETED_WORK_TTL_SECONDS,
         ),
         failed_work_cleanup_interval_seconds=_nonnegative_int_env(
             "VIDEO_FAILED_WORK_CLEANUP_INTERVAL_SECONDS",

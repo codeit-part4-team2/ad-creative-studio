@@ -55,6 +55,9 @@ VIDEO_FONT_PATH=assets/fonts/NanumGothic-Regular.ttf
 FFMPEG_BIN=ffmpeg
 FFPROBE_BIN=ffprobe
 VIDEO_FFMPEG_PRESET=veryfast
+# 실패 증거 및 완료 중간 산출물의 기본 보관 기간은 7일, 0이면 해당 정리를 끕니다.
+VIDEO_FAILED_WORK_TTL_SECONDS=604800
+VIDEO_COMPLETED_WORK_TTL_SECONDS=604800
 MELOTTS_SOURCE_DIR=C:\models\MeloTTS
 MELOTTS_CONFIG_PATH=C:\models\MeloTTS-KR\config.json
 MELOTTS_CHECKPOINT_PATH=C:\models\MeloTTS-KR\checkpoint.pth
@@ -63,6 +66,10 @@ YOUTUBE_UPLOAD_ENABLED=false
 ```
 
 애플리케이션은 `.env`를 암묵적으로 읽지 않습니다. 로컬 실행 시 아래처럼 명시적으로 전달합니다.
+
+완료 작업 TTL은 `VIDEO_WORK_DIR/<video_job_id>`에서 서비스가 생성한 장면 PNG와
+TTS WAV만 이름 허용 목록으로 정리합니다. 알 수 없는 운영 파일과 별도
+`VIDEO_DIR`의 최종 영상은 TTL 정리 대상이 아닙니다.
 
 ```powershell
 uvicorn app.backend.main:app --host 0.0.0.0 --port 8000 --env-file .env

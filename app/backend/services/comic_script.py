@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Mapping
 
+from app.time_slots import is_rush_hour_slot
+
 
 SCRIPT_VERSION = "deadpan-ai-v4"
 _HANGUL_TEXT = re.compile(r"^[가-힣\s.,!?]+$")
@@ -132,7 +134,7 @@ def build_comic_script(
     time_slot: str,
     lexicon: PronunciationLexicon,
 ) -> ComicScript:
-    if time_slot not in {"commute_am", "commute_pm"}:
+    if not is_rush_hour_slot(time_slot):
         raise ValueError("코믹 쇼츠는 출근·퇴근 시간대만 지원합니다")
 
     product = lexicon.resolve(product_name)

@@ -1,4 +1,5 @@
 import type { TimeSlot, Tone } from "@/lib/types/api";
+export { RUSH_HOUR_SLOTS } from "@/lib/types/api";
 
 export const TIME_SLOT_OPTIONS: { value: TimeSlot; label: string; desc: string }[] = [
   { value: "morning", label: "☀ 아침", desc: "여유·준비" },
@@ -55,8 +56,6 @@ export const OUTPUT_FORMAT_OPTIONS = [
 export const MAX_OUTPUT_FORMATS = 2;
 
 export const MAX_TIME_SLOTS = 3;
-
-export const RUSH_HOUR_SLOTS: TimeSlot[] = ["commute_am", "commute_pm"];
 
 // Streamlit Wizard와 동일한 로딩 단계 - 실제 backend stage가 아직 없어 경과시간 기준.
 // 완료/실패 판정은 반드시 job.status로 하고, 이 목록은 화면 표시용 정성적 신호만 준다.
