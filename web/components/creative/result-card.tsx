@@ -47,7 +47,7 @@ export function ResultReceiptCard({
           queryKey: ["generation-result", jobId],
         }),
         queryClient.invalidateQueries({
-          queryKey: ["history", false],
+          queryKey: ["history"],
         }),
       ]);
     },

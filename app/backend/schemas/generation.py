@@ -62,6 +62,7 @@ class ToneResult(BaseModel):
     headline: str
     subcopy: str
     source_image_url: Optional[str] = None
+    source_images: dict[str, str] = Field(default_factory=dict)
     images: dict[str, str]  # output_format -> url
     video_url: Optional[str] = None  # 러시아워 쇼츠 생성 완료 시 채워짐
 
@@ -73,6 +74,14 @@ class GenerationResultResponse(BaseModel):
 
 
 class CopyUpdateRequest(BaseModel):
-    result_id: str
-    headline: str
-    subcopy: str
+    result_id: str = Field(min_length=1)
+    headline: str = Field(min_length=1)
+    subcopy: str = Field(min_length=1)
+
+    @field_validator("result_id", "headline", "subcopy")
+    @classmethod
+    def copy_fields_must_not_be_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be blank")
+        return value

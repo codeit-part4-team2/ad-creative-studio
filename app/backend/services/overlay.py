@@ -74,6 +74,32 @@ def _output_url(file_path: Path) -> str:
     relative_path = file_path.resolve().relative_to(Path("data").resolve())
     return f"/files/{relative_path.as_posix()}"
 
+def load_output_image(url: str) -> Image.Image:
+    """
+    /files/... 형태의 내부 정적 파일 URL을 실제 data/ 하위 파일로 변환해
+    문구 없는 원본 이미지를 다시 불러온다.
+
+    문구 PATCH 시 기존 배경에 새 문구를 다시 오버레이하기 위해 사용한다.
+    """
+    prefix = "/files/"
+
+    if not url.startswith(prefix):
+        raise ValueError("invalid output URL")
+
+    relative_path = url.removeprefix(prefix)
+    file_path = (Path("data") / relative_path).resolve()
+    data_root = Path("data").resolve()
+
+    # /files/../../... 같은 path traversal 방지
+    if data_root not in file_path.parents:
+        raise ValueError("invalid output path")
+
+    if not file_path.is_file():
+        raise FileNotFoundError(file_path)
+
+    with Image.open(file_path) as image:
+        return image.convert("RGB")
+
 
 def save_source_image(
     *,
@@ -189,3 +215,23 @@ def generate_and_save(job_id: str, tone: str, time_slot: str, headline: str, sub
 
         urls[fmt] = _output_url(file_path)
     return urls
+
+def save_background_image(
+    *,
+    job_id: str,
+    tone: str,
+    time_slot: str,
+    output_format: str,
+    image: Image.Image,
+) -> str:
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    filename = (
+        f"{job_id}_{tone}_{time_slot}_{output_format}_background_"
+        f"{uuid.uuid4().hex[:6]}.png"
+    )
+
+    file_path = OUTPUT_DIR / filename
+    image.convert("RGB").save(file_path, format="PNG")
+
+    return _output_url(file_path)
