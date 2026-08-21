@@ -8,6 +8,12 @@
 # nvidia/cuda 베이스와 병행하면 같은 라이브러리가 두 번 깔리는 중복이 생겼었음.
 FROM python:3.11-slim
 
+# 호스트 spai1024 계정과 UID/GID 맞추기 (빌드 시 --build-arg로 다른 값 주입 가능)
+ARG UID=1000
+ARG GID=1000
+RUN groupadd -g ${GID} appuser && \
+    useradd -u ${UID} -g ${GID} -m -s /bin/bash appuser
+
 WORKDIR /app
 
 # torch는 cu132 전용 인덱스에서 먼저 설치 (버전 고정: torch==2.12.1, torchvision==0.27.1)
@@ -23,8 +29,12 @@ COPY deploy/ ./deploy/
 COPY model_server/ ./model_server/
 COPY app/ ./app/
 
+RUN chown -R appuser:appuser /app
+
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8001
+
+USER appuser
 
 # workers=1 고정 — InferenceEngine의 threading.Lock GPU 직렬화 전제와 일치
 CMD ["python3.11", "-m", "uvicorn", "model_server.main:app", \
