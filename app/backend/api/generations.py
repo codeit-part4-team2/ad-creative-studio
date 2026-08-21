@@ -1,4 +1,4 @@
-﻿import time
+import time
 import uuid
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 
@@ -20,8 +20,8 @@ router = APIRouter(prefix="/api/v1/generations", tags=["generations"])
 
 def build_generation_plan(req: GenerationRequest, product: dict) -> list[PromptRequest]:
     """
-    臾멸뎄 ?꾨＼?꾪듃 ?⑥쐞 = ?쒓컙? x ?? ?대?吏 ?앹꽦 ?묒뾽?됱? ??怨꾪쉷??媛???ぉ?먯꽌
-    ?좏깮 鍮꾩쑉 ?섎쭔??蹂꾨룄濡?利앷??섎ŉ, 媛숈? 臾멸뎄瑜?鍮꾩쑉蹂??ㅼ씠?곕툕 ?앹꽦???ъ궗?⑺븳??
+    문구 프롬프트 단위 = 시간대 x 톤. 이미지 생성 작업량은 이 계획의 각 항목에서
+    선택 비율 수만큼 별도로 증가하며, 같은 문구를 비율별 네이티브 생성에 재사용한다.
     """
     plan = []
     for time_slot in req.time_slots:
@@ -41,25 +41,27 @@ async def create_generation(req: GenerationRequest, background_tasks: Background
     product = PRODUCTS.get(req.product_id)
     if not product:
         raise HTTPException(404, "product not found")
-    # ?ㅻⅨ 怨좉컼???곹뭹 ID瑜??ｌ뼱??"?녿뒗 寃?怨??묎컳??404 - 議댁옱 ?щ? ?먯껜瑜??몄텧?섏? ?딅뒗??    if product.get("customer_id") != customer["customer_id"]:
+    # 다른 고객사 상품 ID를 넣어도 "없는 것"과 똑같이 404 - 존재 여부 자체를 노출하지 않는다
+    if product.get("customer_id") != customer["customer_id"]:
         raise HTTPException(404, "product not found")
     if not req.time_slots:
         raise HTTPException(400, "select at least one time slot")
     if len(req.time_slots) > MAX_TIME_SLOTS_PER_REQUEST:
         raise HTTPException(
             400,
-            f"??踰덉뿉 理쒕? {MAX_TIME_SLOTS_PER_REQUEST}媛??쒓컙?源뚯?留??좏깮 媛??(GPU ?湲곗뿴 蹂댄샇)",
+            f"한 번에 최대 {MAX_TIME_SLOTS_PER_REQUEST}개 시간대까지만 선택 가능 (GPU 대기열 보호)",
         )
 
-    # 以묐났 ?앹꽦 ?붿껌 諛⑹? - 媛숈? ?곹뭹??????대? 吏꾪뻾 以묒씤 job???덉쑝硫?409濡?嫄곕??쒕떎.
-    # (?덈줈 ??留뚮뱾怨?湲곗〈 job??洹몃?濡??ъ궗?⑺븯??諛⑹떇???꾨땲??紐낆떆?곸쑝濡?留됰뒗 諛⑹떇?대떎 -
-    #  ?꾨옒 detail??湲곗〈 job_id瑜?援ъ“?붾맂 ?꾨뱶濡??대젮以섏꽌, ?꾨줎?멸? ?먰븯硫?洹?job_id濡?    #  GET /jobs/{id}瑜??대쭅??吏꾪뻾 ?곹솴???댁뼱??蹂????덇쾶 ?쒕떎.)
+    # 중복 생성 요청 방지 - 같은 상품에 대해 이미 진행 중인 job이 있으면 409로 거부한다.
+    # (새로 안 만들고 기존 job을 그대로 재사용하는 방식이 아니라 명시적으로 막는 방식이다 -
+    #  아래 detail에 기존 job_id를 구조화된 필드로 내려줘서, 프론트가 원하면 그 job_id로
+    #  GET /jobs/{id}를 폴링해 진행 상황을 이어서 볼 수 있게 한다.)
     for existing_id, existing_job in JOBS.items():
         if existing_job["product_id"] == req.product_id and existing_job["status"] in ("queued", "processing"):
             raise HTTPException(
                 409,
                 detail={
-                    "message": "?대? ?앹꽦 吏꾪뻾 以묒씤 ?붿껌???덉뒿?덈떎. ?꾨즺 ???ㅼ떆 ?쒕룄?댁＜?몄슂.",
+                    "message": "이미 생성 진행 중인 요청이 있습니다. 완료 후 다시 시도해주세요.",
                     "existing_job_id": existing_id,
                 },
             )
@@ -69,7 +71,7 @@ async def create_generation(req: GenerationRequest, background_tasks: Background
     total = len(req.tones) * len(req.time_slots) * format_count
     est = estimate_seconds(len(req.tones), len(req.time_slots), format_count)
     JOBS[job_id] = {
-        "customer_id": customer["customer_id"],  # multi-tenant ?곗씠??寃⑸━
+        "customer_id": customer["customer_id"],  # multi-tenant 데이터 격리
         "status": "queued",
         "progress": 0,
         "current_step": None,
@@ -82,14 +84,15 @@ async def create_generation(req: GenerationRequest, background_tasks: Background
         "error_message": None,
     }
     store.save()
-    # generation_service??USE_MOCK_GENERATION ?섍꼍蹂?섎줈 Mock/?ㅼ젣 紐⑤뜽 ?쒕쾭 以??좏깮??    background_tasks.add_task(run_generation, job_id)
+    # generation_service는 USE_MOCK_GENERATION 환경변수로 Mock/실제 모델 서버 중 선택됨
+    background_tasks.add_task(run_generation, job_id)
     return GenerationCreateResponse(job_id=job_id, estimated_seconds=est)
 
 
 async def run_generation(job_id: str) -> None:
     """
-    generation_service留?援먯껜?섎㈃(Mock -> ModelServer) ???⑥닔????諛붾먮떎.
-    ?ㅽ뙣/??꾩븘?껋? ?ш린???≪븘??job??'failed'濡??④린怨?UI媛 ?먮윭瑜?蹂댁뿬以????덇쾶 ?쒕떎.
+    generation_service만 교체하면(Mock -> ModelServer) 이 함수는 안 바뀐다.
+    실패/타임아웃은 여기서 잡아서 job을 'failed'로 남기고 UI가 에러를 보여줄 수 있게 한다.
     """
     job = JOBS[job_id]
     try:
@@ -105,12 +108,12 @@ async def run_generation(job_id: str) -> None:
         job["current_step"] = None
 
         HISTORY.append({
-            "customer_id": job["customer_id"],  # multi-tenant ?곗씠??寃⑸━
+            "customer_id": job["customer_id"],  # multi-tenant 데이터 격리
             "job_id": job_id,
             "product_id": job["product_id"],
             "created_at": time.time(),
             "results": job["result"],
-            "favorite": False,  # S3 ??利먭꺼李얘린 (湲곕낯媛?false, ?좉?? PATCH /api/v1/history/{job_id}/favorite)
+            "favorite": False,  # S3 — 즐겨찾기 (기본값 false, 토글은 PATCH /api/v1/history/{job_id}/favorite)
         })
     except Exception as exc:
         job["status"] = "failed"
@@ -136,13 +139,13 @@ async def update_copy(
     body: CopyUpdateRequest,
     customer: dict = Depends(get_current_customer),
 ):
-    """?뱀젙 ?앹꽦 寃곌낵??愿묎퀬 臾멸뎄瑜??섏젙?섍퀬 Job/History???④퍡 諛섏쁺?쒕떎."""
+    """특정 생성 결과의 광고 문구와 실제 이미지를 수정하고 Job/History에 반영한다."""
     job = JOBS.get(job_id)
 
     if not job or job.get("customer_id") != customer["customer_id"]:
         raise HTTPException(404, "generation not found")
 
-    if job.get("status") != "completed" or not job.get("result"):
+    if job.get("status") != "completed" or job.get("result") is None:
         raise HTTPException(409, "generation not completed")
 
     target = next(
@@ -162,7 +165,7 @@ async def update_copy(
     if not source_images:
         raise HTTPException(
             409,
-            "臾멸뎄 ?녿뒗 ?먮낯 ?대?吏媛 ?놁뼱 ?섏젙?????놁뒿?덈떎. 愿묎퀬瑜??ㅼ떆 ?앹꽦?댁＜?몄슂.",
+            "문구 없는 원본 이미지가 없어 수정할 수 없습니다. 광고를 다시 생성해주세요.",
         )
 
     new_images: dict[str, str] = {}
@@ -173,7 +176,7 @@ async def update_copy(
         except (ValueError, FileNotFoundError) as exc:
             raise HTTPException(
                 409,
-                f"?먮낯 ?대?吏瑜?遺덈윭?????놁뒿?덈떎: {output_format}",
+                f"원본 이미지를 불러올 수 없습니다: {output_format}",
             ) from exc
 
         rendered = overlay.generate_and_save(
@@ -187,6 +190,7 @@ async def update_copy(
         )
 
         new_images.update(rendered)
+
     target["headline"] = body.headline
     target["subcopy"] = body.subcopy
     target["images"] = new_images

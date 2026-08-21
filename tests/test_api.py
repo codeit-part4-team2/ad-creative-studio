@@ -1,4 +1,4 @@
-﻿import io
+import io
 import hashlib
 import shutil
 import time
@@ -83,16 +83,19 @@ class _ApiTestTTSProvider:
 @pytest.fixture(autouse=True)
 def _clear_store(tmp_path, monkeypatch):
     """
-    ?ㅼ젣 媛쒕컻???곗씠??data/store.json, data/outputs/쨌data/videos/??湲곗〈 ?뚯씪)瑜?    ?덈? 嫄대뱶由ъ? ?딅룄濡?寃⑸━?쒕떎.
-    - store.STORE_PATH: pytest??tmp_path(?뚯뒪??醫낅즺 ???먮룞 ?뺣━?섎뒗 ?꾩떆 ?붾젆?곕━)濡?由щ떎?대젆??
-      ?꾩쟾??蹂꾨룄 ?뚯씪?대씪 ?ㅼ젣 data/store.json? ?쎌????곗????딅뒗??
-    - overlay.OUTPUT_DIR: data/outputs/ ?먯껜媛 ?꾨땲??洹?"?섏쐞"???뚯뒪???꾩슜 ?쒕툕?대뜑濡?由щ떎?대젆??
-      ?뺤쟻 ?뚯씪 ?쒕튃(/files/...)? data/ ?붾젆?곕━ 留덉슫?몄뿉 臾띠뿬?덉뼱 ?꾩쟾??諛뽰쑝濡?類????녾린 ?뚮Ц??
-      理쒖냼??湲곗〈 ?곕え ?뚯씪???덈뒗 data/outputs/ 理쒖긽?꾨뒗 ??嫄대뱶由ш퀬 ?쒕툕?대뜑留?留뚮뱾怨?吏?대떎.
-    - ?ㅼ젣 肄붾? ?쇱툩 ?뚰겕?뚮줈???뚯뒪???꾩슜 ?λ㈃쨌TTS쨌?뚮뜑?щ? 二쇱엯?섍퀬, 紐⑤뱺 ?곸긽 ?뚯씪??      tmp_path ?꾨옒???앹꽦??data/videos/瑜?嫄대뱶由ъ? ?딅뒗??
-    - ?몄쬆(customer_id+PIN) ?꾩엯 ??紐⑤뱺 ?곹뭹/?앹꽦 endpoint媛 濡쒓렇?몄쓣 ?붽뎄?섍쾶 ?먮떎.
-      媛쒕퀎 ?뚯뒪???섏떗 媛쒕? ?꾨? 怨좎퀜???ㅻ뜑瑜??ｊ쾶 ?섎뒗 ??? ?ш린???뚯뒪???꾩슜
-      怨좉컼?щ? ?섎굹 留뚮뱾??濡쒓렇?명븯怨?洹??좏겙??怨듭슜 client ?몄뒪?댁뒪??湲곕낯 ?ㅻ뜑濡?      諛뺤븘?붾떎 - 洹몃윭硫?湲곗〈 ?뚯뒪??肄붾뱶??????以꾨룄 ??嫄대뱶?ㅻ룄 ?쒕떎.
+    실제 개발용 데이터(data/store.json, data/outputs/·data/videos/의 기존 파일)를
+    절대 건드리지 않도록 격리한다.
+    - store.STORE_PATH: pytest의 tmp_path(테스트 종료 시 자동 정리되는 임시 디렉터리)로 리다이렉트.
+      완전히 별도 파일이라 실제 data/store.json은 읽지도 쓰지도 않는다.
+    - overlay.OUTPUT_DIR: data/outputs/ 자체가 아니라 그 "하위"의 테스트 전용 서브폴더로 리다이렉트.
+      정적 파일 서빙(/files/...)은 data/ 디렉터리 마운트에 묶여있어 완전히 밖으로 뺄 수 없기 때문에,
+      최소한 기존 데모 파일이 있는 data/outputs/ 최상위는 안 건드리고 서브폴더만 만들고 지운다.
+    - 실제 코믹 쇼츠 워크플로는 테스트 전용 장면·TTS·렌더러를 주입하고, 모든 영상 파일을
+      tmp_path 아래에 생성해 data/videos/를 건드리지 않는다.
+    - 인증(customer_id+PIN) 도입 후 모든 상품/생성 endpoint가 로그인을 요구하게 됐다.
+      개별 테스트 수십 개를 전부 고쳐서 헤더를 넣게 하는 대신, 여기서 테스트 전용
+      고객사를 하나 만들어 로그인하고 그 토큰을 공용 client 인스턴스에 기본 헤더로
+      박아둔다 - 그러면 기존 테스트 코드는 단 한 줄도 안 건드려도 된다.
     """
     monkeypatch.setattr(store, "STORE_PATH", tmp_path / "store.json")
 
@@ -115,12 +118,13 @@ def _clear_store(tmp_path, monkeypatch):
     store.VIDEO_JOBS.clear()
     auth.CUSTOMERS.clear()
     auth.SESSIONS.clear()
-    auth.create_customer("CUS-TEST", "?뚯뒪?몄긽??, "000000")
+    auth.create_customer("CUS-TEST", "테스트상사", "000000")
     token = auth.verify_login("CUS-TEST", "000000")
     client.headers["Authorization"] = f"Bearer {token}"
     yield
     if test_output_dir.exists():
-        shutil.rmtree(test_output_dir)  # ?뚯뒪?멸? 留뚮뱺 ?쒕툕?대뜑留???젣 - ?뺤젣 ?뚯씪? ??嫄대뱶由?    PRODUCTS.clear()
+        shutil.rmtree(test_output_dir)  # 테스트가 만든 서브폴더만 삭제 - 형제 파일은 안 건드림
+    PRODUCTS.clear()
     JOBS.clear()
     HISTORY.clear()
     store.VIDEO_JOBS.clear()
@@ -128,9 +132,9 @@ def _clear_store(tmp_path, monkeypatch):
     auth.SESSIONS.clear()
 
 
-def _upload_product(name="?ㅽ? ?먯뼱?꾨씪?댁뼱 5L"):
+def _upload_product(name="스팀 에어프라이어 5L"):
     files = {"image": ("p.png", io.BytesIO(b"fakebytes"), "image/png")}
-    data = {"product_name": name, "price": 89000, "selling_points": "湲곕쫫 ?놁씠,1?멸?援?}
+    data = {"product_name": name, "price": 89000, "selling_points": "기름 없이,1인가구"}
     r = client.post("/api/v1/products", files=files, data=data)
     assert r.status_code == 200
     return r.json()["product_id"]
@@ -169,13 +173,15 @@ def test_generate_returns_202_and_expected_total_count():
     assert r.status_code == 202
     job_id = r.json()["job_id"]
 
-    # ??4醫?湲곕낯媛? x ?쒓컙? 2媛?x 鍮꾩쑉 2媛?= ?묒뾽 ?⑥쐞 16媛?    time.sleep(0.5)  # BackgroundTasks ?꾨즺 ?湲?    status = client.get(f"/api/v1/jobs/{job_id}").json()
+    # 톤 4종(기본값) x 시간대 2개 x 비율 2개 = 작업 단위 16개
+    time.sleep(0.5)  # BackgroundTasks 완료 대기
+    status = client.get(f"/api/v1/jobs/{job_id}").json()
     assert status["total_count"] == 16
 
 
 def test_output_formats_increase_job_work_without_duplicating_prompt_plan():
-    """臾멸뎄 怨꾪쉷? ?쒓컙?x?ㅼ씠怨??ㅼ젣 ?대?吏 ?묒뾽?됰쭔 鍮꾩쑉 ?섎쭔??利앷??쒕떎."""
-    product = {"product_name": "而ㅽ뵾硫붿씠而?, "price": 50000, "selling_points": []}
+    """문구 계획은 시간대x톤이고 실제 이미지 작업량만 비율 수만큼 증가한다."""
+    product = {"product_name": "커피메이커", "price": 50000, "selling_points": []}
 
     req_one_format = GenerationRequest(
         product_id="x", time_slots=["morning", "evening"], output_formats=["thumbnail"]
@@ -188,7 +194,7 @@ def test_output_formats_increase_job_work_without_duplicating_prompt_plan():
     plan_one = build_generation_plan(req_one_format, product)
     plan_two = build_generation_plan(req_two_formats, product)
 
-    # 臾멸뎄 怨꾪쉷? ?쒓컙? 2 x ??4(湲곕낯媛? = 8 濡??숈씪?섎떎.
+    # 문구 계획은 시간대 2 x 톤 4(기본값) = 8 로 동일하다.
     assert len(plan_one) == 8
     assert len(plan_two) == 8
     assert len(plan_one) == len(plan_two)
@@ -202,7 +208,8 @@ def test_full_flow_populates_history():
     time.sleep(0.5)
     result = client.get(f"/api/v1/generations/{job_id}")
     assert result.status_code == 200
-    assert len(result.json()["results"]) == 4  # ??4醫?
+    assert len(result.json()["results"]) == 4  # 톤 4종
+
     history = client.get("/api/v1/history").json()
     assert any(h["job_id"] == job_id for h in history)
 
@@ -230,7 +237,8 @@ def test_copy_patch_updates_job_and_history():
     target = results[0]
     result_id = target["result_id"]
 
-    # PATCH ???대?吏 ?곹깭 ???    old_images = target["images"].copy()
+    # PATCH 전 이미지 상태 저장
+    old_images = target["images"].copy()
     assert old_images
 
     old_image_bytes = {
@@ -242,18 +250,18 @@ def test_copy_patch_updates_job_and_history():
         f"/api/v1/generations/{job_id}/copy",
         json={
             "result_id": result_id,
-            "headline": "???ㅻ뱶?쇱씤",
-            "subcopy": "???쒕툕移댄뵾",
+            "headline": "새 헤드라인",
+            "subcopy": "새 서브카피",
         },
     )
 
     assert patch.status_code == 200
     assert patch.json()["job_id"] == job_id
     assert patch.json()["result_id"] == result_id
-    assert patch.json()["headline"] == "???ㅻ뱶?쇱씤"
-    assert patch.json()["subcopy"] == "???쒕툕移댄뵾"
+    assert patch.json()["headline"] == "새 헤드라인"
+    assert patch.json()["subcopy"] == "새 서브카피"
 
-    # JOBS 履?寃곌낵媛 ?ㅼ젣濡??섏젙?먮뒗吏 ?뺤씤
+    # JOBS 쪽 결과가 실제로 수정됐는지 확인
     updated_result = client.get(f"/api/v1/generations/{job_id}")
     assert updated_result.status_code == 200
 
@@ -263,10 +271,10 @@ def test_copy_patch_updates_job_and_history():
         if item["result_id"] == result_id
     )
 
-    assert updated_target["headline"] == "???ㅻ뱶?쇱씤"
-    assert updated_target["subcopy"] == "???쒕툕移댄뵾"
+    assert updated_target["headline"] == "새 헤드라인"
+    assert updated_target["subcopy"] == "새 서브카피"
 
-    # 臾멸뎄 ?섏젙 ???ㅼ젣 PNG媛 ?ㅼ떆 ?앹꽦?먮뒗吏 ?뺤씤
+    # 실제 PNG가 새 문구로 재생성됐는지 확인
     new_images = updated_target["images"]
 
     assert new_images.keys() == old_images.keys()
@@ -274,15 +282,17 @@ def test_copy_patch_updates_job_and_history():
     for image_format, new_url in new_images.items():
         old_url = old_images[image_format]
 
-        # ??PNG ?뚯씪 URL?댁뼱????        assert new_url != old_url
+        # 새 이미지 파일 URL이어야 함
+        assert new_url != old_url
 
         new_image_response = client.get(new_url)
         assert new_image_response.status_code == 200
         assert new_image_response.headers["content-type"] == "image/png"
 
-        # ?ㅼ젣 PNG ?댁슜??蹂寃쎈릺?댁빞 ??        assert new_image_response.content != old_image_bytes[image_format]
+        # 실제 PNG bytes도 변경되어야 함
+        assert new_image_response.content != old_image_bytes[image_format]
 
-    # HISTORY?먮룄 ?숈씪???섏젙??諛섏쁺?먮뒗吏 ?뺤씤
+    # HISTORY에도 동일한 수정이 반영됐는지 확인
     history = client.get("/api/v1/history")
     assert history.status_code == 200
 
@@ -298,38 +308,9 @@ def test_copy_patch_updates_job_and_history():
         if item["result_id"] == result_id
     )
 
-    assert history_target["headline"] == "???ㅻ뱶?쇱씤"
-    assert history_target["subcopy"] == "???쒕툕移댄뵾"
+    assert history_target["headline"] == "새 헤드라인"
+    assert history_target["subcopy"] == "새 서브카피"
     assert history_target["images"] == new_images
-
-def test_copy_patch_rejects_blank_copy():
-    pid = _upload_product()
-
-    r = client.post(
-        "/api/v1/generations",
-        json={
-            "product_id": pid,
-            "time_slots": ["morning"],
-        },
-    )
-    job_id = r.json()["job_id"]
-
-    time.sleep(0.5)
-
-    result_response = client.get(f"/api/v1/generations/{job_id}")
-    result_id = result_response.json()["results"][0]["result_id"]
-
-    patch = client.patch(
-        f"/api/v1/generations/{job_id}/copy",
-        json={
-            "result_id": result_id,
-            "headline": "   ",
-            "subcopy": "?뺤긽 ?쒕툕移댄뵾",
-        },
-    )
-
-    assert patch.status_code == 422
-
 def test_copy_patch_rejects_missing_result():
     pid = _upload_product()
 
@@ -348,8 +329,8 @@ def test_copy_patch_rejects_missing_result():
         f"/api/v1/generations/{job_id}/copy",
         json={
             "result_id": "res_doesnotexist",
-            "headline": "???ㅻ뱶?쇱씤",
-            "subcopy": "???쒕툕移댄뵾",
+            "headline": "새 헤드라인",
+            "subcopy": "새 서브카피",
         },
     )
 
@@ -368,9 +349,38 @@ def test_copy_patch_rejects_missing_job():
 
     assert patch.status_code == 404
 
+def test_copy_patch_rejects_blank_copy():
+    pid = _upload_product()
+
+    r = client.post(
+        "/api/v1/generations",
+        json={
+            "product_id": pid,
+            "time_slots": ["morning"],
+        },
+    )
+    job_id = r.json()["job_id"]
+
+    time.sleep(0.5)
+
+    result_response = client.get(f"/api/v1/generations/{job_id}")
+    assert result_response.status_code == 200
+
+    result_id = result_response.json()["results"][0]["result_id"]
+
+    patch = client.patch(
+        f"/api/v1/generations/{job_id}/copy",
+        json={
+            "result_id": result_id,
+            "headline": "   ",
+            "subcopy": "정상 서브카피",
+        },
+    )
+
+    assert patch.status_code == 422
 
 def test_favorite_toggle_flow():
-    """S3 ???앹꽦 ?대젰 利먭꺼李얘린 ?좉?."""
+    """S3 — 생성 이력 즐겨찾기 토글."""
     pid = _upload_product()
     r = client.post("/api/v1/generations", json={"product_id": pid, "time_slots": ["morning"]})
     job_id = r.json()["job_id"]
@@ -378,7 +388,8 @@ def test_favorite_toggle_flow():
 
     history = client.get("/api/v1/history").json()
     entry = next(h for h in history if h["job_id"] == job_id)
-    assert entry["favorite"] is False  # 湲곕낯媛?
+    assert entry["favorite"] is False  # 기본값
+
     toggled = client.patch(f"/api/v1/history/{job_id}/favorite")
     assert toggled.status_code == 200
     assert toggled.json()["favorite"] is True
@@ -386,7 +397,7 @@ def test_favorite_toggle_flow():
     favorites_only = client.get("/api/v1/history", params={"favorite_only": True}).json()
     assert any(h["job_id"] == job_id for h in favorites_only)
 
-    # ?ㅼ떆 ?좉??섎㈃ 爰쇱쭚
+    # 다시 토글하면 꺼짐
     toggled_again = client.patch(f"/api/v1/history/{job_id}/favorite")
     assert toggled_again.json()["favorite"] is False
 
@@ -400,7 +411,7 @@ def test_favorite_toggle_404_for_unknown_job():
 
 
 def test_generation_result_images_are_real_files_not_mock_url():
-    """M3+S2 ??洹쒓꺽蹂꾨줈 ?ㅼ젣 ?ㅻ쾭?덉씠 ?대?吏媛 ?앹꽦?섎뒗吏 (???댁긽 placehold.co mock ?꾨떂)."""
+    """M3+S2 — 규격별로 실제 오버레이 이미지가 생성되는지 (더 이상 placehold.co mock 아님)."""
     pid = _upload_product()
     r = client.post(
         "/api/v1/generations",
@@ -423,11 +434,11 @@ def test_generation_result_images_are_real_files_not_mock_url():
     for fmt, url in first_tone["images"].items():
         assert url.startswith("/files/outputs/")
         served = client.get(url)
-        assert served.status_code == 200  # ?뺤쟻 ?쒕튃?쇰줈 ?ㅼ젣 ?대┝
+        assert served.status_code == 200  # 정적 서빙으로 실제 열림
 
 
 def test_generate_rejects_duplicate_while_job_in_progress():
-    """以묐났 ?앹꽦 ?붿껌 諛⑹? ??媛숈? ?곹뭹??吏꾪뻾 以?queued/processing)??job???덉쑝硫?409."""
+    """중복 생성 요청 방지 — 같은 상품에 진행 중(queued/processing)인 job이 있으면 409."""
     pid = _upload_product()
     JOBS["job_fake_inprogress"] = {
         "customer_id": "CUS-TEST",
@@ -448,7 +459,7 @@ def test_generate_rejects_duplicate_while_job_in_progress():
 
 
 def test_generate_allows_new_request_after_previous_completed():
-    """?댁쟾 job??completed/failed硫?以묐났 諛⑹?????嫄몃━怨??덈줈 ?앹꽦 媛?ν빐???쒕떎."""
+    """이전 job이 completed/failed면 중복 방지에 안 걸리고 새로 생성 가능해야 한다."""
     pid = _upload_product()
     JOBS["job_fake_done"] = {
         "customer_id": "CUS-TEST",
@@ -491,8 +502,8 @@ def test_download_one_409_for_unfinished_job():
     pid = _upload_product()
     r = client.post("/api/v1/generations", json={"product_id": pid, "time_slots": ["morning"]})
     job_id = r.json()["job_id"]
-    # ?꾨즺 湲곕떎由ъ? ?딄퀬 諛붾줈 ?ㅼ슫濡쒕뱶 ?쒕룄
-    JOBS[job_id]["status"] = "processing"  # ?뺤떎?섍쾶 誘몄셿猷??곹깭濡?怨좎젙
+    # 완료 기다리지 않고 바로 다운로드 시도
+    JOBS[job_id]["status"] = "processing"  # 확실하게 미완료 상태로 고정
     resp = client.get(f"/api/v1/download/{job_id}", params={"tone": "emotional", "output_format": "thumbnail"})
     assert resp.status_code == 409
 
@@ -516,18 +527,18 @@ def test_download_all_returns_zip_with_all_images():
 
     zf = zipfile.ZipFile(io.BytesIO(resp.content))
     names = zf.namelist()
-    # ??4醫?x ?좏깮 鍮꾩쑉 2醫?= 8媛??뚯씪
+    # 톤 4종 x 선택 비율 2종 = 8개 파일
     assert len(names) == 8
 
 
 def test_download_rejects_path_traversal_attempt():
-    """_url_to_path媛 data/outputs/ 諛뽰쑝濡??섍???寃쎈줈瑜?嫄곕??섎뒗吏 (諛⑹뼱??寃利?."""
+    """_url_to_path가 data/outputs/ 밖으로 나가는 경로를 거부하는지 (방어적 검증)."""
     from app.backend.api.download import _url_to_path
     from fastapi import HTTPException
 
     try:
         _url_to_path("/files/../../etc/passwd")
-        assert False, "?덉쇅媛 諛쒖깮?덉뼱????
+        assert False, "예외가 발생했어야 함"
     except HTTPException as e:
         assert e.status_code == 400
 
@@ -538,7 +549,7 @@ def test_exposure_returns_404_for_unknown_product():
 
 
 def test_exposure_returns_unavailable_when_no_matching_generation():
-    """?곹뭹? ?덈뒗???대떦 ?쒓컙?濡??앹꽦??寃??놁쑝硫?available=False."""
+    """상품은 있는데 해당 시간대로 생성된 게 없으면 available=False."""
     pid = _upload_product()
     resp = client.get(f"/api/v1/exposure/{pid}", params={"at": "2026-08-05T07:00:00+09:00"})
     assert resp.status_code == 200
@@ -547,7 +558,7 @@ def test_exposure_returns_unavailable_when_no_matching_generation():
 
 
 def test_exposure_accepts_at_query_param_for_demo():
-    """?at= ?뚮씪誘명꽣濡??꾩쓽 ?쒓컖 湲곗? 議고쉶 媛??(諛쒗몴 ?곕え??."""
+    """?at= 파라미터로 임의 시각 기준 조회 가능 (발표 데모용)."""
     pid = _upload_product()
     client.post("/api/v1/generations", json={"product_id": pid, "time_slots": ["evening"]})
     time.sleep(0.5)
@@ -559,13 +570,13 @@ def test_exposure_accepts_at_query_param_for_demo():
 
 
 def test_download_all_returns_404_when_no_files_exist_on_disk():
-    """?붿뒪?ъ뿉???뚯씪???щ씪吏?寃쎌슦 鍮?ZIP??200?쇰줈 議곗슜??二쇰㈃ ???섍퀬 404?ъ빞 ?쒕떎."""
+    """디스크에서 파일이 사라진 경우 빈 ZIP을 200으로 조용히 주면 안 되고 404여야 한다."""
     pid = _upload_product()
     r = client.post("/api/v1/generations", json={"product_id": pid, "time_slots": ["morning"]})
     job_id = r.json()["job_id"]
     time.sleep(0.5)
 
-    # 寃곌낵??completed?몃뜲, ?붿뒪???뚯씪??媛뺤젣濡?吏?뚯꽌 "?뚯씪 ?놁쓬" ?곹솴???ы쁽
+    # 결과는 completed인데, 디스크 파일을 강제로 지워서 "파일 없음" 상황을 재현
     result = client.get(f"/api/v1/generations/{job_id}").json()
     for tone_result in result["results"]:
         for url in tone_result["images"].values():
@@ -579,8 +590,8 @@ def test_download_all_returns_404_when_no_files_exist_on_disk():
 
 
 def test_download_all_zip_does_not_collide_across_multiple_time_slots():
-    """?쒓컙? 2媛??댁긽??job?먯꽌 ZIP arcname??tone_format留??곕㈃ ?쒕줈 ?ㅻⅨ ?쒓컙?
-    ?뚯씪??媛숈? ?대쫫?쇰줈 寃뱀퀜?⑥졇???덈컲???좎떎?쒕떎 - time_slot??arcname???ы븿?댁빞 ?쒕떎."""
+    """시간대 2개 이상인 job에서 ZIP arcname이 tone_format만 쓰면 서로 다른 시간대
+    파일이 같은 이름으로 겹쳐써져서 절반이 유실된다 - time_slot을 arcname에 포함해야 한다."""
     pid = _upload_product()
     r = client.post(
         "/api/v1/generations",
@@ -597,12 +608,13 @@ def test_download_all_zip_does_not_collide_across_multiple_time_slots():
     assert resp.status_code == 200
     zf = zipfile.ZipFile(io.BytesIO(resp.content))
     names = zf.namelist()
-    # ?쒓컙? 2 x ??4 x ?좏깮 鍮꾩쑉 2 = 16媛??뚯씪???꾨? ?좊땲?ы빐????    assert len(names) == 16
-    assert len(set(names)) == 16  # 以묐났 ?놁쓬
+    # 시간대 2 x 톤 4 x 선택 비율 2 = 16개 파일이 전부 유니크해야 함
+    assert len(names) == 16
+    assert len(set(names)) == 16  # 중복 없음
 
 
 def test_download_one_with_time_slot_returns_correct_slot():
-    """time_slot??吏?뺥븯硫?洹??쒓컙????대?吏瑜??뺥솗??諛쏆븘???쒕떎 (?щ윭 ?쒓컙?媛 ?욎씤 job)."""
+    """time_slot을 지정하면 그 시간대의 이미지를 정확히 받아야 한다 (여러 시간대가 섞인 job)."""
     pid = _upload_product()
     r = client.post("/api/v1/generations", json={"product_id": pid, "time_slots": ["morning", "evening"]})
     job_id = r.json()["job_id"]
@@ -645,7 +657,7 @@ def test_video_creation_flow_for_rush_hour_slot():
     assert status_resp.json()["render_status"] == "completed"
     assert status_resp.json()["video_url"] == f"/files/videos/{video_job_id}.mp4"
 
-    # History??寃곌낵?먮룄 video_url??諛섏쁺?쇱빞 ??(?덈줈怨좎묠?대룄 ?ㅼ떆 蹂댁씠?꾨줉)
+    # History의 결과에도 video_url이 반영돼야 함 (새로고침해도 다시 보이도록)
     updated_history = client.get("/api/v1/history").json()
     updated_result = updated_history[0]["results"][0]
     assert updated_result["video_url"] == f"/files/videos/{video_job_id}.mp4"
@@ -675,7 +687,7 @@ def test_video_status_404_for_unknown_job():
 
 
 def test_video_completion_persists_video_url_across_restart():
-    """?쇱툩 ?꾨즺 ??store.save()媛 ?몄텧?쇱꽌, ?ъ떆??load) ?꾩뿉??video_url???⑥븘?덉뼱???쒕떎."""
+    """쇼츠 완료 시 store.save()가 호출돼서, 재시작(load) 후에도 video_url이 남아있어야 한다."""
     pid = _upload_product()
     r = client.post(
         "/api/v1/generations",
@@ -693,9 +705,9 @@ def test_video_completion_persists_video_url_across_restart():
 
     video_resp = client.post("/api/v1/videos", json={"result_id": result_id})
     video_job_id = video_resp.json()["video_job_id"]
-    client.get(f"/api/v1/videos/{video_job_id}")  # completed濡?留뚮뱾怨?video_url 諛섏쁺
+    client.get(f"/api/v1/videos/{video_job_id}")  # completed로 만들고 video_url 반영
 
-    # ?ъ떆?묒쓣 ?됰궡: 硫붾え由?鍮꾩슦怨?store.load()濡?蹂듦뎄
+    # 재시작을 흉내: 메모리 비우고 store.load()로 복구
     PRODUCTS.clear()
     JOBS.clear()
     HISTORY.clear()
