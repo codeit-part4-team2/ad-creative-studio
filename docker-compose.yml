@@ -1,0 +1,40 @@
+services:
+  model_server:
+    build:
+      context: .
+      dockerfile: deploy/model_server.Dockerfile
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      # .env엔 localhost:8000으로 되어 있지만, 컨테이너 안에서 localhost는
+      # model_server 자기 자신을 가리킴 — backend 컨테이너를 가리키도록 오버라이드
+      - MODEL_IMAGE_ALLOWED_ORIGINS=http://backend:8000
+    # GPU 접근: 호스트에 nvidia-container-toolkit 설치 필요
+    gpus: all
+    volumes:
+      - ./var:/app/var
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: deploy/backend.Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # 컨테이너 네트워크 안에서는 localhost가 아니라 서비스명으로 통신
+      - MODEL_SERVER_URL=http://model_server:8001
+      # backend가 자신의 정적 파일을 model_server에게 절대 URL로 알려줄 때 쓰는 값도
+      # 도커 네트워크 기준(backend:8000)으로 맞춤
+      - BACKEND_PUBLIC_URL=http://backend:8000
+    volumes:
+      - ./var:/app/var
+      - ./data:/app/data
+      - /home/spai1024/ad-studio-runtime:/home/spai1024/ad-studio-runtime:ro
+    depends_on:
+      - model_server
+    restart: unless-stopped
