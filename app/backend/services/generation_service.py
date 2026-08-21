@@ -82,6 +82,7 @@ async def _generate_plan_item(
         asyncio.to_thread(copy_generator.build_ad_copy, item)
     )
     images: dict[str, str] = {}
+    source_images: dict[str, str] = {}
     source_image_url: str | None = None
     headline = ""
     subcopy = ""
@@ -92,6 +93,14 @@ async def _generate_plan_item(
                 f"{item.time_slot}/{item.tone}/{output_format} 생성 중"
             )
             background_image = await load_background(output_format)
+            source_images[output_format] = await asyncio.to_thread(
+    overlay.save_background_image,
+    job_id=job_id,
+    tone=item.tone,
+    time_slot=time_slot,
+    output_format=output_format,
+    image=background_image,
+)
 
             source_image = (
                 background_image
@@ -133,6 +142,7 @@ async def _generate_plan_item(
         headline=headline,
         subcopy=subcopy,
         source_image_url=source_image_url,
+        source_images=source_images,
         images=images,
     )
 

@@ -8,7 +8,7 @@ from app.backend.schemas.generation import (
     GenerationResultResponse,
     CopyUpdateRequest,
 )
-from app.backend.services import store
+from app.backend.services import overlay, store
 from app.backend.services.store import PRODUCTS, JOBS, HISTORY
 from app.backend.services.generation_service import generation_service
 from app.backend.api.deps import get_current_customer
@@ -134,22 +134,85 @@ async def get_generation_result(job_id: str, customer: dict = Depends(get_curren
 
 
 @router.patch("/{job_id}/copy")
-async def update_copy(job_id: str, body: CopyUpdateRequest, customer: dict = Depends(get_current_customer)):
-    """
-    이미지는 재생성하지 않고 문구만 수정하는 게 원래 설계 의도였다 (결정 7).
-    하지만 M3/S2/S3 구현으로 문구가 이제 PNG에 실제로 구워지면서 이 전제가 무효화됐다 -
-    지금은 받은 문구를 그대로 되돌려줄 뿐 이미지도, job["result"]/History도 갱신하지 않는다.
-    이 상태로 200을 주면 프론트가 "성공"으로 오인하고 붙일 수 있으므로, 실제 구현 전까지는
-    솔직하게 501을 반환한다.
-    TODO: overlay.overlay_copy() 재실행 + job["result"] 갱신까지 구현되면 501을 없앨 것.
-    결과가 여러 개(톤x시간대)이므로, PATCH /api/v1/results/{result_id}/copy 로
-    세분화하는 게 더 정확할 수 있음 (job_id 단위로는 어느 톤/시간대인지 특정 불가).
-
-    이 PR 전에는 인증 자체가 없어서 로그인 없이 job_id 존재 여부를 알아낼 수 있었다
-    (지금은 501만 뱉지만 나중에 실제 로직이 들어가면 그대로 뚫릴 위험) - PR 리뷰에서
-    지적되어 다른 endpoint와 동일한 로그인+소유권 확인을 추가했다.
-    """
+async def update_copy(
+    job_id: str,
+    body: CopyUpdateRequest,
+    customer: dict = Depends(get_current_customer),
+):
+    """특정 생성 결과의 광고 문구와 실제 이미지를 수정하고 Job/History에 반영한다."""
     job = JOBS.get(job_id)
+
     if not job or job.get("customer_id") != customer["customer_id"]:
         raise HTTPException(404, "generation not found")
-    raise HTTPException(501, "문구 수정 후 이미지 재생성/History 갱신은 아직 구현되지 않았습니다")
+
+    if job.get("status") != "completed" or job.get("result") is None:
+        raise HTTPException(409, "generation not completed")
+
+    target = next(
+        (
+            result
+            for result in job["result"]
+            if result.get("result_id") == body.result_id
+        ),
+        None,
+    )
+
+    if target is None:
+        raise HTTPException(404, "result not found")
+
+    source_images = target.get("source_images") or {}
+
+    if not source_images:
+        raise HTTPException(
+            409,
+            "문구 없는 원본 이미지가 없어 수정할 수 없습니다. 광고를 다시 생성해주세요.",
+        )
+
+    new_images: dict[str, str] = {}
+
+    for output_format, source_url in source_images.items():
+        try:
+            background_image = overlay.load_output_image(source_url)
+        except (ValueError, FileNotFoundError) as exc:
+            raise HTTPException(
+                409,
+                f"원본 이미지를 불러올 수 없습니다: {output_format}",
+            ) from exc
+
+        rendered = overlay.generate_and_save(
+            job_id=job_id,
+            tone=target["tone"],
+            time_slot=target.get("time_slot") or "default",
+            headline=body.headline,
+            subcopy=body.subcopy,
+            output_formats=[output_format],
+            background_image=background_image,
+        )
+
+        new_images.update(rendered)
+
+    target["headline"] = body.headline
+    target["subcopy"] = body.subcopy
+    target["images"] = new_images
+
+    for entry in HISTORY:
+        if (
+            entry.get("job_id") == job_id
+            and entry.get("customer_id") == customer["customer_id"]
+        ):
+            for result in entry.get("results", []):
+                if result.get("result_id") == body.result_id:
+                    result["headline"] = body.headline
+                    result["subcopy"] = body.subcopy
+                    result["images"] = new_images.copy()
+                    break
+            break
+
+    store.save()
+
+    return {
+        "job_id": job_id,
+        "result_id": body.result_id,
+        "headline": body.headline,
+        "subcopy": body.subcopy,
+    }
