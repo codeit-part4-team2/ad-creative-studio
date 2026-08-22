@@ -38,6 +38,9 @@ services:
       # backend가 자신의 정적 파일을 model_server에게 절대 URL로 알려줄 때 쓰는 값도
       # 도커 네트워크 기준(backend:8000)으로 맞춤
       - BACKEND_PUBLIC_URL=http://backend:8000
+      # MeloTTS(librosa)의 numba JIT 캐시 - appuser가 site-packages에 못 쓰므로
+      # 쓰기 가능한 볼륨(./var) 안으로 고정
+      - NUMBA_CACHE_DIR=/app/var/numba_cache
     volumes:
       - ./var:/app/var
       - ./data:/app/data
