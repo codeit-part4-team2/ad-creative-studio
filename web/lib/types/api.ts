@@ -86,13 +86,24 @@ export interface VideoJobResponse {
   approval_status: VideoApprovalStatus;
   publish_status: VideoPublishStatus;
   video_url: string | null;
+
   script_version: string;
   script_lines: string[];
+
   tts_engine: string | null;
   tts_voice_preset: string | null;
+
   pronunciation_review_required: boolean;
   pronunciation_reviewed_at: string | null;
+
   scene_image_sha256s: string[];
   caption_layout_version: string | null;
+
+  activation_at: string | null;
+  approved_at: string | null;
+
+  youtube_video_id: string | null;
+  youtube_error: string | null;
+
   error_message: string | null;
 }
