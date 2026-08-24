@@ -65,6 +65,12 @@ function formatKst(value: string | null) {
   }).format(new Date(value));
 }
 
+function kstLocalToIso(value: string) {
+  const normalized = value.length === 16 ? `${value}:00` : value;
+
+  return new Date(`${normalized}+09:00`).toISOString();
+}
+
 function PublishingContent() {
   const [youtubeStatus, setYoutubeStatus] =
     useState<YouTubeStatusResponse | null>(null);
@@ -74,13 +80,18 @@ function PublishingContent() {
 
   const [activationAt, setActivationAt] = useState("");
   const [loading, setLoading] = useState(true);
-  const [publishing, setPublishing] = useState(false);
+  const [publishingVideoId, setPublishingVideoId] = useState<string | null>(
+    null,
+  );
+  const [pronunciationConfirmed, setPronunciationConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const selected = useMemo(
     () => videos.find((item) => item.video.video_job_id === selectedVideoId),
     [videos, selectedVideoId],
   );
+
+  const isPublishing = publishingVideoId === selected?.video.video_job_id;
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -151,6 +162,10 @@ function PublishingContent() {
     void loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    setPronunciationConfirmed(false);
+  }, [selectedVideoId]);
+
   async function pollPublishStatus(videoJobId: string) {
     for (let i = 0; i < 15; i += 1) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -170,7 +185,17 @@ function PublishingContent() {
       }
     }
 
-    return getVideoStatus(videoJobId);
+    const finalStatus = await getVideoStatus(videoJobId);
+
+    setVideos((current) =>
+      current.map((item) =>
+        item.video.video_job_id === videoJobId
+          ? { ...item, video: finalStatus }
+          : item,
+      ),
+    );
+
+    return finalStatus;
   }
 
   async function handlePublish() {
@@ -181,16 +206,18 @@ function PublishingContent() {
       return;
     }
 
-    setPublishing(true);
+    setPublishingVideoId(selected.video.video_job_id);
     setError(null);
 
     try {
-      const activationIso = new Date(activationAt).toISOString();
+      const activationIso = kstLocalToIso(activationAt);
 
       const approved = await approveVideo(selected.video.video_job_id, {
         activation_at: activationIso,
         publish_to_youtube: true,
-        pronunciation_confirmed: true,
+        pronunciation_confirmed:
+          !selected.video.pronunciation_review_required ||
+          pronunciationConfirmed,
       });
 
       setVideos((current) =>
@@ -211,7 +238,7 @@ function PublishingContent() {
           : "YouTube 예약 게시 요청에 실패했습니다.",
       );
     } finally {
-      setPublishing(false);
+      setPublishingVideoId(null);
     }
   }
 
@@ -324,6 +351,25 @@ function PublishingContent() {
                     src={resolveAssetUrl(selected.video.video_url)}
                   />
                 )}
+                {selected.video.pronunciation_review_required && (
+                  <label className="flex items-start gap-2 rounded-lg border p-3 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={pronunciationConfirmed}
+                      onChange={(event) =>
+                        setPronunciationConfirmed(event.target.checked)
+                      }
+                      className="mt-0.5"
+                    />
+
+                    <span>
+                      상품명 발음을 확인했습니다.
+                      <span className="mt-1 block text-xs text-muted-foreground">
+                        쇼츠 영상을 재생해 상품명 발음을 확인한 뒤 체크해주세요.
+                      </span>
+                    </span>
+                  </label>
+                )}
 
                 {selected.video.publish_status === "scheduled" ? (
                   <div className="rounded-lg border border-green-200 bg-green-50 p-4">
@@ -363,7 +409,8 @@ function PublishingContent() {
                       />
 
                       <p className="mt-2 text-xs text-muted-foreground">
-                        출근 러시아워 08:00~09:30 · 퇴근 러시아워 18:00~19:30
+                        한국 표준시(KST) 기준 · 출근 러시아워 08:00~09:30 · 퇴근
+                        러시아워 18:00~19:30
                       </p>
                     </div>
 
@@ -371,15 +418,17 @@ function PublishingContent() {
                       type="button"
                       onClick={handlePublish}
                       disabled={
-                        publishing ||
+                        isPublishing ||
                         !activationAt ||
                         !youtubeStatus?.configured ||
                         !youtubeStatus?.token_available ||
-                        selected.video.approval_status === "approved"
+                        selected.video.approval_status === "approved" ||
+                        (selected.video.pronunciation_review_required &&
+                          !pronunciationConfirmed)
                       }
                       className="w-full rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {publishing
+                      {isPublishing
                         ? "YouTube 예약 게시 처리 중..."
                         : "승인 및 YouTube 예약 게시"}
                     </button>
