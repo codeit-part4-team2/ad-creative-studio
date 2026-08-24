@@ -818,6 +818,7 @@ def _external_file(path_value: str, *, repo_root: Path) -> Path | None:
 
 def _youtube_service_factory(token_path: Path) -> Callable[[], object]:
     def create_service() -> object:
+        from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
         from googleapiclient.discovery import build
 
@@ -825,6 +826,8 @@ def _youtube_service_factory(token_path: Path) -> Callable[[], object]:
             str(token_path),
             scopes=["https://www.googleapis.com/auth/youtube.upload"],
         )
+        if credentials.expired and credentials.refresh_token:
+            credentials.refresh(Request())
         return build("youtube", "v3", credentials=credentials, cache_discovery=False)
 
     return create_service
