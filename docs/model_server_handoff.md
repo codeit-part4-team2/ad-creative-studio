@@ -110,6 +110,7 @@ Python 3.12 인터프리터의 구문 컴파일은 통과했지만 해당 인터
 8. 이전 stock VAE와 현재 FP16-safe VAE의 768/4-step 동일 seed 비교 측정
 9. 대표 상품 2종×4비율에서 배경 유사 상품·가짜 문자·대형 원형 소품이 없는지 육안 확인
 10. 동일 상품/톤/시간대의 `self_aware`와 `benefit` 쇼츠 장면이 서로 다르게 생성되는지 확인
+11. `python -m tools.audit_fast_background_prompts`로 SDXL dual tokenizer의 72개 프롬프트가 각각 77-token 이하인지 확인
 
 ## 아직 검증되지 않은 항목
 
@@ -120,3 +121,5 @@ Python 3.12 인터프리터의 구문 컴파일은 통과했지만 해당 인터
 - 4-step 이미지의 시간대·톤 반영 및 6/8-step 대비 블라인드 선호도
 - VM에서 backend의 `BACKEND_PUBLIC_URL` 접근 가능 여부
 - L4 클린 환경에서 두 requirements 파일의 연속 설치와 `pip check`
+- 이번 fast 프롬프트 변경 후 대표 상품 2종×4비율의 배경 유사 상품·가짜 문자·대형 원형 소품 부재 여부(위 9번)
+- 이번 fast 프롬프트 변경 후 `self_aware`와 `benefit` 쇼츠 장면의 육안 구분 여부(위 10번)
