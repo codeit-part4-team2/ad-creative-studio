@@ -12,7 +12,13 @@ backend 연동 계약은 [API 계약](../docs/api_contract.md), L4 검증 절차
   기본 768×768 배경을 1024×1024로 확대한 후 rembg로 분리한 1024×1024 원본 상품
   캔버스를 알파 합성합니다. 비정사각형 프리셋은 `FAST_BACKGROUND_SIZE=768`,
   `IMAGE_SIZE=1024`를 기준으로 같은 배율의 8픽셀 그리드 크기를 계산하므로 환경변수
-  튜닝을 바꿔도 원래 비율을 유지합니다.
+  튜닝을 바꿔도 원래 비율을 유지합니다. fast 배경 프롬프트는 요청의 제품명·판매
+  포인트·제품 보존 문장을 사용하지 않고 `tone`, `time_slot`, 명시적
+  `scene_purpose`만으로 내부에서 다시 구성합니다. 따라서 배경 모델이 제품 종류를
+  먼저 그린 뒤 원본 상품과 중복되는 경로를 차단하면서 쇼츠의 자기인식·소구점 장면
+  차이는 유지합니다. 4개 톤×6개 시간대×3개
+  장면 목적의 최종 프롬프트는 310자 이하로 고정하며 SDXL의 두 CLIP tokenizer에서 최대
+  65/77 tokens로 확인했습니다.
 - `quality_regenerate`: SDXL + 공식 Canny ControlNet + IP-Adapter를 30-step으로
   실행하는 비교군입니다. 제품 보존 여부를 측정하지 않았으므로 성공 응답에서도
   `product_preserved`를 임의로 `true`로 표시하지 않습니다.
@@ -85,6 +91,11 @@ USE_MOCK_GENERATION=false
 HTTP(S) origin의 쉼표 구분 목록입니다. 요청 URL은 이 목록과 일치해야 하고 redirect는
 허용하지 않습니다.
 
+기본 `FAST_GUIDANCE_SCALE=1.0`은 LCM-LoRA의 classifier-free guidance를 끄므로
+`negative_prompt`가 denoising에 적용되지 않습니다. 이 설정에서는 제품 비의존 positive
+prompt가 배경 오염 방지의 기준선입니다. `FAST_GUIDANCE_SCALE`을 1.0보다 높이면
+negative prompt가 활성화되지만 속도·VRAM·아티팩트를 L4에서 다시 비교해야 합니다.
+
 모델 서버 설정은 루트 [환경변수 예시](../.env.example)에 정리되어 있습니다.
 
 ## 벤치마크
@@ -104,6 +115,9 @@ python -m tools.benchmark_latency \
 `output_width`/`output_height`가 포함됩니다. 기존 `background_size`/`output_size`는
 정사각형 요청에서만 값이 있고 비정사각형에서는 `null`입니다.
 실제 L4 성능과 이미지 품질은 아직 로컬 테스트만으로 확정할 수 없습니다.
+`product_preserved=true`는 fast 경로에서 원본 RGBA를 알파 합성했다는 뜻이며, 생성된
+배경에 유사 상품·가짜 문자·대형 소품이 없다는 판정은 아닙니다. 해당 항목은 아래 L4
+육안 인수 테스트를 별도로 통과해야 합니다.
 
 광고 생성 프리셋은 `thumbnail`(1:1), `sns_card`(4:5), `story_vertical`(9:16),
 `wide_banner`(16:9) 네 가지입니다. `output_format`을 생략한 기존 호출은

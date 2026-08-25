@@ -55,10 +55,12 @@ def test_backend_resolves_relative_product_image_for_remote_model_server(monkeyp
         image_prompt="premium studio",
         negative_prompt="blurry",
         time_slot="commute_am",
+        scene_purpose="benefit",
     ))
 
     assert posted[0][0] == "http://model.internal:8001/infer"
     assert posted[0][1]["product_image_url"] == "http://backend.internal:8000/files/uploads/prd_1.png"
+    assert posted[0][1]["scene_purpose"] == "benefit"
 
 
 def test_backend_rejects_absolute_product_url_from_another_origin(monkeypatch) -> None:

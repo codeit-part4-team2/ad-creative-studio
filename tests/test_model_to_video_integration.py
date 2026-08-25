@@ -132,6 +132,10 @@ def test_persisted_model_result_builds_three_image_four_voice_short(tmp_path, mo
     assert completed.render_status is RenderStatus.COMPLETED
     assert len(requests) == 2
     assert all(request["product_image_url"] == "/files/uploads/prd_model.png" for request in requests)
+    assert [request["scene_purpose"] for request in requests] == [
+        "self_aware",
+        "benefit",
+    ]
     assert renderer.scene_count == 3
     assert renderer.audio_count == 4
     assert len(tts_provider.texts) == 4

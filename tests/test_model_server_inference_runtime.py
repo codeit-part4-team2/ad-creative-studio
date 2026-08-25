@@ -140,6 +140,73 @@ def test_fast_inference_composites_source_and_returns_stage_metadata() -> None:
     assert store.saved[0].getpixel((0, 0)) == (0, 128, 0)
 
 
+def test_fast_inference_replaces_product_aware_prompt_with_clean_scene() -> None:
+    pipeline = _FakePipeline()
+    engine = InferenceEngine(
+        config=replace(
+            InferenceConfig(),
+            image_size=16,
+            fast_background_size=8,
+        ),
+        preprocessor=_FakePreprocessor(),
+        pipeline=pipeline,
+        output_store=_CaptureStore(),
+        synchronize=lambda: None,
+    )
+
+    engine.run(
+        product_id="fan-1",
+        product_image_url="https://images.example/fan.png",
+        tone="premium",
+        time_slot="late_night",
+        image_prompt=(
+            "Create a product advertisement background for portable fan. "
+            "Preserve the uploaded appliance and logo."
+        ),
+        negative_prompt="duplicate product, clock, text",
+    )
+
+    effective_prompt = str(pipeline.calls[0]["prompt"])
+    assert "vacant backdrop" in effective_prompt
+    assert "matte charcoal wall" in effective_prompt
+    assert "subtle warm edge glow" in effective_prompt
+    assert "fan" not in effective_prompt.casefold()
+    assert "product" not in effective_prompt.casefold()
+    assert "appliance" not in effective_prompt.casefold()
+    assert "logo" not in effective_prompt.casefold()
+
+
+def test_fast_inference_preserves_typed_shorts_scene_purpose() -> None:
+    pipeline = _FakePipeline()
+    engine = InferenceEngine(
+        config=replace(
+            InferenceConfig(),
+            image_size=16,
+            fast_background_size=8,
+        ),
+        preprocessor=_FakePreprocessor(),
+        pipeline=pipeline,
+        output_store=_CaptureStore(),
+        synchronize=lambda: None,
+    )
+
+    for scene_purpose in ("self_aware", "benefit"):
+        engine.run(
+            product_id="fan-1",
+            product_image_url="https://images.example/fan.png",
+            tone="premium",
+            time_slot="commute_pm",
+            scene_purpose=scene_purpose,
+            image_prompt="product-aware text that fast mode must ignore",
+            negative_prompt="duplicate product, clock, text",
+        )
+
+    prompts = [str(call["prompt"]) for call in pipeline.calls]
+    assert prompts[0] != prompts[1]
+    assert "deadpan dramatic light" in prompts[0]
+    assert "welcoming practical light" in prompts[1]
+
+
 def test_quality_result_does_not_claim_unmeasured_product_preservation() -> None:
     config = replace(
         InferenceConfig(),
@@ -168,6 +235,7 @@ def test_quality_result_does_not_claim_unmeasured_product_preservation() -> None
     assert result.preservation_method == "not_evaluated"
     assert result.background_size == 16
     assert result.output_size == 16
+    assert pipeline.calls[0]["prompt"] == "modern pop art"
 
 
 def test_non_square_inference_forwards_preset_dimensions_and_reports_metadata() -> None:

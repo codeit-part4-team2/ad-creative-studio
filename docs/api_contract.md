@@ -256,7 +256,8 @@ History에서 그 시간대 결과가 있으면 반환, 없으면 `available: fa
   "image_prompt": "Create a product advertisement background for ... (영어)",
   "negative_prompt": "blurry, distorted product, extra logo, watermark",
   "time_slot": "commute_am",
-  "output_format": "story_vertical"
+  "output_format": "story_vertical",
+  "scene_purpose": "standard"
 }
 ```
 
@@ -291,9 +292,18 @@ History에서 그 시간대 결과가 있으면 반환, 없으면 `available: fa
 ```
 
 `image_prompt`/`negative_prompt`는 `app/prompt/builder.py`가 만들어서 전달합니다.
-`product_preserved`는 R2/R3가 자체 검증 후 반환 — 평가 1순위 지표(제품 보존율)와 연동됩니다.
+`quality_regenerate`는 이 이미지 프롬프트를 그대로 사용하지만, `fast_composite`는 제품명·
+판매 포인트·보존 문장을 무시하고 `tone`/`time_slot`/`scene_purpose`만으로 제품 비의존
+배경 프롬프트를 내부 재구성합니다. `scene_purpose`는 `standard`(기본값),
+`self_aware`, `benefit`만 허용해 쇼츠 장면 차이를 제품 의미와 분리합니다.
+기본 `FAST_GUIDANCE_SCALE=1.0`에서는 negative prompt가 적용되지
+않으며, 1.0보다 큰 값에서만 활성화됩니다.
+`fast_composite`의 `product_preserved=true`는 원본 RGBA 알파 합성을 의미합니다. 생성
+배경의 유사 상품·가짜 문자·대형 소품 부재까지 자동 판정한 값은 아니므로 L4 이미지
+인수 검사를 별도로 수행합니다. `quality_regenerate`는 보존을 측정하지 않아 `null`입니다.
 기존 필드는 그대로 유지하며, 성능·보존 메타데이터는 선택 필드입니다.
-`output_format`을 생략한 기존 호출은 `thumbnail`로 처리됩니다. 새 호출은 임의의
+`output_format`을 생략한 기존 호출은 `thumbnail`, `scene_purpose`를 생략한 호출은
+`standard`로 처리됩니다. 새 호출은 임의의
 width/height가 아니라 네 프리셋 중 하나만 보낼 수 있습니다. `background_size`와
 `output_size`는 정사각형 호환 필드라 비정사각형에서는 `null`이고, 실제 크기는
 명시적 width/height 필드를 기준으로 확인합니다.
@@ -307,8 +317,9 @@ model_server는 `MODEL_IMAGE_ALLOWED_ORIGINS`에 등록된 origin만 내려받�
 거부합니다.
 `generated_image_url`이 상대경로면 backend가 `MODEL_SERVER_URL`을 붙여 다운로드합니다.
 
-코믹 쇼츠 1건은 기존 광고 대표 이미지 1장을 그대로 재사용하고, 위 계약을 바꾸지 않은 `/infer`
-요청을 정확히 2번 **순차 호출**해 자기인식·소구점 장면을 만듭니다. `product_preserved=true`인
+코믹 쇼츠 1건은 기존 광고 대표 이미지 1장을 그대로 재사용하고, `/infer` 요청을
+`scene_purpose=self_aware`, `scene_purpose=benefit`으로 정확히 2번 **순차 호출**해 장면을
+만듭니다. `product_preserved=true`인
 응답만 사용합니다. TTS와 FFmpeg 렌더링은 CPU 백엔드 소유이며 모델 서버 GPU/VRAM을 사용하지 않습니다.
 
 ### 응답 헤더 (S1 — 큐 대기 안내)

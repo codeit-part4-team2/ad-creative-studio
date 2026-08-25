@@ -37,11 +37,13 @@ def _storyboard(tmp_path: Path) -> Storyboard:
 def test_provider_reuses_hero_and_makes_exactly_two_sequential_calls(tmp_path):
     events: list[str] = []
     prompts: list[str] = []
+    scene_purposes: list[str] = []
 
     def request_generation(**kwargs):
         call_number = len(prompts) + 1
         events.append(f"request:{call_number}")
         prompts.append(kwargs["image_prompt"])
+        scene_purposes.append(kwargs["scene_purpose"])
         return {
             "status": "done",
             "generated_image_url": f"/files/outputs/scene-{call_number}.png",
@@ -66,6 +68,7 @@ def test_provider_reuses_hero_and_makes_exactly_two_sequential_calls(tmp_path):
     assert events == ["request:1", "fetch:1", "request:2", "fetch:2"]
     assert len(prompts) == 2
     assert prompts[0] != prompts[1]
+    assert scene_purposes == ["self_aware", "benefit"]
     assert [image.purpose for image in images.images] == ["hero", "self_aware", "benefit"]
     assert all(image.path.is_relative_to(output_dir.resolve()) for image in images.images)
     assert len(set(images.sha256s)) == 3
@@ -101,11 +104,13 @@ def test_provider_passes_existing_infer_contract_fields(tmp_path):
             "image_prompt",
             "negative_prompt",
             "time_slot",
+            "scene_purpose",
         }
         for call in calls
     )
     assert all(call["product_id"] == "prd_1" for call in calls)
     assert all(call["time_slot"] == "commute_pm" for call in calls)
+    assert [call["scene_purpose"] for call in calls] == ["self_aware", "benefit"]
     for call in calls:
         negative_prompt = str(call["negative_prompt"])
         assert "wristwatch" in negative_prompt

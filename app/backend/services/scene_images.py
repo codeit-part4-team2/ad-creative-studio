@@ -119,6 +119,7 @@ class SceneImageProvider:
             ),
             negative_prompt=NEGATIVE_PROMPT,
             time_slot=storyboard.time_slot,
+            scene_purpose=purpose,
         )
         if response.get("status") != "done":
             raise RuntimeError("쇼츠 추가 장면 생성에 실패했습니다")

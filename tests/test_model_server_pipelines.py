@@ -42,16 +42,28 @@ def _artifacts() -> ProductArtifacts:
     )
 
 
-def test_background_prompt_requests_an_empty_lower_center_product_area() -> None:
-    prompt = build_background_prompt("warm morning cafe, natural light")
+def test_background_prompt_keeps_the_positive_conditioning_object_free() -> None:
+    scene = "vacant backdrop, bare lower-center surface"
+    prompt = build_background_prompt(scene)
+    normalized = prompt.casefold()
 
-    assert prompt.startswith("text-free background, no letters, numbers, signs, or UI")
-    assert "warm morning cafe, natural light" in prompt
-    assert "empty product photography scene" in prompt
-    assert "clear lower-center placement area" in prompt
-    assert "unobstructed background behind the placement area" in prompt
-    assert "small peripheral props only" in prompt
-    assert "no dominant object behind the product area" in prompt
+    assert prompt == f"{scene}, photorealistic"
+    assert all(
+        risky_term not in normalized
+        for risky_term in (
+            "product",
+            "appliance",
+            "device",
+            "package",
+            "logo",
+            "signboard",
+            "poster",
+            "advertising",
+            "commercial",
+            "studio",
+            "luxury",
+        )
+    )
 
 
 def test_fast_pipeline_is_lazy_and_uses_four_step_lcm_parameters() -> None:
@@ -90,15 +102,39 @@ def test_fast_pipeline_is_lazy_and_uses_four_step_lcm_parameters() -> None:
     assert result.image.size == (16, 16)
     assert "image" not in fake.calls[0]
     assert "ip_adapter_image" not in fake.calls[0]
+    assert fake.calls[0]["negative_prompt"] is None
+
+
+def test_fast_pipeline_activates_deduplicated_negative_prompt_with_cfg() -> None:
+    config = replace(
+        InferenceConfig(),
+        image_size=16,
+        fast_background_size=8,
+        fast_guidance_scale=1.5,
+    )
+    fake = _FakePipeline()
+    pipeline = DiffusersGenerationPipeline(
+        config,
+        loader=lambda _: LoadedPipeline(fake, "cuda"),
+        generator_factory=lambda device, seed: (device, seed),
+        reset_peak_memory=lambda: None,
+        peak_memory_reader=lambda: 3.25,
+    )
+
+    pipeline.generate(
+        cache_key="product:1",
+        prompt="vacant studio",
+        negative_prompt=NEGATIVE_PROMPT,
+        artifacts=_artifacts(),
+    )
+
+    assert fake.calls[0]["guidance_scale"] == 1.5
     background_negative = str(fake.calls[0]["negative_prompt"])
     terms = [term.strip() for term in background_negative.split(",") if term.strip()]
     assert len(terms) == len({term.casefold() for term in terms})
     assert len(terms) <= 28
     assert "text" in terms
-    assert "signboard" in terms
     assert "wristwatch" in background_negative
-    assert "large circular prop" in background_negative
-    assert "softbox" in background_negative
     assert "foreground product" in background_negative
 
 

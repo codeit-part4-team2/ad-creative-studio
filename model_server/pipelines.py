@@ -36,15 +36,7 @@ class GenerationResult:
 
 
 def build_background_prompt(prompt: str) -> str:
-    return (
-        "text-free background, no letters, numbers, signs, or UI, "
-        f"{prompt}, empty product photography scene, "
-        "one clear lower-center placement area, "
-        "unobstructed background behind the placement area, "
-        "small peripheral props only, all props confined to the far edges, "
-        "no dominant object behind the product area, plain uninterrupted wall, "
-        "realistic surface, commercial advertising background, no foreground product"
-    )
+    return f"{prompt}, photorealistic"
 
 
 def _default_generator_factory(device: str, seed: int) -> object:
@@ -239,13 +231,17 @@ class DiffusersGenerationPipeline:
             raise ValueError("background and output sizes must share an aspect ratio")
 
         if self._config.profile is InferenceProfile.FAST_COMPOSITE:
-            background_negative = merge_negative_prompts(
-                FAST_BACKGROUND_NEGATIVE_PROMPT,
-                negative_prompt,
+            active_negative_prompt = (
+                merge_negative_prompts(
+                    FAST_BACKGROUND_NEGATIVE_PROMPT,
+                    negative_prompt,
+                )
+                if self._config.fast_guidance_scale > 1.0
+                else None
             )
             output = loaded.pipeline(
                 prompt=build_background_prompt(prompt),
-                negative_prompt=background_negative,
+                negative_prompt=active_negative_prompt,
                 num_inference_steps=self._config.fast_steps,
                 guidance_scale=self._config.fast_guidance_scale,
                 width=resolved_background_size[0],

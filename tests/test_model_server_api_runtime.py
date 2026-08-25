@@ -89,6 +89,8 @@ def test_infer_returns_backward_compatible_fields_and_per_stage_timings() -> Non
     assert body["output_width"] == 1024
     assert body["output_height"] == 1024
     assert engine.calls[0]["output_format"] == "thumbnail"
+    assert engine.calls[0]["time_slot"] == "evening"
+    assert engine.calls[0]["scene_purpose"] == "standard"
 
 
 def test_infer_forwards_an_explicit_native_ratio() -> None:
@@ -102,6 +104,32 @@ def test_infer_forwards_an_explicit_native_ratio() -> None:
 
     assert response.status_code == 200
     assert engine.calls[0]["output_format"] == "story_vertical"
+
+
+def test_infer_forwards_an_explicit_shorts_scene_purpose() -> None:
+    engine = _SuccessfulEngine()
+    app.dependency_overrides[get_engine] = lambda: engine
+    payload = {**_payload(), "scene_purpose": "self_aware"}
+    try:
+        response = TestClient(app).post("/infer", json=payload)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert engine.calls[0]["scene_purpose"] == "self_aware"
+
+
+def test_infer_rejects_unknown_scene_purpose() -> None:
+    engine = _SuccessfulEngine()
+    app.dependency_overrides[get_engine] = lambda: engine
+    payload = {**_payload(), "scene_purpose": "hero"}
+    try:
+        response = TestClient(app).post("/infer", json=payload)
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert engine.calls == []
 
 
 def test_infer_rejects_legacy_detail_banner_for_new_generation() -> None:
