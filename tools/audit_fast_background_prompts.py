@@ -4,6 +4,7 @@ import argparse
 import json
 from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
+from typing import Any
 
 from app.prompt.backgrounds import FAST_SCENE_PURPOSES, build_fast_background_prompt
 from app.prompt.templates import TIME_SLOT_TEMPLATES, TONE_TEMPLATES
@@ -80,6 +81,29 @@ def _token_counter(tokenizer: object) -> TokenCounter:
     return count
 
 
+def load_sdxl_token_counters(
+    *,
+    model_id: str,
+    local_files_only: bool,
+    tokenizer_class: Any | None = None,
+) -> tuple[TokenCounter, TokenCounter]:
+    """Load the two CLIP tokenizers stored in an SDXL Diffusers repository."""
+    if tokenizer_class is None:
+        from transformers import CLIPTokenizer
+
+        tokenizer_class = CLIPTokenizer
+
+    tokenizers = tuple(
+        tokenizer_class.from_pretrained(
+            model_id,
+            subfolder=subfolder,
+            local_files_only=local_files_only,
+        )
+        for subfolder in ("tokenizer", "tokenizer_2")
+    )
+    return (_token_counter(tokenizers[0]), _token_counter(tokenizers[1]))
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Audit every fast background prompt with both SDXL tokenizers."
@@ -96,23 +120,15 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     try:
-        from transformers import AutoTokenizer
+        token_counters = load_sdxl_token_counters(
+            model_id=args.model_id,
+            local_files_only=not args.allow_download,
+        )
     except ImportError as exc:
         raise SystemExit(
             "transformers is required; install the model optional dependencies"
         ) from exc
-
-    tokenizers = tuple(
-        AutoTokenizer.from_pretrained(
-            args.model_id,
-            subfolder=subfolder,
-            local_files_only=not args.allow_download,
-        )
-        for subfolder in ("tokenizer", "tokenizer_2")
-    )
-    summary = audit_fast_background_prompts(
-        token_counters=tuple(_token_counter(tokenizer) for tokenizer in tokenizers)
-    )
+    summary = audit_fast_background_prompts(token_counters=token_counters)
     print(json.dumps(asdict(summary), ensure_ascii=False, indent=2))
     return 0
 
