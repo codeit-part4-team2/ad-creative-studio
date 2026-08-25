@@ -17,6 +17,11 @@ import {
   type YouTubeStatusResponse,
 } from "@/lib/api/youtube";
 import { resolveAssetUrl } from "@/lib/api/client";
+import {
+  canRetryPublish,
+  canSubmitPublish,
+  needsPronunciationConfirmation,
+} from "@/lib/publishing-state";
 
 import type {
   ToneResult,
@@ -92,6 +97,11 @@ function PublishingContent() {
   );
 
   const isPublishing = publishingVideoId === selected?.video.video_job_id;
+  const isPublishRetry = selected ? canRetryPublish(selected.video) : false;
+  const canSubmitSelected = selected ? canSubmitPublish(selected.video) : false;
+  const needsPronunciationReview = selected
+    ? needsPronunciationConfirmation(selected.video)
+    : false;
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -216,8 +226,7 @@ function PublishingContent() {
         activation_at: activationIso,
         publish_to_youtube: true,
         pronunciation_confirmed:
-          !selected.video.pronunciation_review_required ||
-          pronunciationConfirmed,
+          !needsPronunciationReview || pronunciationConfirmed,
       });
 
       setVideos((current) =>
@@ -351,7 +360,7 @@ function PublishingContent() {
                     src={resolveAssetUrl(selected.video.video_url)}
                   />
                 )}
-                {selected.video.pronunciation_review_required && (
+                {needsPronunciationReview && (
                   <label className="flex items-start gap-2 rounded-lg border p-3 text-sm">
                     <input
                       type="checkbox"
@@ -422,15 +431,16 @@ function PublishingContent() {
                         !activationAt ||
                         !youtubeStatus?.configured ||
                         !youtubeStatus?.token_available ||
-                        selected.video.approval_status === "approved" ||
-                        (selected.video.pronunciation_review_required &&
-                          !pronunciationConfirmed)
+                        !canSubmitSelected ||
+                        (needsPronunciationReview && !pronunciationConfirmed)
                       }
                       className="w-full rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {isPublishing
                         ? "YouTube 예약 게시 처리 중..."
-                        : "승인 및 YouTube 예약 게시"}
+                        : isPublishRetry
+                          ? "YouTube 예약 게시 재시도"
+                          : "승인 및 YouTube 예약 게시"}
                     </button>
                   </>
                 )}

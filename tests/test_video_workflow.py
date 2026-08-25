@@ -28,7 +28,13 @@ from app.backend.services.video_workflow import (
     _track_render_stage,
     build_default_video_workflow,
 )
-from app.backend.services.youtube_publisher import PublishRejected, PublisherStatus
+from app.backend.services.youtube_publisher import (
+    AuthenticationRequired,
+    PublishRejected,
+    PublishUncertain,
+    PublisherStatus,
+    ScheduleExpired,
+)
 
 
 KST = ZoneInfo("Asia/Seoul")
@@ -1007,6 +1013,91 @@ def test_youtube_failure_keeps_internal_approval(tmp_path, board):
     assert stored.approval_status is ApprovalStatus.APPROVED
     assert stored.publish_status is PublishStatus.FAILED
     assert "external detail" not in (stored.youtube_error or "")
+
+
+@pytest.mark.parametrize(
+    ("publish_error", "failed_status"),
+    [
+        (PublishRejected("rejected"), PublishStatus.FAILED),
+        (AuthenticationRequired("expired token"), PublishStatus.AUTH_REQUIRED),
+        (ScheduleExpired("late schedule"), PublishStatus.SCHEDULE_EXPIRED),
+    ],
+)
+def test_retryable_publish_failure_can_be_requeued(
+    tmp_path,
+    board,
+    publish_error,
+    failed_status,
+):
+    publisher = FakePublisher(error=publish_error)
+    service = _service(tmp_path, board, publisher=publisher)
+    job = _rendered_job(service)
+    first_activation = _next_commute_am()
+    service.approve(
+        job.video_job_id,
+        activation_at=first_activation,
+        publish_to_youtube=True,
+    )
+    service.run_publish(job.video_job_id)
+    assert service.get(job.video_job_id).publish_status is failed_status
+
+    retry_activation = first_activation + timedelta(days=1)
+    publisher.error = None
+    requeued = service.approve(
+        job.video_job_id,
+        activation_at=retry_activation,
+        publish_to_youtube=True,
+    )
+
+    assert requeued.approval_status is ApprovalStatus.APPROVED
+    assert requeued.publish_status is PublishStatus.PENDING
+    assert requeued.activation_at == retry_activation
+    assert requeued.youtube_error is None
+    service.run_publish(job.video_job_id)
+    assert service.get(job.video_job_id).publish_status is PublishStatus.SCHEDULED
+    assert len(publisher.requests) == 2
+
+
+def test_uncertain_publish_result_cannot_be_automatically_retried(tmp_path, board):
+    service = _service(
+        tmp_path,
+        board,
+        publisher=FakePublisher(error=PublishUncertain("unknown outcome")),
+    )
+    job = _rendered_job(service)
+    service.approve(
+        job.video_job_id,
+        activation_at=_next_commute_am(),
+        publish_to_youtube=True,
+    )
+    service.run_publish(job.video_job_id)
+
+    with pytest.raises(WorkflowConflict, match="수동 확인"):
+        service.approve(
+            job.video_job_id,
+            activation_at=_next_commute_am() + timedelta(days=1),
+            publish_to_youtube=True,
+        )
+
+
+def test_unexpected_publish_exception_requires_manual_review(tmp_path, board):
+    service = _service(
+        tmp_path,
+        board,
+        publisher=FakePublisher(error=RuntimeError("transport interrupted")),
+    )
+    job = _rendered_job(service)
+    service.approve(
+        job.video_job_id,
+        activation_at=_next_commute_am(),
+        publish_to_youtube=True,
+    )
+
+    service.run_publish(job.video_job_id)
+
+    stored = service.get(job.video_job_id)
+    assert stored.publish_status is PublishStatus.NEEDS_REVIEW
+    assert stored.youtube_error == "YouTube 게시 결과를 수동으로 확인해야 합니다"
 
 
 def test_duplicate_publish_call_keeps_scheduled_job_unchanged(workflow):

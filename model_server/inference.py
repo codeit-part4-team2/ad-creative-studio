@@ -14,6 +14,7 @@ from typing import Protocol
 from PIL import Image
 
 from app.image_presets import OutputFormatLiteral, resolve_runtime_image_preset
+from app.prompt.backgrounds import FastScenePurpose, build_fast_background_prompt
 from model_server.cache import TTLCache
 from model_server.compositing import composite_product
 from model_server.config import InferenceConfig, InferenceProfile
@@ -156,7 +157,9 @@ class InferenceEngine:
         tone: str,
         image_prompt: str,
         negative_prompt: str,
+        time_slot: str | None = None,
         output_format: OutputFormatLiteral = "thumbnail",
+        scene_purpose: FastScenePurpose = "standard",
     ) -> InferenceResult:
         started_at = time.perf_counter()
         timings = StageTimings(synchronize=self._synchronize)
@@ -165,6 +168,15 @@ class InferenceEngine:
             output_format,
             fast_background_size=self._config.fast_background_size,
             image_size=self._config.image_size,
+        )
+        effective_prompt = (
+            build_fast_background_prompt(
+                tone=tone,
+                time_slot=time_slot,
+                scene_purpose=scene_purpose,
+            )
+            if self._config.profile is InferenceProfile.FAST_COMPOSITE
+            else image_prompt
         )
 
         with timings.measure("preprocess"):
@@ -198,7 +210,7 @@ class InferenceEngine:
             with timings.measure("generate"):
                 generation = self._pipeline.generate(
                     cache_key=cache_key,
-                    prompt=image_prompt,
+                    prompt=effective_prompt,
                     negative_prompt=negative_prompt,
                     artifacts=artifacts,
                     background_size=preset.background_size,

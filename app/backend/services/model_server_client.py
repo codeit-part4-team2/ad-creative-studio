@@ -14,6 +14,8 @@ from urllib.parse import urljoin, urlparse
 import httpx
 from PIL import Image
 
+from app.prompt.backgrounds import FastScenePurpose
+
 MODEL_SERVER_URL = os.getenv("MODEL_SERVER_URL", "http://localhost:8001")
 BACKEND_PUBLIC_URL = os.getenv("BACKEND_PUBLIC_URL", "http://localhost:8000")
 MAX_GENERATED_IMAGE_BYTES = 25 * 1024 * 1024
@@ -74,6 +76,7 @@ def _generation_payload(
     negative_prompt: str | None,
     time_slot: str | None,
     output_format: str = "thumbnail",
+    scene_purpose: FastScenePurpose = "standard",
 ) -> dict[str, object]:
     return {
         "product_id": product_id,
@@ -83,23 +86,33 @@ def _generation_payload(
         "negative_prompt": negative_prompt or "",
         "time_slot": time_slot,
         "output_format": output_format,
+        "scene_purpose": scene_purpose,
     }
 
 
-async def request_generation(product_id: str, product_image_url: str, tone: str,
-                              image_prompt: str, negative_prompt: str | None,
-                              time_slot: str | None,
-                              output_format: str = "thumbnail", *,
-                              client: httpx.AsyncClient | None = None) -> dict:
+async def request_generation(
+    product_id: str,
+    product_image_url: str,
+    tone: str,
+    image_prompt: str,
+    negative_prompt: str | None,
+    time_slot: str | None,
+    output_format: str = "thumbnail",
+    *,
+    scene_purpose: FastScenePurpose = "standard",
+    client: httpx.AsyncClient | None = None,
+) -> dict:
     payload = _generation_payload(
-        product_id,
-        product_image_url,
-        tone,
-        image_prompt,
-        negative_prompt,
-        time_slot,
-        output_format,
+        product_id=product_id,
+        product_image_url=product_image_url,
+        tone=tone,
+        image_prompt=image_prompt,
+        negative_prompt=negative_prompt,
+        time_slot=time_slot,
+        output_format=output_format,
+        scene_purpose=scene_purpose,
     )
+
     async def post(active_client: httpx.AsyncClient) -> dict:
         response = await active_client.post(
             f"{MODEL_SERVER_URL}/infer",
@@ -111,18 +124,26 @@ async def request_generation(product_id: str, product_image_url: str, tone: str,
     return await _with_async_client(post, client=client, timeout=120)
 
 
-def request_generation_sync(product_id: str, product_image_url: str, tone: str,
-                            image_prompt: str, negative_prompt: str | None,
-                            time_slot: str | None,
-                            output_format: str = "thumbnail") -> dict:
+def request_generation_sync(
+    product_id: str,
+    product_image_url: str,
+    tone: str,
+    image_prompt: str,
+    negative_prompt: str | None,
+    time_slot: str | None,
+    output_format: str = "thumbnail",
+    *,
+    scene_purpose: FastScenePurpose = "standard",
+) -> dict:
     payload = _generation_payload(
-        product_id,
-        product_image_url,
-        tone,
-        image_prompt,
-        negative_prompt,
-        time_slot,
-        output_format,
+        product_id=product_id,
+        product_image_url=product_image_url,
+        tone=tone,
+        image_prompt=image_prompt,
+        negative_prompt=negative_prompt,
+        time_slot=time_slot,
+        output_format=output_format,
+        scene_purpose=scene_purpose,
     )
     with httpx.Client(timeout=120) as client:
         response = client.post(f"{MODEL_SERVER_URL}/infer", json=payload)

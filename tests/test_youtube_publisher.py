@@ -12,6 +12,7 @@ from app.backend.services.youtube_publisher import (
     GoogleYouTubePublisher,
     PublishRejected,
     PublishRequest,
+    PublishUncertain,
     ScheduleExpired,
 )
 
@@ -163,6 +164,20 @@ def test_retryable_error_retries_without_exceeding_three_attempts(tmp_path):
     video_id = _publisher(service, sleep=sleeps.append).publish(_request(video))
 
     assert video_id == "yt_after_retry"
+    assert sleeps == [1.0, 2.0]
+
+
+def test_exhausted_retryable_error_is_reported_as_uncertain(tmp_path):
+    video = tmp_path / "short.mp4"
+    video.write_bytes(b"mp4")
+    service = FakeYouTubeService(
+        [_http_error(503), _http_error(503), _http_error(503)]
+    )
+    sleeps = []
+
+    with pytest.raises(PublishUncertain):
+        _publisher(service, sleep=sleeps.append).publish(_request(video))
+
     assert sleeps == [1.0, 2.0]
 
 

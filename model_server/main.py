@@ -154,7 +154,9 @@ async def infer(
                 tone=request.tone,
                 image_prompt=request.image_prompt,
                 negative_prompt=request.negative_prompt,
+                time_slot=request.time_slot,
                 output_format=request.output_format,
+                scene_purpose=request.scene_purpose,
             )
         queue_manager.record_gpu_duration(result.stage_times_sec["generate"])
         response.headers["X-Gen-Time-Sec"] = str(ctx.duration_sec)

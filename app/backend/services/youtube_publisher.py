@@ -166,10 +166,14 @@ class GoogleYouTubePublisher:
                     raise AuthenticationRequired(
                         "YouTube 인증을 갱신해야 합니다"
                     ) from exc
-                if status in RETRIABLE_STATUS_CODES and retry_count < 2:
-                    self._sleep(float(2**retry_count))
-                    retry_count += 1
-                    continue
+                if status in RETRIABLE_STATUS_CODES:
+                    if retry_count < 2:
+                        self._sleep(float(2**retry_count))
+                        retry_count += 1
+                        continue
+                    raise PublishUncertain(
+                        "YouTube 업로드 결과를 확정할 수 없습니다"
+                    ) from exc
                 raise PublishRejected(
                     f"YouTube 업로드가 거부되었습니다 (HTTP {status})"
                 ) from exc

@@ -92,6 +92,11 @@ Python 3.12 인터프리터의 구문 컴파일은 통과했지만 해당 인터
 15. `requirements-torch-cu132.txt`에 L4용 torch/torchvision과 CUDA 인덱스를 함께 고정
 16. 같은 캐시 실패를 기다리는 스레드마다 독립된 예외 객체를 전달
 17. 이미지 픽셀 상한을 EXIF 처리와 픽셀 디코딩 전에 검사
+18. fast 배경은 제품명·판매 포인트·보존 문장을 버리고 tone/time_slot/scene_purpose 전용 clean scene으로 재구성
+19. `FAST_GUIDANCE_SCALE=1.0`에서 무효인 negative prompt를 적용된 것처럼 전달하지 않고,
+    1.0 초과 CFG 설정에서만 활성화
+20. fast의 72개 tone/time_slot/scene_purpose 조합을 340자 이하로 제한하고 SDXL dual
+    tokenizer 기준 최대 74/77 tokens로 유지해 뒤쪽 장면·조명 조건 truncation 방지
 
 ## 서빙 담당자 확인 순서
 
@@ -103,6 +108,9 @@ Python 3.12 인터프리터의 구문 컴파일은 통과했지만 해당 인터
 6. `USE_MOCK_GENERATION=false`로 실제 E2E 한 건 실행
 7. `docs/L4_BENCHMARK_CHECKLIST.md`의 1024/768 배경, 순차·동시 요청 및 4/6/8-step 비교 측정
 8. 이전 stock VAE와 현재 FP16-safe VAE의 768/4-step 동일 seed 비교 측정
+9. 대표 상품 2종×4비율에서 배경 유사 상품·가짜 문자·대형 원형 소품이 없는지 육안 확인
+10. 동일 상품/톤/시간대의 `self_aware`와 `benefit` 쇼츠 장면이 서로 다르게 생성되는지 확인
+11. `python -m tools.audit_fast_background_prompts`로 SDXL dual tokenizer의 72개 프롬프트가 각각 77-token 이하인지 확인
 
 ## 아직 검증되지 않은 항목
 
@@ -113,3 +121,5 @@ Python 3.12 인터프리터의 구문 컴파일은 통과했지만 해당 인터
 - 4-step 이미지의 시간대·톤 반영 및 6/8-step 대비 블라인드 선호도
 - VM에서 backend의 `BACKEND_PUBLIC_URL` 접근 가능 여부
 - L4 클린 환경에서 두 requirements 파일의 연속 설치와 `pip check`
+- 이번 fast 프롬프트 변경 후 대표 상품 2종×4비율의 배경 유사 상품·가짜 문자·대형 원형 소품 부재 여부(위 9번)
+- 이번 fast 프롬프트 변경 후 `self_aware`와 `benefit` 쇼츠 장면의 육안 구분 여부(위 10번)

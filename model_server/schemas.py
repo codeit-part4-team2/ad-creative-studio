@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.image_presets import OutputFormatLiteral
+from app.prompt.backgrounds import FastScenePurpose
 
 
 ToneLiteral = Literal["emotional", "practical", "premium", "modern"]
@@ -26,6 +27,7 @@ class InferRequest(BaseModel):
     negative_prompt: str = Field(default="", max_length=4000)
     time_slot: TimeSlotLiteral
     output_format: OutputFormatLiteral = "thumbnail"
+    scene_purpose: FastScenePurpose = "standard"
 
 
 class InferResponse(BaseModel):

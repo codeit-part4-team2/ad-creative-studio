@@ -20,7 +20,7 @@ from app.backend.services.storyboard import Storyboard, StoryboardNotFound, Stor
 from app.backend.services.tts_provider import TTSAudio
 from app.backend.services.video_renderer import RenderResult
 from app.backend.services.video_workflow import VideoWorkflowService
-from app.backend.services.youtube_publisher import PublisherStatus
+from app.backend.services.youtube_publisher import PublishRejected, PublisherStatus
 
 
 KST = ZoneInfo("Asia/Seoul")
@@ -87,12 +87,15 @@ class ApiRenderer:
 class ApiPublisher:
     def __init__(self):
         self.requests = []
+        self.error: Exception | None = None
 
     def status(self):
         return PublisherStatus(True, "demo_merchant_channel", True)
 
     def publish(self, request):
         self.requests.append(request)
+        if self.error is not None:
+            raise self.error
         return "youtube_api_123"
 
 
@@ -201,6 +204,32 @@ def test_approve_returns_pending_contract_and_background_schedules(api):
     assert response.json()["publish_status"] == "pending"
     assert workflow.get(job_id).publish_status == "scheduled"
     assert len(publisher.requests) == 1
+
+
+def test_approve_requeues_failed_youtube_publish(api):
+    client, workflow, publisher = api
+    job_id = _create_completed(api)
+    publisher.error = PublishRejected("external detail")
+    first = client.post(
+        f"/api/v1/videos/{job_id}/approve",
+        json={"activation_at": ACTIVATION, "publish_to_youtube": True},
+    )
+    assert first.status_code == 202
+    assert workflow.get(job_id).publish_status == "failed"
+
+    publisher.error = None
+    retry = client.post(
+        f"/api/v1/videos/{job_id}/approve",
+        json={
+            "activation_at": "2026-08-11T08:00:00+09:00",
+            "publish_to_youtube": True,
+        },
+    )
+
+    assert retry.status_code == 202
+    assert retry.json()["publish_status"] == "pending"
+    assert workflow.get(job_id).publish_status == "scheduled"
+    assert len(publisher.requests) == 2
 
 
 def test_removed_allow_silent_field_is_rejected(api):
