@@ -17,8 +17,8 @@ backend 연동 계약은 [API 계약](../docs/api_contract.md), L4 검증 절차
   `scene_purpose`만으로 내부에서 다시 구성합니다. 따라서 배경 모델이 제품 종류를
   먼저 그린 뒤 원본 상품과 중복되는 경로를 차단하면서 쇼츠의 자기인식·소구점 장면
   차이는 유지합니다. 4개 톤×6개 시간대×3개
-  장면 목적의 최종 프롬프트는 310자 이하로 고정하며 SDXL의 두 CLIP tokenizer에서 최대
-  65/77 tokens로 확인했습니다.
+  장면 목적의 최종 프롬프트는 340자 이하로 제한하며 SDXL의 두 CLIP tokenizer에서 최대
+  74/77 tokens로 확인했습니다.
 - `quality_regenerate`: SDXL + 공식 Canny ControlNet + IP-Adapter를 30-step으로
   실행하는 비교군입니다. 제품 보존 여부를 측정하지 않았으므로 성공 응답에서도
   `product_preserved`를 임의로 `true`로 표시하지 않습니다.

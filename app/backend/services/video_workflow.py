@@ -53,6 +53,13 @@ SLOT_WINDOWS = {
 DEFAULT_FAILED_WORK_TTL_SECONDS = 7 * 24 * 60 * 60
 DEFAULT_COMPLETED_WORK_TTL_SECONDS = 7 * 24 * 60 * 60
 DEFAULT_FAILED_WORK_CLEANUP_INTERVAL_SECONDS = 60 * 60
+RETRYABLE_PUBLISH_STATUSES = frozenset(
+    {
+        PublishStatus.FAILED,
+        PublishStatus.AUTH_REQUIRED,
+        PublishStatus.SCHEDULE_EXPIRED,
+    }
+)
 COMPLETED_INTERMEDIATE_FILES = {
     "images": (
         "scene_hero.png",
@@ -691,6 +698,31 @@ class VideoWorkflowService:
 
         requested_publish = snapshot.publish_status is not PublishStatus.NOT_REQUESTED
         if snapshot.approval_status is ApprovalStatus.APPROVED:
+            if snapshot.publish_status is PublishStatus.NEEDS_REVIEW:
+                raise WorkflowConflict(
+                    "YouTube 게시 결과를 수동 확인한 뒤 재시도 여부를 결정해야 합니다"
+                )
+            if snapshot.publish_status in RETRYABLE_PUBLISH_STATUSES:
+                if not publish_to_youtube:
+                    raise WorkflowConflict(
+                        "게시 실패 후에는 YouTube 게시만 재시도할 수 있습니다"
+                    )
+                with self._state_lock:
+                    current = self._get_locked(video_job_id)
+                    if current.updated_at != snapshot.updated_at:
+                        raise WorkflowConflict(
+                            "게시 재시도 중 영상 작업 상태가 변경되었습니다"
+                        )
+                    requeued = current.model_copy(
+                        update={
+                            "publish_status": PublishStatus.PENDING,
+                            "activation_at": activation_at,
+                            "youtube_video_id": None,
+                            "youtube_error": None,
+                            "updated_at": self._clock(),
+                        }
+                    )
+                    return self._persist_locked(requeued)
             if snapshot.activation_at == activation_at and requested_publish == publish_to_youtube:
                 return snapshot
             raise WorkflowConflict("승인 후 예약 조건은 변경할 수 없습니다")
@@ -766,7 +798,11 @@ class VideoWorkflowService:
             except PublishRejected:
                 status, error, video_id = PublishStatus.FAILED, "YouTube 게시에 실패했습니다", None
             except Exception:
-                status, error, video_id = PublishStatus.FAILED, "YouTube 게시에 실패했습니다", None
+                status, error, video_id = (
+                    PublishStatus.NEEDS_REVIEW,
+                    "YouTube 게시 결과를 수동으로 확인해야 합니다",
+                    None,
+                )
             else:
                 status, error = PublishStatus.SCHEDULED, None
             with self._state_lock:

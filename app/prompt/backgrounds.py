@@ -39,7 +39,7 @@ _FAST_TIME_LIGHTING = {
 
 _BASE_SCENE = (
     "vacant backdrop, bare lower-center surface, plain unmarked wall, "
-    "clear center, cropped edge accents"
+    "clear center, no text, numbers, signage, or UI, edge accents"
 )
 
 

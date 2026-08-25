@@ -14,7 +14,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
       - run: pip install -r requirements.txt
+      - name: Test publishing UI state rules
+        run: node --test web-tests/publishing-state.test.mjs
       - name: Install FFmpeg runtime
         run: |
           sudo apt-get update

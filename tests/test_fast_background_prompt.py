@@ -23,9 +23,9 @@ def test_fast_background_prompt_stays_product_agnostic_for_every_scene(
     assert "vacant backdrop" in normalized
     assert "bare lower-center surface" in normalized
     assert "plain unmarked wall" in normalized
-    # The 310-character guard keeps every typed scene variant below CLIP's
-    # 77-token conditioning limit with measured headroom.
-    assert len(build_background_prompt(prompt)) <= 310
+    # Coarse guard only; tools.audit_fast_background_prompts verifies the
+    # authoritative dual-tokenizer 77-token budget before release.
+    assert len(build_background_prompt(prompt)) <= 340
     assert all(
         risky_term not in normalized
         for risky_term in (
@@ -65,6 +65,20 @@ def test_modern_background_avoids_clock_like_light_geometry() -> None:
 
     assert "rectangular window light" in prompt
     assert "geometric light" not in prompt
+
+
+def test_fast_background_prompt_keeps_text_suppression_without_cfg() -> None:
+    prompt = build_background_prompt(
+        build_fast_background_prompt(
+            tone="practical",
+            time_slot="commute_am",
+        )
+    ).casefold()
+
+    assert "no text" in prompt
+    assert "numbers" in prompt
+    assert "signage" in prompt
+    assert "ui" in prompt
 
 
 def test_shorts_scene_purposes_are_explicit_and_distinct() -> None:

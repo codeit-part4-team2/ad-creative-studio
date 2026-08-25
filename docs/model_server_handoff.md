@@ -95,8 +95,8 @@ Python 3.12 인터프리터의 구문 컴파일은 통과했지만 해당 인터
 18. fast 배경은 제품명·판매 포인트·보존 문장을 버리고 tone/time_slot/scene_purpose 전용 clean scene으로 재구성
 19. `FAST_GUIDANCE_SCALE=1.0`에서 무효인 negative prompt를 적용된 것처럼 전달하지 않고,
     1.0 초과 CFG 설정에서만 활성화
-20. fast의 72개 tone/time_slot/scene_purpose 조합을 310자 이하로 제한하고 SDXL dual
-    tokenizer 기준 최대 65/77 tokens로 유지해 뒤쪽 장면·조명 조건 truncation 방지
+20. fast의 72개 tone/time_slot/scene_purpose 조합을 340자 이하로 제한하고 SDXL dual
+    tokenizer 기준 최대 74/77 tokens로 유지해 뒤쪽 장면·조명 조건 truncation 방지
 
 ## 서빙 담당자 확인 순서
 
