@@ -18,7 +18,7 @@
 | 성치용 | 생성 모델 개발 | 베이스 모델 선정·학습 파이프라인·튜닝 |
 | 유수빈 | 생성 모델 개발 | 톤 4종 데이터 정의·톤별 LoRA·품질 평가 |
 | 김재헌 | 추론 파이프라인 & 서빙 (인프라 오너) | ControlNet/IP-Adapter 파이프라인, 추론 최적화, GCP VM·CUDA·배포 단독 소유 |
-| 박재철 | 프롬프트/텍스트 + 서비스 개발 (R4+R5) | 광고 문구·프롬프트 자동 보강, OpenAI 예산 관리, Streamlit UI/UX, FastAPI 백엔드 |
+| 박재철 | 프롬프트/텍스트 + 서비스 개발 (R4+R5) | 광고 문구·프롬프트 자동 보강, OpenAI 예산 관리, FastAPI 백엔드, Streamlit(프로토타입)·Next.js(실제 서비스) 프론트엔드, YouTube 게시 플로우 |
 
 ---
 
@@ -45,7 +45,7 @@
 ```
 사용자 (쇼핑몰 소형가전 판매 소상공인)
   ↓
-Streamlit — 상품 업로드 → 목적/시간대 선택 → 생성 (박재철)
+Web(Next.js, 실제 서비스) / Streamlit(프로토타입) — 상품 업로드 → 목적/시간대 선택 → 생성 (박재철)
   ↓
 FastAPI — 상태관리, Job 큐, History (박재철)
   ↓
@@ -66,28 +66,33 @@ PIL 오버레이 — 한글 문구, 규격별 배치 (박재철)
 > 이미지 내 한글은 모델이 그리지 않고 PIL로 오버레이합니다 — 문구만 고칠 때 이미지를 재생성하지 않아도 됩니다.
 > 쇼츠 음악은 사용하지 않습니다. TTS 모델은 고정 리비전·파일 해시를 확인하고 CPU에서 실행하며,
 > 발음 위험 문장은 사람이 실제 영상을 듣고 확인하기 전에는 승인할 수 없습니다.
+> Next.js(`web/`)가 최종 서비스 화면이고, Streamlit(`app/frontend/`)은 기능 검증용 프로토타입으로 병행 유지됩니다 — 상세: [web/README.md](web/README.md)
 
 ---
 
 ## 프로젝트 구조
 
 ```
-ad-service-v2/
+ad-creative-studio/
+├── docker-compose.yml         # Docker 배포 — model_server(GPU) + backend 컨테이너
 ├── app/
-│   ├── frontend/            # Streamlit — streamlit_app.py + pages/(Product·Generate·History)
+│   ├── frontend/            # Streamlit — 기능 검증용 프로토타입 (streamlit_app.py + pages/)
 │   ├── backend/              # FastAPI
 │   │   ├── api/               # products / generations / jobs / history / usage
 │   │   ├── schemas/           # Pydantic 요청/응답 스키마
 │   │   └── services/          # openai_client, model_server_client, generation_service, overlay, store
 │   └── prompt/                # Prompt Builder — 톤×시간대 템플릿, 문구 생성 규칙
-├── model_server/              # 로컬 GPU 추론 서버 자리 (성치용·유수빈·김재헌 담당)
+├── web/                       # Next.js — 최종 서비스 프론트엔드 (박재철 담당, web/README.md 참고)
+├── model_server/              # GPU 추론 서버 — SDXL/SD1.5 + 톤 LoRA + ControlNet/IP-Adapter (성치용·유수빈·김재헌 담당)
+├── deploy/                    # 배포 자산 — Dockerfile, systemd, 큐/모니터링 (김재헌 담당)
 ├── eval/                      # 평가 자산 — eval_criteria.md, metrics.py, golden_dataset/
 ├── data/{samples,outputs,uploads}/  # 실제 파일은 .gitignore 처리
 ├── notebooks/{model,data,eval}/  # 실험 노트북 (nbstripout 필터 적용, 아래 참고)
-├── scripts/                   # 실행 스크립트
-├── deploy/                    # GCP VM 배포 자산 (systemd 등, 김재헌 담당)
-├── docs/                      # api_contract.md, prompt_spec.md, architecture.md, test_results_gate0.txt
-├── tests/                     # pytest
+├── scripts/                   # 실행/운영 스크립트
+├── docs/                      # api_contract.md, prompt_spec.md, architecture.md, report/ 등
+├── tests/                     # pytest (백엔드/모델)
+├── web-tests/                 # Next.js 프론트엔드 테스트
+├── tools/                     # 운영/감사 스크립트
 └── .github/                   # PR/Issue 템플릿, CI(pytest 자동 실행)
 ```
 
@@ -102,8 +107,8 @@ ad-service-v2/
 
 ### 설치
 ```bash
-git clone https://github.com/{조직}/{repo명}.git
-cd ad-service-v2
+git clone https://github.com/codeit-part4-team2/ad-creative-studio.git
+cd ad-creative-studio
 
 python -m venv venv
 source venv/bin/activate       # Windows: venv\Scripts\activate
@@ -136,6 +141,17 @@ pytest -q
 > Mock↔실제 모델 전환은 `app/backend/services/generation_service.py`의
 > `generation_service` 한 줄만 바꾸면 됩니다.
 > VM 접속 및 모델 서빙 상시 환경은 [`SETUP.md`](./SETUP.md) 참고.
+
+### Docker로 실행 (model_server + backend)
+```bash
+cp .env.example .env            # HOST_HOME 등 채우기
+docker compose up --build        # model_server(GPU) + backend 컨테이너 기동
+```
+> GPU 컨테이너 실행에는 호스트에 nvidia-container-toolkit이 필요합니다. 상세: [deploy/README.md](deploy/README.md)
+
+### 웹 프론트엔드 (Next.js, 최종 서비스 화면)
+FastAPI 백엔드가 먼저 떠 있어야 합니다. 설치·실행 방법은 [web/README.md](web/README.md) 참고.
+Streamlit(`app/frontend/`)은 기능 검증용 프로토타입으로 계속 병행 유지됩니다.
 ---
 
 ## 평가 지표
