@@ -176,8 +176,8 @@ pytest -q
 
 ## 협업일지
 
-각자 Notion에 작성 후 팀 채널에 매일 링크 공유. (링크 추가 예정)
+각자 Notion에 작성 후 팀 채널에 매일 링크 공유: [Notion 협업일지](https://app.notion.com/p/2-3b3e6b1c5e0480cfbb14d7010a209537)
 
 ## 보고서 PDF
 
-(제출 전 링크 추가 예정)
+[파트4_2팀_보고서.pdf](docs/report/파트4_2팀_보고서.pdf)
